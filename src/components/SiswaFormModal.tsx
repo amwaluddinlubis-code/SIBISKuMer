@@ -3,7 +3,8 @@ import { X, Save, User, Heart, Home, Users, School, Sparkles, BookOpen, AlertCir
 import { Siswa, JenisKelamin, Agama, TingkatKelas, JalurMasuk, StatusSiswa, PredikatP5, JenjangSekolah, RiwayatTahunAjaran, StatusKenaikanKelas } from '../types';
 import { validateIdentitasSiswa, FieldIssue } from '../utils/validation';
 import { getRaportList, getNilaiList } from '../utils/raportUtils';
-import { toast } from '../utils/notify';
+import { scopedStorageKey } from '../utils/db';
+import { toast, confirmDialog } from '../utils/notify';
 import { KodeSelect } from './KodeSelect';
 import {
   AGAMA_OPTIONS,
@@ -54,11 +55,17 @@ interface WizardStep {
   icon: typeof User;
 }
 
-const DRAFT_KEY = 'bukuinduk_draft_siswa_v1';
+/** F9: kunci draft di-scope per database sekolah aktif (scopedStorageKey) agar
+ *  draft pendaftaran sekolah A tidak pulih saat membuka form di sekolah B.
+ *  Dihitung ulang SETIAP dipakai — TIDAK di-cache di module scope karena
+ *  activeDbName bisa berubah saat ganti sekolah. */
+function draftKey(): string {
+  return scopedStorageKey('bukuinduk_draft_siswa_v1');
+}
 
 function loadDraft(): Partial<Siswa> | null {
   try {
-    const raw = localStorage.getItem(DRAFT_KEY);
+    const raw = localStorage.getItem(draftKey());
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object' && parsed.namaLengkap !== undefined) return parsed;
@@ -280,7 +287,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
         updatedAt: new Date().toISOString()
       });
       try {
-        localStorage.removeItem(DRAFT_KEY);
+        localStorage.removeItem(draftKey());
       } catch { /* abaikan */ }
       toast(`Data "${formData.namaLengkap.trim()}" berhasil disimpan.`, 'success');
       onClose();
@@ -309,7 +316,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
       try {
         const { fotoUrl: _foto, ...rest } = formData;
         void _foto;
-        localStorage.setItem(DRAFT_KEY, JSON.stringify(rest));
+        localStorage.setItem(draftKey(), JSON.stringify(rest));
       } catch { /* kuota penuh / storage tidak tersedia — abaikan */ }
     }, 800);
     return () => window.clearTimeout(t);
@@ -317,7 +324,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
 
   const discardDraft = () => {
     try {
-      localStorage.removeItem(DRAFT_KEY);
+      localStorage.removeItem(draftKey());
     } catch { /* abaikan */ }
     setDraftRestored(false);
     toast('Draft tersimpan dibuang. Pendaftaran baru berikutnya mulai kosong.', 'info');
@@ -1412,7 +1419,20 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                     <label className="block font-semibold text-slate-700 mb-1">Status Keaktifan</label>
                     <select
                       value={formData.statusSiswa}
-                      onChange={(e) => setFormData({ ...formData, statusSiswa: e.target.value as StatusSiswa })}
+                      onChange={async (e) => {
+                        const baru = e.target.value as StatusSiswa;
+                        // F8-tambahan: konfirmasi bila status diubah LANGSUNG ke Lulus /
+                        // Mutasi Keluar lewat form (melewati wizard/ritual tutup tahun).
+                        // Memakai confirmDialog (pola dialog repo) — tanpa prop drilling.
+                        if (baru !== formData.statusSiswa && (baru === 'Lulus' || baru === 'Mutasi Keluar')) {
+                          const ok = await confirmDialog(
+                            `"${(formData.namaLengkap || 'Siswa').trim()}" akan ditandai "${baru}" tanpa lewat Wizard Mutasi / Tutup Tahun. Lanjutkan?`,
+                            { confirmLabel: 'Ya, Ubah Status', danger: baru === 'Mutasi Keluar' }
+                          );
+                          if (!ok) return; // select controlled → batal = nilai tetap lama
+                        }
+                        setFormData({ ...formData, statusSiswa: baru });
+                      }}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-bold"
                     >
                       <option value="Aktif">Aktif</option>
@@ -1655,7 +1675,8 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                                 {avg}
                               </td>
                               <td className="border border-slate-300 px-3 py-2 text-center font-mono text-slate-600">
-                                {rp.kehadiran.sakit}/{rp.kehadiran.izin}/{rp.kehadiran.alpa}
+                                {/* F13: data legacy bisa tanpa objek kehadiran → optional chaining + fallback '-'. */}
+                                {rp.kehadiran?.sakit ?? '-'}/{rp.kehadiran?.izin ?? '-'}/{rp.kehadiran?.alpa ?? '-'}
                               </td>
                             </tr>
                           );
