@@ -16,8 +16,12 @@ import {
   Lock,
   ImagePlus,
   Stamp,
-  Palette
+  Palette,
+  Moon,
+  Type,
+  SunMoon
 } from 'lucide-react';
+import { useTheme, UkuranFont } from '../context/ThemeContext';
 import { SekolahProfile, AppUser, DapodikConfig, JenjangSekolah, SchoolEntry, KopSurat, TemaMode } from '../types';
 import { saveSekolahProfile, exportDatabaseBackup, importDatabaseBackup, resetToInitialData, clearDatabase, getActiveSchool, saveSchoolEntry } from '../utils/db';
 import { fetchDapodikSekolah, convertDapodikToSekolahProfile } from '../utils/dapodikSync';
@@ -70,6 +74,8 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
 
   const isAdmin = currentUser?.role === 'administrator';
   const kop: KopSurat = getKop(profile);
+  // Tampilan (mode malam & ukuran huruf) — cakupan perangkat, bukan per sekolah.
+  const { mode, ukuranFont, setUkuranFont, toggleMode } = useTheme();
 
   const updateKop = (patch: Partial<KopSurat>) => {
     setProfile((prev) => ({ ...prev, kop: { ...getKop(prev), ...patch } }));
@@ -1048,6 +1054,83 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
               </span>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Tampilan: mode malam & ukuran huruf (cakupan perangkat) */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+          <SunMoon className="w-5 h-5 text-blue-700" />
+          <div>
+            <h3 className="font-bold text-sm text-slate-900">Tampilan</h3>
+            <p className="text-[11px] text-slate-500">
+              Mode malam dan ukuran huruf. Berlaku di perangkat ini saja — tersimpan di browser, bukan per sekolah.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          {/* Mode malam */}
+          <div className="p-4 border border-slate-200 rounded-xl bg-slate-50 space-y-3">
+            <h4 className="font-bold text-slate-900 flex items-center gap-1.5">
+              <Moon className="w-4 h-4 text-blue-700" />
+              Mode Malam
+            </h4>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-slate-600 text-[11px]">
+                {mode === 'gelap' ? 'Aktif — tampilan gelap.' : 'Mati — tampilan terang.'}
+              </span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={mode === 'gelap'}
+                aria-label="Mode malam"
+                onClick={toggleMode}
+                className={`relative w-11 h-6 rounded-full transition cursor-pointer shrink-0 ${mode === 'gelap' ? 'bg-blue-700' : 'bg-slate-300'}`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${mode === 'gelap' ? 'translate-x-5' : ''}`}
+                />
+              </button>
+            </div>
+          </div>
+
+          {/* Ukuran huruf */}
+          <div className="p-4 border border-slate-200 rounded-xl bg-slate-50 space-y-3">
+            <h4 className="font-bold text-slate-900 flex items-center gap-1.5">
+              <Type className="w-4 h-4 text-blue-700" />
+              Ukuran Huruf
+            </h4>
+            <div className="space-y-1.5" role="radiogroup" aria-label="Ukuran huruf">
+              {([
+                ['normal', 'Normal', 'Ukuran bawaan aplikasi.'],
+                ['besar', 'Besar', 'Sedikit lebih besar, nyaman dibaca.'],
+                ['sangat-besar', 'Sangat Besar', 'Paling besar, cocok untuk layar kecil.'],
+              ] as [UkuranFont, string, string][]).map(([nilai, judul, desc]) => (
+                <label
+                  key={nilai}
+                  className={`flex items-center gap-2.5 cursor-pointer border rounded-xl px-3 py-2 transition ${
+                    ukuranFont === nilai
+                      ? 'border-blue-600 bg-blue-50/40'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="ukuran-font"
+                    checked={ukuranFont === nilai}
+                    onChange={() => setUkuranFont(nilai)}
+                    className="w-4 h-4 accent-blue-700 shrink-0"
+                  />
+                  <span>
+                    <span className="block font-bold text-slate-900">{judul}</span>
+                    <span className="block text-[11px] text-slate-500">{desc}</span>
+                  </span>
+                  {ukuranFont === nilai && <CheckCircle2 className="w-4 h-4 text-blue-700 ml-auto shrink-0" />}
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>

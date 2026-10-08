@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Strategi dark mode berbasis kelas: utilitas `dark:` aktif saat
+   <html> membawa kelas .dark (dipasang oleh ThemeContext). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ============================================================
    SIBISKuMer Design System — "Dinas Premium"
    Token + komponen UI bersama. Komponen memakai kelas .ui-*
@@ -25,6 +29,9 @@
 
 html {
   scroll-behavior: smooth;
+  /* Skala ukuran huruf antarmuka — dipasang oleh ThemeContext
+     via var --skala-font (1 | 1.125 | 1.25). */
+  font-size: calc(16px * var(--skala-font, 1));
 }
 
 body {
@@ -843,6 +850,99 @@ body {
     background: #33456b;
   }
   :root[data-mode="dark"] *::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+  }
+}
+
+/* ---------- Mode gelap (class strategy): dipasang via <html class="dark"> ----------
+   Dikelola ThemeContext (state mode: terang/gelap, cakupan perangkat).
+   Minimal & nyata: permukaan utama, komponen .ui-*, tabel, dan konten modal.
+   Hanya layar (@media screen) — cetakan tetap terang seperti aslinya. */
+@media screen {
+  html.dark {
+    color-scheme: dark;
+  }
+  .dark body {
+    background: #020617; /* slate-950 */
+    color: #f1f5f9; /* slate-100 */
+  }
+
+  /* Kartu & label */
+  .dark .ui-card {
+    background: #0f172a; /* slate-900 */
+    border-color: #1e293b; /* slate-800 */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  }
+  .dark .ui-label {
+    color: #cbd5e1; /* slate-300 */
+  }
+
+  /* Form */
+  .dark .ui-input,
+  .dark .ui-select,
+  .dark .ui-textarea {
+    color: #f1f5f9;
+    background: #0f172a;
+    border-color: #334155; /* slate-700 */
+  }
+  .dark .ui-input:focus,
+  .dark .ui-select:focus,
+  .dark .ui-textarea:focus {
+    background: #0f172a;
+    border-color: #3b82f6;
+  }
+
+  /* Tabel */
+  .dark .ui-table thead th {
+    background: #020617;
+    color: #cbd5e1;
+  }
+  .dark .ui-table tbody td {
+    color: #e2e8f0;
+    border-top-color: #1e293b;
+  }
+  .dark .ui-table tbody tr:nth-child(even) {
+    background: #0b1428;
+  }
+  .dark .ui-table tbody tr:hover,
+  .dark .ui-table tbody tr:nth-child(even):hover {
+    background: #16213c;
+  }
+
+  /* Konten modal/panel putih yang umum (overlay backdrop sudah gelap). */
+  .dark .bg-white {
+    background-color: #0f172a;
+  }
+  .dark .text-slate-900 {
+    color: #f1f5f9;
+  }
+  .dark .text-slate-700 {
+    color: #cbd5e1;
+  }
+  .dark .text-slate-600 {
+    color: #94a3b8;
+  }
+  .dark .text-slate-500 {
+    color: #7d8daa;
+  }
+  .dark .border-slate-200 {
+    border-color: #1e293b;
+  }
+  .dark .border-slate-100 {
+    border-color: #16213c;
+  }
+  .dark .bg-slate-50 {
+    background-color: #0b1428;
+  }
+
+  /* Scrollbar gelap */
+  .dark * {
+    scrollbar-color: #33456b transparent;
+  }
+  .dark *::-webkit-scrollbar-thumb {
+    background: #33456b;
+  }
+  .dark *::-webkit-scrollbar-thumb:hover {
     background: #475569;
   }
 }
