@@ -507,6 +507,16 @@ async function dorongKeCloud(
   const hasil: HasilCloud = { diunduh: 0, diunggah: 0, dilewati: [], peringatan: [] };
   laporkan?.('Mengunggah perubahan…', 60);
 
+  // D1: dideklarasikan SEBELUM dipakai (sebelumnya TDZ ReferenceError).
+  const cloudIds = {
+    siswa: new Set(potret.siswa.map((s) => s.id)),
+    pengguna: new Set(potret.pengguna.map((u) => u.id)),
+    rombel: new Set(potret.rombel.map((r) => r.id)),
+    ptk: new Set(potret.ptk.map((r) => r.id)),
+    tutup: new Set(potret.tutup.map((t) => t.tahunAjaran)),
+    peta: new Set(potret.peta.map((p) => p.id)),
+  };
+
   // Foto dulu (mini via Firestore, di luar dokumen utama bila perlu).
   // Payload unggah = salinan (foto asli tetap di perangkat ini).
   // Berlaku untuk yang menang-lokal MAUPUN yang baru (keduanya bisa berfoto).
@@ -522,14 +532,6 @@ async function dorongKeCloud(
     naikSiswa.push(await siapkanFotoCloud(s, hasil.peringatan));
   }
 
-  const cloudIds = {
-    siswa: new Set(potret.siswa.map((s) => s.id)),
-    pengguna: new Set(potret.pengguna.map((u) => u.id)),
-    rombel: new Set(potret.rombel.map((r) => r.id)),
-    ptk: new Set(potret.ptk.map((r) => r.id)),
-    tutup: new Set(potret.tutup.map((t) => t.tahunAjaran)),
-    peta: new Set(potret.peta.map((p) => p.id)),
-  };
   // Unggah yang menang-lokal ATAU yang belum ada di cloud (baru).
   hasil.diunggah += await tulisBatch(
     key,

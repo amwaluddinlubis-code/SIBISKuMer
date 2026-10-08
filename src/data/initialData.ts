@@ -89,6 +89,7 @@ export const initialUsersList: AppUser[] = [
     nomorTelepon: '081234567890',
     jabatan: 'Koordinator IT & Kepala Tata Usaha',
     status: 'aktif',
+    mustChangePassword: true,
     terakhirLogin: '2026-09-15T10:00:00.000Z',
     createdAt: '2026-07-01T00:00:00.000Z',
     updatedAt: '2026-07-01T00:00:00.000Z'
@@ -104,6 +105,7 @@ export const initialUsersList: AppUser[] = [
     jabatan: 'Petugas Pengelola Buku Induk',
     rombelAkses: ['7A', '7B', '8A', '8B', '9A', '9B'],
     status: 'aktif',
+    mustChangePassword: true,
     terakhirLogin: '2026-09-14T08:20:00.000Z',
     createdAt: '2026-07-01T00:00:00.000Z',
     updatedAt: '2026-07-01T00:00:00.000Z'
@@ -119,6 +121,7 @@ export const initialUsersList: AppUser[] = [
     jabatan: 'Staf Kesiswaan & Projek P5',
     rombelAkses: ['7A', '7B'],
     status: 'aktif',
+    mustChangePassword: true,
     terakhirLogin: '2026-09-12T14:15:00.000Z',
     createdAt: '2026-07-01T00:00:00.000Z',
     updatedAt: '2026-07-01T00:00:00.000Z'

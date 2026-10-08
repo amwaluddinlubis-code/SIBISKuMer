@@ -5,26 +5,73 @@
 //   ganti firestore.rules dengan file ini, lalu:
 //   firebase deploy --only firestore:rules
 //
-// Model: hanya pengguna LOGIN Google yang boleh baca/tulis rumah cloud
-// `cloud/{kunciSekolah}/...`. Isolasi antar-sekolah = kunci (NPSN/dbName) +
-// PIN sekolah yang diverifikasi sisi klien (bukan penegakan server —
-// jangan taruh data sangat sensitif; password sudah berupa hash).
+// MODEL KEAMANAN (jujur):
+// - Baca/tulis butuh login Google. Isolasi antar-sekolah = kunci (NPSN/dbName)
+//   + PIN sekolah yang diverifikasi SISI KLIEN (aturan Firestore tidak bisa
+//   memverifikasi hash PBKDF2 — ini keterbatasan platform, bukan bug).
+// - Artinya: akun Google mana pun yang menebak NPSN bisa membaca data cloud
+//   sekolah tersebut. JANGAN taruh data sangat sensitif di sinkron cloud.
+// - Untuk produksi yang lebih ketat: aktifkan App Check + pertimbangkan
+//   Cloud Functions untuk verifikasi PIN di sisi server.
+//
+// Yang DIPERKETAT di versi ini (D2):
+// - Koleksi dibatasi ke daftar yang dikenal (siswa, pengguna, rombel, ptk,
+//   tutup, peta) — koleksi liar ditolak.
+// - Dokumen root cloud hanya bisa dibuat dengan pinHash (rumah baru);
+//   tidak bisa di-update/di-hapus sembarangan.
+// - pinHash yang sudah ada TIDAK bisa diubah/dihapus via aturan ini.
+// - Dokumen meta tidak bisa dihapus.
+// - Path di luar /cloud/... ditolak eksplisit.
 
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /cloud/{sekolah}/{coll}/{docId} {
-      allow read, write: if request.auth != null;
-    }
-    match /cloud/{sekolah}/meta/{docId} {
-      allow read, write: if request.auth != null;
-    }
+
+    // ---------- Rumah cloud tiap sekolah ----------
     match /cloud/{sekolah} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      // Hanya boleh membuat root bila menyertakan pinHash (rumah baru).
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasAll(['pinHash'])
+        && request.resource.data.pinHash is string
+        && request.resource.data.pinHash.size() > 20;
+      // Update hanya untuk adopsi PIN satu-kali (rumah lama tanpa pinHash).
+      allow update: if request.auth != null
+        && !('pinHash' in resource.data)
+        && request.resource.data.pinHash is string
+        && request.resource.data.pinHash.size() > 20;
+      allow delete: if false;
     }
-    // Tolak semua path lain secara eksplisit.
+
+    // ---------- Meta sekolah (profil, pinHash) ----------
+    match /cloud/{sekolah}/meta/{docId} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data is map
+        // pinHash bila sudah ada tidak boleh diubah/dihapus lewat aturan ini.
+        && (!('pinHash' in resource.data) || request.resource.data.pinHash == resource.data.pinHash);
+      allow delete: if false;
+    }
+
+    // ---------- Koleksi data (siswa, pengguna, rombel, ptk, tutup, peta) ----------
+    match /cloud/{sekolah}/{coll}/{docId} {
+      allow read: if request.auth != null && coll in ['siswa', 'pengguna', 'rombel', 'ptk', 'tutup', 'peta'];
+      allow create, update: if request.auth != null
+        && coll in ['siswa', 'pengguna', 'rombel', 'ptk', 'tutup', 'peta']
+        && dataValid(request.resource.data);
+      allow delete: if request.auth != null
+        && coll in ['siswa', 'pengguna', 'rombel', 'ptk', 'tutup', 'peta'];
+    }
+
+    // ---------- Tolak semua path lain secara eksplisit ----------
     match /{document=**} {
       allow read, write: if false;
     }
+  }
+
+  // Dokumen data wajar: sebuah map (Firestore sendiri membatasi 1MB/dokumen;
+  // aplikasi juga menolak payload > ~900KB sebelum tulis).
+  function dataValid(d) {
+    return d is map;
   }
 }

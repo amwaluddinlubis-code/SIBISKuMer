@@ -357,6 +357,8 @@ export interface AppUser {
   /** Batas tahun ajaran login. Kosong/undefined = semua tahun. Cth. ["2026/2027"]. */
   tahunAkses?: string[];
   status: 'aktif' | 'nonaktif';
+  /** True = wajib mengganti kata sandi saat login berikutnya (akun bawaan). */
+  mustChangePassword?: boolean;
   terakhirLogin?: string;
   createdAt: string;
   updatedAt: string;
@@ -611,6 +613,7 @@ export type AuditAksi =
   | 'akun_hapus'
   | 'password_ubah'
   | 'password_reset'
+  | 'ganti_password_bawaan'
   | 'impersonate_mulai'
   | 'impersonate_selesai'
   | 'siswa_tambah'

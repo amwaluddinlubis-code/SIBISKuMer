@@ -47,6 +47,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   // Langkah 2: pilih tahun ajaran sesi
   const [step, setStep] = useState<'akun' | 'tahun'>('akun');
   const [verifiedUser, setVerifiedUser] = useState<AppUser | null>(null);
+  // Wajib ganti kata sandi bawaan sebelum masuk (S1)
+  const [wajibGanti, setWajibGanti] = useState<AppUser | null>(null);
+  const [passBaru, setPassBaru] = useState('');
+  const [passBaru2, setPassBaru2] = useState('');
   const [daftarTA, setDaftarTA] = useState<string[]>([]);
   const [tahunDipilih, setTahunDipilih] = useState('');
   const [loadingTA, setLoadingTA] = useState(false);
@@ -213,10 +217,59 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       }
 
       setIsLoading(false);
+      // S1: akun bawaan wajib mengganti kata sandi default sebelum lanjut.
+      if (loginUser.mustChangePassword) {
+        setWajibGanti(loginUser);
+        setPassBaru('');
+        setPassBaru2('');
+        return;
+      }
       // Lanjut ke langkah 2: pilih tahun ajaran sesi (dibatasi tahunAkses).
       void masukKePilihTahun(loginUser);
       })();
     }, 250);
+  };
+
+  const handleGantiPasswordBawaan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!wajibGanti) return;
+    setError(null);
+    const p1 = passBaru.trim();
+    if (p1.length < 8) {
+      setError('Kata sandi baru minimal 8 karakter.');
+      return;
+    }
+    if (p1 !== passBaru2.trim()) {
+      setError('Konfirmasi kata sandi tidak sama.');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const updated: AppUser = {
+        ...wajibGanti,
+        password: await hashPassword(p1),
+        mustChangePassword: false,
+        updatedAt: new Date().toISOString(),
+      };
+      await saveUser(updated);
+      setInternalUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+      setWajibGanti(null);
+      setPassBaru('');
+      setPassBaru2('');
+      toast('Kata sandi berhasil diganti. Silakan lanjutkan masuk.', 'success');
+      catatAudit('ganti_password_bawaan', {
+        entitas: 'pengguna',
+        entitasId: updated.id,
+        ringkasan: `Kata sandi bawaan diganti: @${updated.username}`,
+        aktor: updated.username,
+        peran: updated.role,
+      });
+      setIsLoading(false);
+      void masukKePilihTahun(updated);
+    } catch {
+      setIsLoading(false);
+      setError('Gagal menyimpan kata sandi baru. Coba lagi.');
+    }
   };
 
   const handleKonfirmasiTahun = () => {
@@ -259,7 +312,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const quickAccounts = [
     {
       username: 'administrator',
-      pass: 'administrator',
       title: 'Administrator',
       sub: 'Hak akses penuh & CRUD',
       badge: 'administrator',
@@ -269,7 +321,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     },
     {
       username: 'operator_bukuinduk',
-      pass: 'operator123',
       title: 'Siti Rahmawati, S.Kom.',
       sub: 'operator_bukuinduk • Petugas Buku Induk',
       badge: 'operator',
@@ -279,7 +330,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     },
     {
       username: 'operator_kesiswaan',
-      pass: 'operator123',
       title: 'Budi Santoso, S.Pd.',
       sub: 'operator_kesiswaan • Staf Kesiswaan',
       badge: 'operator',
@@ -358,7 +408,48 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             </div>
           )}
 
-          {step === 'tahun' ? (
+          {wajibGanti ? (
+            <form onSubmit={handleGantiPasswordBawaan} className="space-y-3.5">
+              <div className="flex items-center gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <span className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0">
+                  <Shield className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-slate-900">Kata sandi bawaan harus diganti</p>
+                  <p className="text-[11px] text-slate-500 truncate">
+                    Akun @{wajibGanti.username} masih memakai kata sandi awal. Buat kata sandi baru (min. 8 karakter) untuk melanjutkan.
+                  </p>
+                </div>
+              </div>
+              <div>
+                <label className="ui-label" htmlFor="login-passbaru">Kata sandi baru</label>
+                <input
+                  id="login-passbaru"
+                  type="password"
+                  autoComplete="new-password"
+                  className="ui-input mt-1"
+                  value={passBaru}
+                  onChange={(e) => setPassBaru(e.target.value)}
+                  placeholder="Minimal 8 karakter"
+                />
+              </div>
+              <div>
+                <label className="ui-label" htmlFor="login-passbaru2">Konfirmasi kata sandi baru</label>
+                <input
+                  id="login-passbaru2"
+                  type="password"
+                  autoComplete="new-password"
+                  className="ui-input mt-1"
+                  value={passBaru2}
+                  onChange={(e) => setPassBaru2(e.target.value)}
+                  placeholder="Ulangi kata sandi baru"
+                />
+              </div>
+              <button type="submit" disabled={isLoading} className="ui-btn-primary w-full">
+                {isLoading ? 'Menyimpan…' : 'Simpan & Lanjutkan Masuk'}
+              </button>
+            </form>
+          ) : step === 'tahun' ? (
             <div className="space-y-3.5">
               <div className="flex items-center gap-2.5 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
                 <span className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
