@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { PetaKelas, Siswa, SekolahProfile, TingkatKelas, PtkRef, RombelRef, AppUser } from '../types';
 import { savePetaKelas, deletePetaKelas, savePetaKelasList, saveSiswa, saveSiswaBulk, getTahunAjaranTerakhirSiswa } from '../utils/db';
+import { catatHapusCloud } from '../utils/tombstone';
 import { getTingkatOptions, getTingkatDariRombel, getRaportList } from '../utils/raportUtils';
 import { cekTulisTahun, opsiTahunMaksSesi } from '../utils/sesi';
 import { canUserAccessTahun } from '../utils/tahunAjaran';
@@ -280,6 +281,9 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
     startTopProgress();
     try {
       await deletePetaKelas(p.id);
+      // D7: catat hapus agar dirambatkan ke cloud (tanpa ini data terhapus
+      // "hidup lagi" dari salinan cloud).
+      catatHapusCloud('peta', p.id);
       toast(`Pemetaan ${p.rombel} dihapus.`, 'success');
       onDataChanged();
     } catch (err: unknown) {
