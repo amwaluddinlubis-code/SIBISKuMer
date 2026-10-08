@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Printer, Download, ArrowLeft, CreditCard, FileText, Award, BookOpen, Calendar, CheckCircle2 } from 'lucide-react';
 import { Siswa, SekolahProfile } from '../types';
-import { getFaseKurikulum, getRaportList, getNilaiList } from '../utils/raportUtils';
+import { getFaseKurikulum, getRaportList, getNilaiList, hitungRataRataNilai } from '../utils/raportUtils';
 import { tahanMaksSesi } from '../utils/sesi';
 import { KopSuratView } from './KopSuratView';
 import { KartuPelajar, TemplateKartu, TEMPLATE_KARTU } from './KartuPelajar';
@@ -669,8 +669,9 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                     <tbody>
                       {raportList.map((rp, idx) => {
                         const nilaiList = getNilaiList(rp);
-                        const totalScore = nilaiList.reduce((acc, m) => acc + (Number(m.nilaiAkhir) || 0), 0);
-                        const avg = nilaiList.length > 0 ? Math.round(totalScore / nilaiList.length) : 0;
+                        // F7: rata-rata memakai helper tunggal (1 desimal) agar sama
+                        // dengan angka tersimpan; F14: nilai null ("belum dinilai") diabaikan.
+                        const avg = hitungRataRataNilai(nilaiList);
                         const scores = nilaiList.map(m => Number(m.nilaiAkhir) || 0);
                         const max = scores.length > 0 ? Math.max(...scores) : 0;
                         const min = scores.length > 0 ? Math.min(...scores) : 0;
@@ -692,7 +693,8 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                               {min}
                             </td>
                             <td className="border border-slate-300 px-2 py-1 text-center font-mono">
-                              {rp.kehadiran.sakit}/{rp.kehadiran.izin}/{rp.kehadiran.alpa}
+                              {/* F13: raport legacy bisa tanpa objek kehadiran — guard + fallback '-'. */}
+                              {rp.kehadiran?.sakit ?? '-'}/{rp.kehadiran?.izin ?? '-'}/{rp.kehadiran?.alpa ?? '-'}
                             </td>
                             <td className="border border-slate-300 px-2 py-1 text-slate-600 font-medium">
                               Fase {rp.fase}
@@ -779,8 +781,9 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                 .filter((r) => selectedSemesterId === 'all' || r.id === selectedSemesterId)
                 .map((sem, sIdx) => {
                   const nilaiList = getNilaiList(sem);
-                  const total = nilaiList.reduce((acc, m) => acc + (Number(m.nilaiAkhir) || 0), 0);
-                  const avg = nilaiList.length > 0 ? Math.round(total / nilaiList.length) : 0;
+                  // F7: rata-rata memakai helper tunggal (1 desimal) agar sama
+                  // dengan angka tersimpan; F14: nilai null ("belum dinilai") diabaikan.
+                  const avg = hitungRataRataNilai(nilaiList);
                   return (
                     <div key={sem.id || sIdx} className="space-y-3 pt-4 border-t border-slate-200 page-break-inside-avoid">
                       {/* Sub-Header Semester */}
@@ -827,9 +830,10 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                         <div className="border border-slate-300 p-2 rounded bg-slate-50">
                           <span className="font-bold text-slate-800 block mb-1">Ketidakhadiran:</span>
                           <div className="grid grid-cols-3 text-center gap-1 font-mono">
-                            <div className="bg-white p-1 rounded border">Sakit: <strong>{sem.kehadiran.sakit}</strong> hari</div>
-                            <div className="bg-white p-1 rounded border">Izin: <strong>{sem.kehadiran.izin}</strong> hari</div>
-                            <div className="bg-white p-1 rounded border">Tanpa Ket: <strong>{sem.kehadiran.alpa}</strong> hari</div>
+                            {/* F13: raport legacy bisa tanpa objek kehadiran — guard + fallback '-'. */}
+                            <div className="bg-white p-1 rounded border">Sakit: <strong>{sem.kehadiran?.sakit ?? '-'}</strong> hari</div>
+                            <div className="bg-white p-1 rounded border">Izin: <strong>{sem.kehadiran?.izin ?? '-'}</strong> hari</div>
+                            <div className="bg-white p-1 rounded border">Tanpa Ket: <strong>{sem.kehadiran?.alpa ?? '-'}</strong> hari</div>
                           </div>
                         </div>
 
