@@ -1,7 +1,8 @@
-import React from 'react';
-import { Users, GraduationCap, CheckCircle, RefreshCw, AlertCircle, ArrowRight, ShieldAlert } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Users, GraduationCap, CheckCircle, RefreshCw, AlertCircle, ArrowRight, ShieldAlert, Hash, CalendarX, UserX, Award, Database, CheckCircle2, BellRing } from 'lucide-react';
 import { Siswa, DapodikSyncLog, JenjangSekolah } from '../types';
-import { getTingkatOptions, getTingkatDariRombel } from '../utils/raportUtils';
+import { getTingkatOptions, getTingkatDariRombel, getRaportList } from '../utils/raportUtils';
+import { bacaAutoBackupSetting } from '../utils/autoBackup';
 
 interface DashboardStatsProps {
   siswa: Siswa[];
@@ -12,6 +13,21 @@ interface DashboardStatsProps {
   sessionTahun?: string | null;
   tahunAktif?: string | null;
   onOpenSync: () => void;
+  /** Navigasi opsional dari kartu "Perlu Perhatian" — disambungkan App bila tersedia. */
+  onLihat?: (tujuan: 'siswa' | 'nilai' | 'backup') => void;
+}
+
+type TujuanLihat = 'siswa' | 'nilai' | 'backup';
+
+interface KartuPerhatian {
+  id: string;
+  icon: React.ReactNode;
+  tint: string;
+  border: string;
+  angka: string;
+  label: string;
+  desc: string;
+  tujuan: TujuanLihat;
 }
 
 export const DashboardStats: React.FC<DashboardStatsProps> = ({
@@ -21,7 +37,8 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
   isAdmin = false,
   sessionTahun,
   tahunAktif,
-  onOpenSync
+  onOpenSync,
+  onLihat
 }) => {
   const jenjang = (jenjangProp || 'SMP') as JenjangSekolah;
   const total = siswa.length;
@@ -63,8 +80,109 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
     }
   };
 
+  // ---------- SEKSI "PERLU PERHATIAN" ----------
+  const perhatian = useMemo(() => {
+    const list = siswa || [];
+    const tanpaNisn = list.filter((s) => !(s.nisn || '').trim()).length;
+    const tanpaTglLahir = list.filter((s) => !(s.tanggalLahir || '').trim()).length;
+    const tanpaRombel = list.filter((s) => !(s.rombelSaatIni || '').trim()).length;
+    const tahunRaport = (sessionTahun || tahunAktif || '').trim();
+    const nilaiKurang = tahunRaport
+      ? list.filter(
+          (s) => s.statusSiswa === 'Aktif' && !getRaportList(s).some((r) => (r.tahunAjaran || '').trim() === tahunRaport)
+        ).length
+      : 0;
+
+    let terakhirJalan: string | null = null;
+    try {
+      terakhirJalan = bacaAutoBackupSetting().terakhirJalan ?? null;
+    } catch {
+      terakhirJalan = null;
+    }
+    const hariSejakBackup =
+      terakhirJalan != null ? Math.floor((Date.now() - new Date(terakhirJalan).getTime()) / 86400000) : null;
+    const backupKedaluwarsa = hariSejakBackup === null || hariSejakBackup > 14;
+
+    const kartu: KartuPerhatian[] = [];
+    if (tanpaNisn > 0)
+      kartu.push({
+        id: 'nisn', icon: <Hash className="w-4 h-4" />,
+        tint: 'bg-red-100 text-red-700', border: 'border-red-200',
+        angka: String(tanpaNisn), label: 'Siswa tanpa NISN',
+        desc: 'NISN wajib untuk data induk & Dapodik.', tujuan: 'siswa',
+      });
+    if (tanpaTglLahir > 0)
+      kartu.push({
+        id: 'tgl', icon: <CalendarX className="w-4 h-4" />,
+        tint: 'bg-amber-100 text-amber-700', border: 'border-amber-200',
+        angka: String(tanpaTglLahir), label: 'Siswa tanpa tanggal lahir',
+        desc: 'Tanggal lahir kosong — periksa data induk.', tujuan: 'siswa',
+      });
+    if (tanpaRombel > 0)
+      kartu.push({
+        id: 'rombel', icon: <UserX className="w-4 h-4" />,
+        tint: 'bg-amber-100 text-amber-700', border: 'border-amber-200',
+        angka: String(tanpaRombel), label: 'Siswa tanpa rombel',
+        desc: 'Belum ditempatkan di rombel belajar.', tujuan: 'siswa',
+      });
+    if (nilaiKurang > 0)
+      kartu.push({
+        id: 'nilai', icon: <Award className="w-4 h-4" />,
+        tint: 'bg-red-100 text-red-700', border: 'border-red-200',
+        angka: String(nilaiKurang), label: 'Nilai raport TA berjalan belum lengkap',
+        desc: `Siswa aktif tanpa record nilai tahun ${tahunRaport || 'berjalan'}.`, tujuan: 'nilai',
+      });
+    if (backupKedaluwarsa)
+      kartu.push({
+        id: 'backup', icon: <Database className="w-4 h-4" />,
+        tint: 'bg-amber-100 text-amber-700', border: 'border-amber-200',
+        angka: hariSejakBackup === null ? '–' : String(hariSejakBackup),
+        label: 'Hari sejak backup terakhir',
+        desc: hariSejakBackup === null ? 'Belum pernah ada backup otomatis.' : 'Backup terakhir sudah lebih dari 14 hari.', tujuan: 'backup',
+      });
+    return kartu;
+  }, [siswa, sessionTahun, tahunAktif]);
+
   return (
     <div className="mb-5 anim-stagger print:hidden">
+    {/* Perlu Perhatian — di atas statistik lama */}
+    <div className="mb-4">
+      <h3 className="ui-section-title !normal-case !tracking-normal !text-sm mb-2.5">
+        <BellRing className="w-4 h-4 text-red-600" />
+        Perlu Perhatian
+      </h3>
+      {perhatian.length === 0 ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex items-center gap-3">
+          <span className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-5 h-5" />
+          </span>
+          <span>
+            <span className="block text-sm font-extrabold text-emerald-800">Semua beres ✓</span>
+            <span className="block text-[11px] text-emerald-700">Tidak ada data yang perlu perhatian saat ini.</span>
+          </span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {perhatian.map((k) => (
+            <div key={k.id} className={`rounded-xl border ${k.border} bg-white p-4`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className={`w-9 h-9 rounded-xl flex items-center justify-center ${k.tint}`}>{k.icon}</span>
+                <span className="text-2xl font-black text-slate-900 tabular-nums leading-none">{k.angka}</span>
+              </div>
+              <p className="mt-2 text-xs font-extrabold text-slate-900">{k.label}</p>
+              <p className="text-[11px] text-slate-500 leading-snug">{k.desc}</p>
+              <button
+                onClick={() => onLihat?.(k.tujuan)}
+                className="ui-btn ui-btn-outline w-full mt-3 !py-2"
+              >
+                Lihat
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
     {sessionTahun && (
       <p className="mb-2 text-[11px] text-slate-500">
         Sesi data:{' '}

@@ -1,5 +1,5 @@
-import React from 'react';
-import { ShieldCheck, UserCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { ShieldCheck, UserCheck, Eye, Printer, X } from 'lucide-react';
 import { Siswa, SekolahProfile } from '../types';
 
 export type TemplateKartu = 'dinas' | 'modern' | 'minimal';
@@ -16,6 +16,8 @@ export interface KartuProps {
   jenjang: string;
   faseLabel: string;
   template: TemplateKartu;
+  /** Sembunyikan tombol pratinjau internal (mis. saat dirender di dalam overlay pratinjau lain). */
+  sembunyikanPratinjau?: boolean;
 }
 
 function formatTgl(dateStr?: string): string {
@@ -198,10 +200,78 @@ export const KartuBelakang: React.FC<KartuProps> = ({ sekolah, template }) => {
   );
 };
 
-/** Kartu Tanda Pelajar depan-belakang. */
-export const KartuPelajar: React.FC<KartuProps> = (props) => (
-  <>
-    <KartuDepan {...props} />
-    <KartuBelakang {...props} />
-  </>
-);
+/** Kartu Tanda Pelajar depan-belakang, dengan pratinjau WYSIWYG per-siswa.
+ *  Pratinjau selalu menampilkan kartu milik `siswa` yang sedang diproses
+ *  (berguna saat komponen dipakai per-siswa dalam daftar/cetak massal). */
+export const KartuPelajar: React.FC<KartuProps> = (props) => {
+  const [pratinjau, setPratinjau] = useState(false);
+  const { sembunyikanPratinjau, ...kartuProps } = props;
+
+  /** Cetak dari pratinjau: tutup overlay dulu agar kartu tidak terduplikasi saat print. */
+  const cetakDariPratinjau = () => {
+    setPratinjau(false);
+    window.setTimeout(() => window.print(), 200);
+  };
+
+  return (
+    <>
+      {!sembunyikanPratinjau && (
+        <div className="flex justify-center print:hidden">
+          <button
+            type="button"
+            onClick={() => setPratinjau(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-white bg-slate-700 hover:bg-slate-800 rounded-lg shadow-sm transition active:scale-95 cursor-pointer"
+            title="Pratinjau kartu sebelum mencetak"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            Pratinjau Kartu
+          </button>
+        </div>
+      )}
+      <KartuDepan {...kartuProps} />
+      <KartuBelakang {...kartuProps} />
+      {pratinjau && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/80 backdrop-blur-xs flex flex-col print:hidden">
+          <div className="shrink-0 bg-slate-950/90 border-b border-white/10 px-3 sm:px-4 py-2.5 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <Eye className="w-4 h-4 text-amber-300 shrink-0" />
+              <h3 className="text-sm font-bold text-white truncate">
+                Pratinjau Kartu — {props.siswa.namaLengkap}
+              </h3>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={cetakDariPratinjau}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow-sm transition active:scale-95 cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                Cetak
+              </button>
+              <button
+                type="button"
+                onClick={() => setPratinjau(false)}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-200 bg-white/10 hover:bg-white/20 rounded-lg transition active:scale-95 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+                Tutup
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 sm:p-8">
+            <div className="flex flex-col items-center gap-6">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 text-center mb-1 uppercase tracking-widest">Depan</p>
+                <KartuDepan {...kartuProps} />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 text-center mb-1 uppercase tracking-widest">Belakang</p>
+                <KartuBelakang {...kartuProps} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};

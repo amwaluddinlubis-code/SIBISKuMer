@@ -222,3 +222,19 @@ Verifikasi: `npx tsc --noEmit` — nol error baru di semua file yang disentuh
 Tidak diubah (keputusan sadar): D13 (foto mini — tradeoff terdokumentasi); `backupCrypto.ts` tidak dijadikan enkripsi penuh (terlalu berisiko); temuan rendah S11-excel-formula sudah termasuk di S11.
 
 Verifikasi: `npx tsc --noEmit` — nol error baru di semua file yang disentuh (32 error pre-existing di file lain, pola `unknown`/modul hilang, tidak berubah).
+
+---
+
+## Tahap 6 — Peningkatan UI/UX (2026-10-09)
+
+Lima fitur baru atas masukan pengguna, dikerjakan 5 worker paralel + wiring koordinator:
+
+| # | Fitur | File |
+|---|-------|------|
+| 1 | **Wizard form siswa 5 langkah** — Identitas → Alamat → Orang tua/wali → Akademik → Tinjau & simpan. Progress bar, validasi per langkah (`validateIdentitasSiswa`), draft otomatis per langkah (scoped key), tombol sticky mobile-friendly. Mode tambah & edit tetap; struktur data `Siswa` tidak berubah. | `SiswaFormModal.tsx` |
+| 2 | **Dashboard "Perlu Perhatian"** — kartu aksi prioritas di atas statistik: siswa tanpa NISN/tanggal lahir/rombel, nilai raport belum lengkap, backup >14 hari. Tiap kartu ada tombol "Lihat →" navigasi ke tab relevan; kartu hijau "Semua beres ✓" bila kosong. | `DashboardStats.tsx` (+`onLihat` di `App.tsx`) |
+| 3 | **Pencarian global Ctrl+K** — modal pencarian, debounce 200ms, maks 8 hasil (nama/NISN/NIPD), navigasi keyboard, Enter/klik → buka detail siswa. | `GlobalSearch.tsx` (baru), `useGlobalSearch.ts` (baru) |
+| 4 | **Pratinjau cetak WYSIWYG** — overlay bingkai kertas A4 sebelum cetak buku induk; kartu pelajar pratinjau per-siswa ukuran CR80. Tombol Pratinjau / Cetak / Tutup. Isi dokumen tidak diubah. | `CetakBukuInduk.tsx`, `KartuPelajar.tsx` |
+| 5 | **Mode malam + ukuran huruf** — `ThemeProvider` (`terang`/`gelap`, font `normal`/`besar`/`sangat-besar`), tersimpan per perangkat (`sibiskumer_tema`), dark mode class strategy Tailwind v4, seksi "Tampilan" di Pengaturan. | `ThemeContext.tsx` (baru), `index.css`, `PengaturanSekolahView.tsx` |
+
+Verifikasi: `npx tsc --noEmit` — nol error baru di file yang disentuh.

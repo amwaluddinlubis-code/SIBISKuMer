@@ -19,6 +19,7 @@ Server Node (`server.ts`) hanya menjadi perantara ke Web Service Dapodik lokal.
 - Multi-pengguna berbasis peran: `administrator` & `operator`
 - Cadangan lokal (JSON, opsional **terenkripsi password**) & Google Drive
 - PWA: dapat diinstal & berjalan offline
+- **Baru:** form siswa wizard 5 langkah (mobile-friendly) • dashboard "Perlu Perhatian" • pencarian global (Ctrl+K) • pratinjau cetak WYSIWYG • mode malam + pengaturan ukuran huruf
 
 ## Menjalankan Lokal
 
