@@ -1,6 +1,11 @@
 import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RaportSemester, TingkatKelas, RiwayatSemester, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, PetaKelas, AuditLog, AutoBackupSnapshot } from '../types';
 import { defaultSekolahProfile, defaultDapodikConfig, initialSiswaList, initialUsersList, presetSekolahSD } from '../data/initialData';
 import { hashPassword, isHashedPassword, withHashedPasswords } from './password';
+import { toast } from './notify';
+// D15(b): baca/tulis tombstone lokal untuk rekonsiliasi pasca-restore.
+// Aman dari siklus impor: kedua modul hanya memakai binding satu sama lain
+// di dalam badan fungsi (tidak saat evaluasi modul).
+import { muatTombstoneLokal, simpanTombstoneLokal } from './tombstone';
 
 const DB_NAME = 'BukuInduk_Merdeka_DB';
 // Naikkan versi setiap kali ada store baru agar database lama di browser
@@ -33,6 +38,27 @@ export function getActiveDbName(): string {
 
 function setActiveDbName(name: string): void {
   activeDbName = name && name.trim() ? name.trim() : DB_NAME;
+}
+
+// D11 — Kunci operasi panjang. Impor backup (importBackupData) dan apply
+// sync Dapodik memegang kunci ini selama berjalan; ganti sekolah aktif
+// DITOLAK selama kunci aktif agar operasi yang berjalan tidak menulis ke
+// database sekolah yang salah bila user beralih sekolah di tengah jalan.
+let operasiPanjangBerjalan = false;
+
+/** true bila ada impor backup / apply sync Dapodik yang sedang berjalan. */
+export function isOperasiPanjangBerjalan(): boolean {
+  return operasiPanjangBerjalan;
+}
+
+/** Tandai mulai operasi panjang. Pemanggil WAJIB melepas di finally. */
+export function kunciOperasiPanjang(): void {
+  operasiPanjangBerjalan = true;
+}
+
+/** Lepaskan kunci operasi panjang (selalu dipanggil di finally). */
+export function bukaKunciOperasiPanjang(): void {
+  operasiPanjangBerjalan = false;
 }
 
 function openDB(name?: string): Promise<IDBDatabase> {
@@ -236,6 +262,11 @@ export function deleteSchoolEntry(id: string, opts?: { deletePhysical?: boolean 
 }
 
 export async function setActiveSchool(id: string): Promise<SchoolEntry | null> {
+  // D11: tolak ganti sekolah selama operasi panjang (impor/sync) berjalan.
+  if (operasiPanjangBerjalan) {
+    toast('Tunggu operasi selesai: impor backup / sinkronisasi Dapodik masih berjalan.', 'warning');
+    return null;
+  }
   const found = readSchools().find((s) => s.id === id) || null;
   if (!found) return null;
   localStorage.setItem(LS_KEYS.ACTIVE_SCHOOL, found.id);
@@ -367,6 +398,11 @@ export async function createSchoolWithDatabase(input: {
  *  bila username yang sama ada di DB target, selain itu paksa login ulang.
  *  Mengembalikan entri + flag apakah sesi dipertahankan. */
 export async function switchActiveSchool(id: string): Promise<{ entry: SchoolEntry | null; keptSession: boolean }> {
+  // D11: tolak sejak awal (sebelum sesi dibersihkan) bila operasi panjang berjalan.
+  if (operasiPanjangBerjalan) {
+    toast('Tunggu operasi selesai: impor backup / sinkronisasi Dapodik masih berjalan.', 'warning');
+    return { entry: null, keptSession: false };
+  }
   const prevSession = getCurrentUserSession();
   clearImpersonateSession();
   clearSessionTahunAjaran();
@@ -1781,6 +1817,10 @@ export interface RestoreOptions {
   /** true = user mencentang "saya paham ini data sekolah lain" — mengizinkan
    *  restore file yang NPSN-nya berbeda dari sekolah aktif. */
   konfirmasiSekolahLain?: boolean;
+  /** D15(a) — true = user secara eksplisit mengizinkan akun administrator
+   *  yang sudah ada ditimpa oleh data dari file backup. Default (false):
+   *  administrator yang sudah ada TIDAK PERNAH ditimpa backup. */
+  konfirmasiTimpaAdmin?: boolean;
 }
 
 /** D3 — Hasil restore yang jelas. Field success/message/count dipertahankan
@@ -1791,6 +1831,9 @@ export interface RestoreResult {
   success: boolean;
   message: string;
   count: number;
+  /** D15 — peringatan non-fatal selama restore (mis. admin dilewati,
+   *  record yang tetap dipertahankan terhapus karena tombstone). */
+  peringatan?: string[];
 }
 
 export interface BackupPayload {
@@ -1828,7 +1871,12 @@ export async function exportAllData(): Promise<string> {
     version: '1.3.0',
     exportedAt: new Date().toISOString(),
     sekolah,
-    dapodikConfig,
+    // S7: token Web Service Dapodik TIDAK ikut ke file backup. Token tersimpan
+    // plaintext di perangkat; membawanya ke file JSON (yang bisa diunduh /
+    // diunggah ke Drive / dibagikan) sama dengan membocorkan kredensial Web
+    // Service sekolah. Setelah restore, operator memasukkan ulang token di
+    // menu Sinkronisasi Dapodik.
+    dapodikConfig: { ...dapodikConfig, token: '' },
     siswa,
     syncLogs,
     users,
@@ -1863,6 +1911,9 @@ export async function importBackupData(
     message: alasan,
     count: 0,
   });
+  // D11: kunci operasi panjang — ganti sekolah aktif ditolak selama restore.
+  kunciOperasiPanjang();
+  const peringatan: string[] = [];
   try {
     const data: BackupPayload = JSON.parse(jsonString);
     if (!data.siswa || !Array.isArray(data.siswa)) {
@@ -1904,8 +1955,29 @@ export async function importBackupData(
     }
 
     if (data.users && Array.isArray(data.users)) {
+      // D15(a): file backup jahat bisa menyisipkan akun administrator.
+      // Administrator yang SUDAH ADA tidak pernah ditimpa dari backup kecuali
+      // user memberi konfirmasi eksplisit (opts.konfirmasiTimpaAdmin).
+      // User BARU dari backup otomatis ditandai mustChangePassword.
+      const existingUsers = await getAllUsers();
+      const adaById = new Map(existingUsers.map((u) => [u.id, u]));
+      const adaByUsername = new Map(existingUsers.map((u) => [String(u.username || '').trim().toLowerCase(), u]));
+      let adminDilewati = 0;
       for (const u of data.users) {
-        await saveUser(u);
+        if (!u || !u.username) continue;
+        const ada = adaById.get(u.id) || adaByUsername.get(String(u.username).trim().toLowerCase());
+        if (ada) {
+          if (ada.role === 'administrator' && !opts?.konfirmasiTimpaAdmin) {
+            adminDilewati++;
+            continue;
+          }
+          await saveUser({ ...u, id: ada.id, username: ada.username });
+        } else {
+          await saveUser({ ...u, mustChangePassword: true });
+        }
+      }
+      if (adminDilewati > 0) {
+        peringatan.push(`${adminDilewati} akun administrator tidak ditimpa dari backup (tanpa konfirmasi eksplisit).`);
       }
       // Backup lama menyimpan plaintext — migrasikan ke hash.
       await migrateUserPasswordsToHash().catch(() => undefined);
@@ -1941,11 +2013,81 @@ export async function importBackupData(
       }
     }
 
+    // D15(b): rekonsiliasi tombstone — record hasil restore yang masih punya
+    // tombstone aktif (dihapus SETELAH isi backup dibuat) harus TETAP terhapus,
+    // agar tidak "hidup lagi" lalu terunggah ulang ke cloud.
+    // Aturan per record: bandingkan timestamp. Bila isi backup LEBIH BARU dari
+    // tombstone, tombstone dianggap basi → dibuang. Bila tidak, record hasil
+    // restore dihapus lagi (penghapusan dipertahankan) dan tombstone dibiarkan
+    // agar sync berikutnya tidak menghidupkannya lagi.
+    // Dipilih dibanding sekadar menandai "dilewati": tanpa hapus-ulang, record
+    // hasil restore akan terunggah sebagai "baru" oleh cloudSync.
+    const tombAktif = muatTombstoneLokal();
+    if (tombAktif.length > 0) {
+      const kunciTomb = (coll: string, id: string) => `${coll}:${id}`;
+      const petaTomb = new Map(tombAktif.map((t) => [kunciTomb(t.coll, t.id), t]));
+      let dipertahankanHapus = 0;
+      const waktuRecord = (v: unknown): number => {
+        const t = typeof v === 'string' ? Date.parse(v) : NaN;
+        return Number.isFinite(t) ? (t as number) : 0;
+      };
+      const rekonsiliasi = async (
+        coll: string,
+        id: string,
+        tsRecord: number,
+        hapusLagi: (rid: string) => Promise<void>
+      ): Promise<void> => {
+        const tomb = petaTomb.get(kunciTomb(coll, id));
+        if (!tomb) return;
+        if (tsRecord > waktuRecord(tomb.ts)) {
+          // Isi backup lebih baru dari penghapusan → tombstone basi, buang.
+          petaTomb.delete(kunciTomb(coll, id));
+        } else {
+          // Penghapusan lebih baru → pertahankan: hapus lagi record restore.
+          try {
+            await hapusLagi(id);
+            dipertahankanHapus++;
+          } catch {
+            /* biarkan record apa adanya; tombstone tetap melindunginya dari sync */
+          }
+        }
+      };
+      for (const s of data.siswa) {
+        if (s?.id) await rekonsiliasi('siswa', s.id, waktuRecord(s.updatedAt), deleteSiswa);
+      }
+      for (const r of data.ptk || []) {
+        if (r?.id) await rekonsiliasi('ptk', r.id, waktuRecord(r.updatedAt), deletePtkRef);
+      }
+      for (const p of data.petaKelas || []) {
+        if (p?.id) await rekonsiliasi('peta', p.id, waktuRecord(p.updatedAt), deletePetaKelas);
+      }
+      for (const t of data.tutupTahun || []) {
+        if (t?.tahunAjaran) await rekonsiliasi('tutup', t.tahunAjaran, waktuRecord(t.ditutupPada), deleteTutupTahun);
+      }
+      // User: sertakan juga, tapi JANGAN pernah menghapus akun sesi aktif
+      // (mencegah restore mengunci operator keluar).
+      const sesiAktif = getCurrentUserSession();
+      for (const u of data.users || []) {
+        if (!u?.id || (sesiAktif && u.id === sesiAktif.id)) continue;
+        await rekonsiliasi('pengguna', u.id, waktuRecord(u.updatedAt), deleteUser);
+      }
+      // Tulis balik daftar tombstone (yang basi sudah dibuang).
+      simpanTombstoneLokal([...petaTomb.values()]);
+      if (dipertahankanHapus > 0) {
+        peringatan.push(
+          `${dipertahankanHapus} record hasil restore tetap dipertahankan terhapus ` +
+          `(ada catatan hapus yang lebih baru dari isi backup).`
+        );
+      }
+    }
+
     return {
       status: mode === 'ganti-total' ? 'diganti' : 'digabung',
       success: true,
-      message: `Berhasil memulihkan data ${data.siswa.length} siswa dan konfigurasi sistem.`,
-      count: data.siswa.length
+      message: `Berhasil memulihkan data ${data.siswa.length} siswa dan konfigurasi sistem.` +
+        (peringatan.length > 0 ? ` Perhatian: ${peringatan.join(' ')}` : ''),
+      count: data.siswa.length,
+      peringatan
     };
   } catch (err: any) {
     const alasan = err.message || 'Gagal memproses file JSON cadangan';
@@ -1954,8 +2096,12 @@ export async function importBackupData(
       alasan,
       success: false,
       message: alasan,
-      count: 0
+      count: 0,
+      peringatan
     };
+  } finally {
+    // D11: selalu lepas kunci operasi panjang.
+    bukaKunciOperasiPanjang();
   }
 }
 
@@ -2070,7 +2216,11 @@ export function filterSiswaByAccess(siswa: Siswa[], user: AppUser | null | undef
   if (!user || user.role === 'administrator') return siswa;
   const akses = user.rombelAkses;
   if (!akses || akses.length === 0) return siswa;
-  return (siswa || []).filter((s) => !!s.rombelSaatIni && akses.includes(s.rombelSaatIni));
+  // F16: siswa TANPA rombel (legacy / impor lama) tetap terlihat operator.
+  // Tanpa rombelSaatIni tidak ada pembatasan yang bisa diterapkan, jadi
+  // record semacam ini selalu lolos filter (UI dapat menampilkannya di grup
+  // "Belum ada rombel").
+  return (siswa || []).filter((s) => !s.rombelSaatIni || akses.includes(s.rombelSaatIni));
 }
 
 /** Operator hanya boleh login ke TA yang terdaftar di tahunAkses.
