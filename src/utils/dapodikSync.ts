@@ -532,6 +532,88 @@ export function compareDapodikWithExisting(
         perubahan.push(`Rombel: "${matched.rombelSaatIni}" -> "${newRombel}"`);
       }
 
+      // D8: convertDapodikToSiswa juga menimpa alamat, data ortu, TB/BB, dan
+      // asal sekolah — semuanya HARUS tampil di dialog tinjauan agar user
+      // tidak menyetujui perubahan buta. Dikelompokkan per seksi.
+      const beda = (a: unknown, b: unknown): boolean =>
+        String(a ?? '').trim() !== String(b ?? '').trim();
+      const seksi: Array<{ judul: string; baris: string[] }> = [];
+      const tambahSeksi = (judul: string, baris: string[]) => {
+        if (baris.length > 0) seksi.push({ judul, baris });
+      };
+      // --- Alamat ---
+      const bAlamat: string[] = [];
+      if (dpk.alamat_jalan && beda(dpk.alamat_jalan, matched.alamat)) {
+        bAlamat.push(`Alamat: "${matched.alamat || '-'}" -> "${dpk.alamat_jalan}"`);
+      }
+      if (dpk.rt && beda(dpk.rt, matched.rt)) {
+        bAlamat.push(`RT: "${matched.rt || '-'}" -> "${dpk.rt}"`);
+      }
+      if (dpk.rw && beda(dpk.rw, matched.rw)) {
+        bAlamat.push(`RW: "${matched.rw || '-'}" -> "${dpk.rw}"`);
+      }
+      if (dpk.nama_dusun && beda(dpk.nama_dusun, matched.dusun)) {
+        bAlamat.push(`Dusun: "${matched.dusun || '-'}" -> "${dpk.nama_dusun}"`);
+      }
+      if (dpk.desa_kelurahan && beda(dpk.desa_kelurahan, matched.kelurahan)) {
+        bAlamat.push(`Kelurahan: "${matched.kelurahan || '-'}" -> "${dpk.desa_kelurahan}"`);
+      }
+      if (dpk.kecamatan && beda(dpk.kecamatan, matched.kecamatan)) {
+        bAlamat.push(`Kecamatan: "${matched.kecamatan || '-'}" -> "${dpk.kecamatan}"`);
+      }
+      if (dpk.kode_pos && beda(dpk.kode_pos, matched.kodePos)) {
+        bAlamat.push(`Kode pos: "${matched.kodePos || '-'}" -> "${dpk.kode_pos}"`);
+      }
+      tambahSeksi('Alamat', bAlamat);
+      // --- Orang Tua ---
+      const bOrtu: string[] = [];
+      const ayah = matched.ayah || ({} as Siswa['ayah']);
+      const ibu = matched.ibu || ({} as Siswa['ibu']);
+      if (dpk.nama_ayah && beda(dpk.nama_ayah, ayah.nama)) {
+        bOrtu.push(`Nama ayah: "${ayah.nama || '-'}" -> "${dpk.nama_ayah}"`);
+      }
+      if (dpk.nik_ayah && beda(dpk.nik_ayah, ayah.nik)) {
+        bOrtu.push(`NIK ayah: "${ayah.nik || '-'}" -> "${dpk.nik_ayah}"`);
+      }
+      if (dpk.pekerjaan_ayah_id_str && beda(dpk.pekerjaan_ayah_id_str, ayah.pekerjaan)) {
+        bOrtu.push(`Pekerjaan ayah: "${ayah.pekerjaan || '-'}" -> "${dpk.pekerjaan_ayah_id_str}"`);
+      }
+      if (dpk.penghasilan_ayah_id_str && beda(dpk.penghasilan_ayah_id_str, ayah.penghasilan)) {
+        bOrtu.push(`Penghasilan ayah: "${ayah.penghasilan || '-'}" -> "${dpk.penghasilan_ayah_id_str}"`);
+      }
+      if (dpk.nama_ibu && beda(dpk.nama_ibu, ibu.nama)) {
+        bOrtu.push(`Nama ibu: "${ibu.nama || '-'}" -> "${dpk.nama_ibu}"`);
+      }
+      if (dpk.nik_ibu && beda(dpk.nik_ibu, ibu.nik)) {
+        bOrtu.push(`NIK ibu: "${ibu.nik || '-'}" -> "${dpk.nik_ibu}"`);
+      }
+      if (dpk.pekerjaan_ibu_id_str && beda(dpk.pekerjaan_ibu_id_str, ibu.pekerjaan)) {
+        bOrtu.push(`Pekerjaan ibu: "${ibu.pekerjaan || '-'}" -> "${dpk.pekerjaan_ibu_id_str}"`);
+      }
+      if (dpk.penghasilan_ibu_id_str && beda(dpk.penghasilan_ibu_id_str, ibu.penghasilan)) {
+        bOrtu.push(`Penghasilan ibu: "${ibu.penghasilan || '-'}" -> "${dpk.penghasilan_ibu_id_str}"`);
+      }
+      tambahSeksi('Orang Tua', bOrtu);
+      // --- Fisik ---
+      const bFisik: string[] = [];
+      if (dpk.tinggi_badan && Number(dpk.tinggi_badan) !== matched.tinggiBadan) {
+        bFisik.push(`Tinggi badan: "${matched.tinggiBadan ?? '-'}" -> "${dpk.tinggi_badan}"`);
+      }
+      if (dpk.berat_badan && Number(dpk.berat_badan) !== matched.beratBadan) {
+        bFisik.push(`Berat badan: "${matched.beratBadan ?? '-'}" -> "${dpk.berat_badan}"`);
+      }
+      tambahSeksi('Fisik', bFisik);
+      // --- Sekolah Asal ---
+      const bSekolah: string[] = [];
+      if (dpk.sekolah_asal && beda(dpk.sekolah_asal, matched.asalSdMi)) {
+        bSekolah.push(`Asal sekolah: "${matched.asalSdMi || '-'}" -> "${dpk.sekolah_asal}"`);
+      }
+      tambahSeksi('Sekolah Asal', bSekolah);
+      for (const s of seksi) {
+        perubahan.push(`── ${s.judul} ──`);
+        for (const b of s.baris) perubahan.push(b);
+      }
+
       if (perubahan.length > 0) {
         result.berbeda.push({
           dapodik: dpk,
