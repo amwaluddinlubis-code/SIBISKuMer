@@ -139,7 +139,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5 hidden sm:block">
-                Standar Lembar Induk Kemdikbudristek & Sinkronisasi Dapodik ({jenjang})
+                Standar Lembar Induk Kemendikdasmen & Sinkronisasi Dapodik ({jenjang})
               </p>
             </div>
           </div>

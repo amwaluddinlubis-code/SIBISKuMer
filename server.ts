@@ -9,10 +9,36 @@ async function startServer() {
 
   app.use(express.json());
 
+  // ---- Pengamanan proxy Dapodik ----
+  // Host tujuan dibatasi (default: hanya lokal). Tambah via env DAPODIK_ALLOWED_HOSTS="host1,host2".
+  const ALLOWED_DAPODIK_HOSTS = (process.env.DAPODIK_ALLOWED_HOSTS || 'localhost,127.0.0.1,::1')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+
+  function validateDapodikTarget(host: unknown, port: unknown, npsn: unknown): { ok: boolean; message?: string; portNum?: number } {
+    const h = String(host ?? '').trim().toLowerCase();
+    if (!ALLOWED_DAPODIK_HOSTS.includes(h)) {
+      return { ok: false, message: `Host Dapodik "${host}" tidak diizinkan. Host yang diizinkan: ${ALLOWED_DAPODIK_HOSTS.join(', ')}.` };
+    }
+    const p = Number(port);
+    if (!Number.isInteger(p) || p < 1 || p > 65535) {
+      return { ok: false, message: 'Port Dapodik tidak valid (1-65535).' };
+    }
+    if (npsn !== undefined && npsn !== null && String(npsn).trim() !== '' && !/^\d{8}$/.test(String(npsn).trim())) {
+      return { ok: false, message: 'NPSN harus 8 digit angka.' };
+    }
+    return { ok: true, portNum: p };
+  }
+
   // Dapodik Web Service Proxy Routes
   app.post('/api/dapodik/fetch-sekolah', async (req, res) => {
     const { host = 'localhost', port = 5774, npsn, token } = req.body;
-    const targetUrl = `http://${host}:${port}/WebService/getSekolah?npsn=${npsn || ''}`;
+    const check = validateDapodikTarget(host, port, npsn);
+    if (!check.ok) {
+      return res.status(400).json({ success: false, message: check.message });
+    }
+    const targetUrl = `http://${String(host).trim().toLowerCase()}:${check.portNum}/WebService/getSekolah?npsn=${encodeURIComponent(String(npsn || '').trim())}`;
 
     try {
       const controller = new AbortController();
@@ -56,7 +82,11 @@ async function startServer() {
   });
   app.post('/api/dapodik/test-connection', async (req, res) => {
     const { host = 'localhost', port = 5774, npsn, token } = req.body;
-    const targetUrl = `http://${host}:${port}/WebService/getSekolah?npsn=${npsn || ''}`;
+    const check = validateDapodikTarget(host, port, npsn);
+    if (!check.ok) {
+      return res.status(400).json({ success: false, message: check.message });
+    }
+    const targetUrl = `http://${String(host).trim().toLowerCase()}:${check.portNum}/WebService/getSekolah?npsn=${encodeURIComponent(String(npsn || '').trim())}`;
 
     try {
       const controller = new AbortController();
@@ -94,7 +124,11 @@ async function startServer() {
 
   app.post('/api/dapodik/fetch-peserta-didik', async (req, res) => {
     const { host = 'localhost', port = 5774, npsn, token } = req.body;
-    const targetUrl = `http://${host}:${port}/WebService/getPesertaDidik?npsn=${npsn || ''}`;
+    const check = validateDapodikTarget(host, port, npsn);
+    if (!check.ok) {
+      return res.status(400).json({ success: false, message: check.message });
+    }
+    const targetUrl = `http://${String(host).trim().toLowerCase()}:${check.portNum}/WebService/getPesertaDidik?npsn=${encodeURIComponent(String(npsn || '').trim())}`;
 
     try {
       const controller = new AbortController();

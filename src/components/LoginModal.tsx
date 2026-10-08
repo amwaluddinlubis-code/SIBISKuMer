@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, KeyRound, UserCheck, AlertCircle, LogIn, Sparkles, UserX, School } from 'lucide-react';
+import { KeyRound, UserCheck, AlertCircle, LogIn, School } from 'lucide-react';
 import { AppUser } from '../types';
-import { getAllUsers } from '../utils/db';
+import { getAllUsers, saveUser } from '../utils/db';
+import { verifyPassword, ensurePasswordHash } from '../utils/crypto';
 import { initialUsersList } from '../data/initialData';
 
 interface LoginModalProps {
@@ -11,6 +12,7 @@ interface LoginModalProps {
   onLoginSuccess?: (user: AppUser) => void;
   onClose?: () => void;
   canClose?: boolean;
+  notice?: string;
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({
@@ -19,7 +21,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   onLogin,
   onLoginSuccess,
   onClose,
-  canClose = false
+  canClose = false,
+  notice
 }) => {
   const [internalUsers, setInternalUsers] = useState<AppUser[]>(users || initialUsersList);
   const [username, setUsername] = useState('');
@@ -57,12 +60,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
 
-    setTimeout(() => {
+    try {
       const cleanUser = username.trim().toLowerCase();
       const cleanPass = password.trim();
 
@@ -73,47 +76,39 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
       if (!matchedUser) {
         setError('Username tidak terdaftar dalam sistem.');
-        setIsLoading(false);
         return;
       }
 
       if (matchedUser.status === 'nonaktif') {
         setError('Akun ini sedang dinonaktifkan oleh Administrator. Hubungi pihak Tata Usaha.');
-        setIsLoading(false);
         return;
       }
 
-      // Check password (allow "administator" and "administrator" for administrator role)
-      let passOk = matchedUser.password === cleanPass;
-      if (cleanUser === 'administrator' && (cleanPass === 'administator' || cleanPass === 'administrator')) {
-        passOk = true;
+      // Migrasi akun lama (password plaintext) ke hash saat login berhasil
+      const migrated = await ensurePasswordHash(matchedUser);
+      if (migrated !== matchedUser) {
+        try { await saveUser(migrated); } catch { /* abaikan, lanjut login */ }
       }
+
+      const passOk = migrated.passwordHash
+        ? await verifyPassword(cleanPass, migrated.passwordHash)
+        : false;
 
       if (!passOk) {
         setError('Kata sandi (password) salah. Silakan periksa kembali.');
-        setIsLoading(false);
         return;
       }
 
       const updatedUser: AppUser = {
-        ...matchedUser,
+        ...migrated,
         terakhirLogin: new Date().toISOString()
       };
 
-      setIsLoading(false);
       notifyLogin(updatedUser);
-    }, 250);
-  };
-
-  const handleQuickLogin = (targetUsername: string) => {
-    const userList = internalUsers && internalUsers.length > 0 ? internalUsers : initialUsersList;
-    const matched = userList.find((u) => u.username.toLowerCase() === targetUsername.toLowerCase());
-    if (matched) {
-      const updated: AppUser = {
-        ...matched,
-        terakhirLogin: new Date().toISOString()
-      };
-      notifyLogin(updated);
+    } catch (err: any) {
+      setError(err?.message || 'Gagal memverifikasi login. Coba lagi.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -138,6 +133,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         </div>
 
         <div className="p-6 space-y-6">
+          {notice && (
+            <div className="flex items-start gap-2.5 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <p>{notice}</p>
+            </div>
+          )}
           {error && (
             <div className="flex items-start gap-2.5 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
@@ -195,111 +196,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             </button>
           </form>
 
-          {/* Preset / Quick Login Section */}
-          <div className="pt-4 border-t border-slate-200">
-            <div className="flex items-center justify-between mb-2.5">
-              <span className="text-xs font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                Pintasan Akun Pengguna
-              </span>
-              <span className="text-[10px] text-slate-400">Klik untuk masuk cepat</span>
-            </div>
-
-            <div className="space-y-2">
-              {/* Admin shortcut */}
-              <button
-                type="button"
-                onClick={() => {
-                  setUsername('administrator');
-                  setPassword('administator');
-                  handleQuickLogin('administrator');
-                }}
-                className="w-full text-left p-2.5 bg-gradient-to-r from-slate-50 to-blue-50/50 hover:from-blue-50 hover:to-indigo-50 border border-slate-200 hover:border-blue-300 rounded-xl flex items-center justify-between transition group cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-blue-700 text-white flex items-center justify-center shrink-0">
-                    <Shield className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                      <span>Administrator</span>
-                      <span className="px-1.5 py-0.2 rounded text-[10px] bg-blue-100 text-blue-800 font-semibold">
-                        administrator
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Pass: <code className="text-slate-700 font-mono">administator</code> • Hak Akses Penuh & CRUD
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs font-semibold text-blue-600 group-hover:translate-x-0.5 transition-transform">
-                  Pilih →
-                </span>
-              </button>
-
-              {/* Operator 1 shortcut */}
-              <button
-                type="button"
-                onClick={() => {
-                  setUsername('operator_bukuinduk');
-                  setPassword('operator123');
-                  handleQuickLogin('operator_bukuinduk');
-                }}
-                className="w-full text-left p-2.5 bg-slate-50 hover:bg-emerald-50/60 border border-slate-200 hover:border-emerald-300 rounded-xl flex items-center justify-between transition group cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                    <UserCheck className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                      <span>Operator: Siti Rahmawati, S.Kom.</span>
-                      <span className="px-1.5 py-0.2 rounded text-[10px] bg-emerald-100 text-emerald-800 font-semibold">
-                        operator
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      User: <code className="text-slate-700 font-mono">operator_bukuinduk</code> • Pass: <code className="text-slate-700 font-mono">operator123</code>
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs font-semibold text-emerald-600 group-hover:translate-x-0.5 transition-transform">
-                  Pilih →
-                </span>
-              </button>
-
-              {/* Operator 2 shortcut */}
-              <button
-                type="button"
-                onClick={() => {
-                  setUsername('operator_kesiswaan');
-                  setPassword('operator123');
-                  handleQuickLogin('operator_kesiswaan');
-                }}
-                className="w-full text-left p-2.5 bg-slate-50 hover:bg-amber-50/60 border border-slate-200 hover:border-amber-300 rounded-xl flex items-center justify-between transition group cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-amber-600 text-white flex items-center justify-center shrink-0">
-                    <UserCheck className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                      <span>Operator: Budi Santoso, S.Pd.</span>
-                      <span className="px-1.5 py-0.2 rounded text-[10px] bg-amber-100 text-amber-800 font-semibold">
-                        operator
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      User: <code className="text-slate-700 font-mono">operator_kesiswaan</code> • Pass: <code className="text-slate-700 font-mono">operator123</code>
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs font-semibold text-amber-600 group-hover:translate-x-0.5 transition-transform">
-                  Pilih →
-                </span>
-              </button>
-            </div>
-          </div>
 
           {canClose && onClose && (
             <button

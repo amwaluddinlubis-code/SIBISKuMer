@@ -272,7 +272,10 @@ export type UserRole = 'administrator' | 'operator';
 export interface AppUser {
   id: string;
   username: string;
+  /** @deprecated Hanya untuk migrasi akun lama. Password baru selalu disimpan sebagai hash. */
   password?: string;
+  /** Hash SHA-256 + salt, format "sha256$<salt>$<hash>". */
+  passwordHash?: string;
   namaLengkap: string;
   role: UserRole;
   email: string;

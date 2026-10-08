@@ -197,7 +197,7 @@ export const SiswaDetailModal: React.FC<SiswaDetailModalProps> = ({
           <div className="bg-amber-50/60 p-4 rounded-xl border border-amber-200 space-y-2">
             <h4 className="font-bold text-amber-950 text-xs uppercase tracking-wider flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-amber-600" />
-              Projek Penguatan Profil Pelajar Pancasila (P5)
+              Projek Penguatan Profil Lulusan
             </h4>
             {siswa.p5Projects && siswa.p5Projects.length > 0 ? (
               <div className="space-y-2">

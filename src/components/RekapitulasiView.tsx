@@ -196,11 +196,11 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
           </div>
         </div>
 
-        {/* 3. Capaian Profil Pelajar Pancasila (P5) */}
+        {/* 3. Capaian Profil Lulusan */}
         <div className="border border-slate-200 rounded-lg p-4 space-y-3">
           <h4 className="font-bold text-xs uppercase tracking-wide text-slate-900 flex items-center gap-1.5">
             <Award className="w-4 h-4 text-amber-600" />
-            4. Distribusi Capaian Dimensi Profil Pelajar Pancasila (P5 Kurikulum Merdeka)
+            4. Distribusi Capaian Dimensi Profil Lulusan (Kurikulum Merdeka)
           </h4>
           <p className="text-[11px] text-slate-500">
             Penilaian perkembangan 6 dimensi karakter siswa dalam pelaksanaan projek penguatan profil pelajar pancasila tingkat SMP.

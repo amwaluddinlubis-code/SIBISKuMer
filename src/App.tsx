@@ -18,6 +18,7 @@ import {
 import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser } from './types';
 import { initialSekolahProfile, initialDapodikConfig } from './data/initialData';
 import { Navbar } from './components/Navbar';
+import { useIdleLogout } from './hooks/useIdleLogout';
 import { DashboardStats } from './components/DashboardStats';
 import { SiswaList } from './components/SiswaList';
 import { DapodikSyncView } from './components/DapodikSyncView';
@@ -36,6 +37,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [impersonator, setImpersonator] = useState<AppUser | null>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [idleNotice, setIdleNotice] = useState(false);
 
   const [siswaList, setSiswaList] = useState<Siswa[]>([]);
   const [sekolah, setSekolah] = useState<SekolahProfile>(initialSekolahProfile);
@@ -110,6 +112,15 @@ export default function App() {
     setIsLoginOpen(true);
   };
 
+  const handleIdleTimeout = () => {
+    if (!currentUser) return;
+    handleLogout();
+    setIdleNotice(true);
+  };
+
+  // Otomatis keluar setelah 30 menit tidak ada aktivitas (perangkat bersama)
+  useIdleLogout(handleIdleTimeout, 30 * 60 * 1000, !!currentUser);
+
   const handleStartImpersonate = (operatorUser: AppUser) => {
     if (!currentUser) return;
     setImpersonateSession(currentUser, operatorUser);
@@ -148,6 +159,9 @@ export default function App() {
 
   // Handle Reset to Sample Data
   const handleResetSample = async () => {
+    if (!window.confirm('Muat ulang DATA CONTOH? Tindakan ini akan menimpa seluruh data yang ada dengan data contoh bawaan. Lanjutkan?')) {
+      return;
+    }
     await resetToInitialData();
     await loadData();
   };
@@ -356,7 +370,7 @@ export default function App() {
             Buku Induk Siswa {sekolah.jenjang || 'SMP'} • <strong>Kurikulum Merdeka {sekolah.jenjang === 'SD' ? '(Fase A, B, C)' : '(Fase D)'}</strong> & Sinkronisasi Web Service Dapodik Lokal
           </p>
           <p className="text-slate-400 text-[11px]">
-            Mode Offline Terenkripsi (IndexedDB PWA) • Standar Kemdikbudristek RI
+            Mode Offline (Data Tersimpan Aman di Perangkat) • Standar Kemendikdasmen RI
           </p>
         </div>
       </footer>
@@ -364,7 +378,8 @@ export default function App() {
       {/* Authentication Modal Gate */}
       <LoginModal
         isOpen={isLoginOpen}
-        onLoginSuccess={handleLoginSuccess}
+        onLoginSuccess={(u) => { setIdleNotice(false); handleLoginSuccess(u); }}
+        notice={idleNotice ? 'Sesi Anda berakhir otomatis karena tidak ada aktivitas selama 30 menit. Silakan masuk kembali.' : undefined}
       />
 
       {/* Modals */}
@@ -372,6 +387,7 @@ export default function App() {
         <SiswaFormModal
           initialData={editingSiswa}
           jenjang={sekolah.jenjang || 'SMP'}
+          existingSiswa={siswaList}
           onSave={handleSaveSiswa}
           onClose={() => {
             setIsFormOpen(false);
