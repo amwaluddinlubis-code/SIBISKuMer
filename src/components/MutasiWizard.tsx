@@ -79,9 +79,11 @@ export const MutasiWizard: React.FC<MutasiWizardProps> = ({
     // Cutoff sesi: hanya siswa yang terlihat pada tahun wizard (sesi) yang bisa dipilih.
     return (siswa || [])
       .filter((s) => s.statusSiswa === 'Aktif' && siswaTerlihatSesi(s, tahunAjaran))
+      // F11: operator hanya boleh melihat/mutasi siswa dalam rombel kewenangannya.
+      .filter((s) => canUserAccessRombel(currentUser, s.rombelSaatIni))
       .filter((s) => !k || s.namaLengkap.toLowerCase().includes(k) || (s.nisn || '').includes(k) || (s.rombelSaatIni || '').toLowerCase().includes(k))
       .slice(0, 30);
-  }, [siswa, cari, tahunAjaran]);
+  }, [siswa, cari, tahunAjaran, currentUser]);
 
   const siswaDipilih = useMemo(
     () => (siswa || []).find((s) => s.id === pilihId) || null,

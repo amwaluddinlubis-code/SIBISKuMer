@@ -186,3 +186,39 @@ Analisis ulang read-only menemukan 43 temuan (3 kritis, 11 tinggi, 16 sedang,
 Verifikasi: `npx tsc --noEmit` — nol error baru di semua file yang disentuh
 (34 error pre-existing di file lain tidak berubah). Sisa 16 temuan sedang +
 13 rendah belum dikerjakan.
+
+## Tahap 5c — Perbaikan Sisa Temuan Analisis Ulang (Sedang + Rendah) ✅ SELESAI (2026-10-09)
+
+16 temuan sedang + 13 rendah diperbaiki dalam satu gelombang (4 worker paralel).
+
+| ID | Temuan | Perbaikan (file) |
+|----|--------|------------------|
+| S8 | Pesan error login membocorkan username valid | `LoginModal.tsx`: pesan disamakan menjadi "Username atau kata sandi salah." di kedua kasus; audit internal tetap spesifik |
+| S9 | SHA-256 satu iterasi (dead code berbahaya) | `crypto.ts`: fungsi hash lemah dihapus; `ensurePasswordHash` kini di atas `password.ts` (PBKDF2) |
+| S10 | Password di-trim sebelum hash | `password.ts`: `hashPassword` tak lagi trim; `verifyPassword` coba tanpa trim lalu fallback trim (hash lama) + flag `perluRehash` |
+| S11 | Formula injection di ekspor Excel | `excel.ts`: helper `amanDariFormula` — sel `=`/`+`/`-`/`@` di-prefix `'` |
+| S12 | Lockout brute-force hanya di localStorage | `security.ts`: lapisan kedua di IndexedDB terpisah; terkunci bila salah satu lapisan terkunci (bukan pengganti rate-limit server) |
+| S5 | Restore sesi tak cek status user | Sudah tertangani S2 — diverifikasi, tidak diduplikasi |
+| S7 | Token Dapodik plaintext + ikut ke backup | `db.ts`: token dieksklusi dari `exportAllData()`; `DapodikSyncView.tsx`: peringatan plaintext di UI |
+| F5 | JK kosong dihitung Perempuan di rekap | `RekapitulasiView.tsx`: kategori ketiga "Belum diisi" |
+| F6 | Rekap hitung siswa non-Aktif | `RekapitulasiView.tsx`: kohort difilter `statusSiswa === 'Aktif'` |
+| F7 | Tiga pembulatan berbeda untuk rata-rata | `raportUtils.ts`: helper tunggal `bulatkanNilai()` (1 desimal) dipakai simpan/cetak/ekspor |
+| F8 | Mutasi keluar tak menulis riwayat | `App.tsx`: tulis entri `riwayatTahunAjaran`; `SiswaFormModal.tsx`: konfirmasi ubah status langsung ke Lulus/Keluar |
+| F9 | Draft form tak di-scope per sekolah | `SiswaFormModal.tsx`: `draftKey()` memakai `scopedStorageKey()` |
+| F10 | Tanggal lahir tak divalidasi | `validation.ts`: tolak masa depan & lahir setelah tgl diterima; kosong → warning |
+| F11 | Wizard mutasi langgar filter rombel | `MutasiWizard.tsx`: kandidat difilter `canUserAccessRombel` |
+| F12 | Keputusan "Lulus" tak propagasi status | `NilaiRaportView.tsx`: konfirmasi → `statusSiswa='Lulus'` + riwayat + audit |
+| F13 | Akses `kehadiran` tanpa guard → crash | `CetakBukuInduk.tsx`, `SiswaFormModal.tsx`: optional chaining + fallback `'-'` |
+| F14 | Nilai dikosongkan tersimpan 0 | `NilaiRaportView.tsx`: `''` → `null` ("belum dinilai"); rata-rata abaikan null |
+| F15 | Tutup tahun tak atomik | `App.tsx`: dua fase (hitung dulu, tulis via `saveSiswaBulk` satu transaksi); tahun dikunci hanya bila sukses |
+| F16 | Siswa tanpa rombel tak terkelola operator | `db.ts`: `filterSiswaByAccess` sertakan siswa tanpa rombel |
+| D7 | Hapus GTK/peta tak catat tombstone | `GtkView.tsx`, `PemetaanKelasView.tsx`: `catatHapusCloud('ptk'/'peta')`; `cloudSync.ts`: mapping diperluas |
+| D8 | Dialog tinjauan Dapodik tak lengkap | `dapodikSync.ts`: `compareDapodikWithExisting` tampilkan SEMUA field per seksi |
+| D11 | Isolasi sekolah via global mutable | `db.ts`: lock `operasiPanjangBerjalan`; ganti sekolah ditolak selama operasi berjalan |
+| D12 | Tombstone tak pernah dibersihkan | `cloudSync.ts`: prune tombstone >90 hari |
+| D14 | NPSN tertimpa diam-diam | `DapodikSyncView.tsx`: `konfirmasiUbahNpsn()` bila NPSN berbeda |
+| D15 | Restore timpa admin + abaikan tombstone | `db.ts`: admin tak ditimpa tanpa konfirmasi; user baru `mustChangePassword=true`; rekonsiliasi tombstone pasca-restore |
+
+Tidak diubah (keputusan sadar): D13 (foto mini — tradeoff terdokumentasi); `backupCrypto.ts` tidak dijadikan enkripsi penuh (terlalu berisiko); temuan rendah S11-excel-formula sudah termasuk di S11.
+
+Verifikasi: `npx tsc --noEmit` — nol error baru di semua file yang disentuh (32 error pre-existing di file lain, pola `unknown`/modul hilang, tidak berubah).

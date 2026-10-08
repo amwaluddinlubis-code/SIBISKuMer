@@ -42,11 +42,13 @@ import {
   saveRombelRefs,
   getAllPtkRefs,
   savePtkRefs,
+  deletePtkRef,
   getTutupTahun,
   saveTutupTahun,
   deleteTutupTahun,
   getAllPetaKelas,
   savePetaKelasList,
+  deletePetaKelas,
   getActiveSchool,
   getActiveDbName,
   scopedStorageKey,
@@ -264,7 +266,7 @@ async function ambilKoleksi<T>(key: string, coll: string): Promise<T[]> {
 
 async function ambilCloud(key: string, laporkan?: ProgresCloud): Promise<PotretCloud> {
   laporkan?.('Membaca data cloud…', 5);
-  const [siswa, pengguna, rombel, ptk, tutup, peta, hapus] = await Promise.all([
+  const [siswa, pengguna, rombel, ptk, tutup, peta, hapusMentah] = await Promise.all([
     ambilKoleksi<Siswa>(key, 'siswa'),
     ambilKoleksi<AppUser>(key, 'pengguna'),
     ambilKoleksi<RombelRef>(key, 'rombel'),
@@ -273,6 +275,25 @@ async function ambilCloud(key: string, laporkan?: ProgresCloud): Promise<PotretC
     ambilKoleksi<PetaKelas>(key, 'peta'),
     ambilKoleksi<Tombstone>(key, 'hapus'),
   ]);
+  // D12: bersihkan tombstone cloud berumur >90 hari.
+  // Tombstone lokal kedaluwarsa 30 hari (tombstone.ts), tetapi koleksi 'hapus'
+  // di cloud tidak pernah dibersihkan — perangkat yang offline lama lalu
+  // sinkron bisa kehilangan record (updatedAt lama) akibat penghapusan yang
+  // sudah basi. Batas 90 hari = kompromi: cukup lama agar semua perangkat
+  // aktif sempat menerima penghapusan, cukup pendek agar penghapusan basi
+  // tidak selamanya menghantui. Tradeoff yang diterima: perangkat offline
+  // >90 hari TIDAK akan menerapkan penghapusan setua itu.
+  const batasTomb = Date.now() - 90 * 86400000;
+  const hapus = (hapusMentah || []).filter((t) => t && t.coll && t.id && t.ts);
+  const basi = hapus.filter((t) => new Date(t.ts).getTime() < batasTomb);
+  const segar = hapus.filter((t) => new Date(t.ts).getTime() >= batasTomb);
+  if (basi.length > 0) {
+    await hapusBatch(
+      key,
+      'hapus',
+      basi.map((t) => `${t.coll}_${t.id}`)
+    ).catch(() => undefined);
+  }
   let profil: PotretCloud['profil'] = null;
   try {
     const ps = await getDoc(doc(firestoreDb, 'cloud', key, 'meta', 'profil'));
@@ -281,7 +302,7 @@ async function ambilCloud(key: string, laporkan?: ProgresCloud): Promise<PotretC
     /* profil opsional */
   }
   laporkan?.('Membaca data cloud…', 15);
-  return { siswa, pengguna, rombel, ptk, tutup, peta, profil, hapus };
+  return { siswa, pengguna, rombel, ptk, tutup, peta, profil, hapus: segar };
 }
 
 // ---------- Tulis batch ----------
@@ -369,9 +390,15 @@ async function gabungKeLokal(potret: PotretCloud, laporkan?: ProgresCloud): Prom
     const lokalSiswa = await getAllSiswa();
     const lokalUsers = await getAllUsers();
     const lokalTutup = await getTutupTahun();
+    // D7: GTK (ptk) & peta kelas ikut menerapkan tombstone cloud — sebelumnya
+    // hanya siswa/pengguna/tutup, sehingga data terhapus hidup lagi dari cloud.
+    const lokalPtk = await getAllPtkRefs();
+    const lokalPeta = await getAllPetaKelas();
     const hapusSiswa: string[] = [];
     const hapusUsers: string[] = [];
     const hapusTutup: string[] = [];
+    const hapusPtk: string[] = [];
+    const hapusPeta: string[] = [];
     const gugur = new Set<string>();
     for (const t of tombCloud) {
       if (t.coll === 'siswa') {
@@ -389,12 +416,24 @@ async function gabungKeLokal(potret: PotretCloud, laporkan?: ProgresCloud): Prom
         if (!l) continue;
         if (tsOf(l.ditutupPada) > t.ts) gugur.add(kunciTomb(t));
         else hapusTutup.push(t.id);
+      } else if (t.coll === 'ptk') {
+        const l = lokalPtk.find((r) => r.id === t.id);
+        if (!l) continue;
+        if (tsOf(l.updatedAt) > t.ts) gugur.add(kunciTomb(t));
+        else hapusPtk.push(t.id);
+      } else if (t.coll === 'peta') {
+        const l = lokalPeta.find((p) => p.id === t.id);
+        if (!l) continue;
+        if (tsOf(l.updatedAt) > t.ts) gugur.add(kunciTomb(t));
+        else hapusPeta.push(t.id);
       }
     }
     for (const id of hapusSiswa) await deleteSiswa(id).catch(() => undefined);
     for (const id of hapusUsers) await deleteUser(id).catch(() => undefined);
     for (const id of hapusTutup) await deleteTutupTahun(id).catch(() => undefined);
-    hasil.diunduh += hapusSiswa.length + hapusUsers.length + hapusTutup.length;
+    for (const id of hapusPtk) await deletePtkRef(id).catch(() => undefined);
+    for (const id of hapusPeta) await deletePetaKelas(id).catch(() => undefined);
+    hasil.diunduh += hapusSiswa.length + hapusUsers.length + hapusTutup.length + hapusPtk.length + hapusPeta.length;
     for (const t of tombCloud) {
       if (!gugur.has(kunciTomb(t))) tombCloudBerlaku.push(t);
     }
@@ -430,7 +469,12 @@ async function gabungKeLokal(potret: PotretCloud, laporkan?: ProgresCloud): Prom
     hasil.diunduh += gRombel.menangCloud.length;
   }
 
-  const gPtk = gabungLww(await getAllPtkRefs(), potret.ptk, (r) => r.id, (r) => tsOf(r.updatedAt));
+  // D7: saring record bertombstone di sisi lokal (pola sama seperti siswa) —
+  // tanpa ini GTK/peta yang baru dihapus bisa "hidup lagi" dari salinan cloud.
+  const lokPtk = hidup(await getAllPtkRefs(), 'ptk', (r) => r.id).filter(
+    (r) => !tombCloudBerlaku.some((t) => t.coll === 'ptk' && t.id === r.id)
+  );
+  const gPtk = gabungLww(lokPtk, potret.ptk, (r) => r.id, (r) => tsOf(r.updatedAt));
   if (gPtk.menangCloud.length > 0) {
     await savePtkRefs(gPtk.menangCloud);
     hasil.diunduh += gPtk.menangCloud.length;
@@ -443,7 +487,10 @@ async function gabungKeLokal(potret: PotretCloud, laporkan?: ProgresCloud): Prom
   for (const t of gTutup.menangCloud) await saveTutupTahun(t).catch(() => undefined);
   hasil.diunduh += gTutup.menangCloud.length;
 
-  const gPeta = gabungLww(await getAllPetaKelas(), potret.peta, (p) => p.id, (p) => tsOf(p.updatedAt));
+  const lokPeta = hidup(await getAllPetaKelas(), 'peta', (p) => p.id).filter(
+    (p) => !tombCloudBerlaku.some((t) => t.coll === 'peta' && t.id === p.id)
+  );
+  const gPeta = gabungLww(lokPeta, potret.peta, (p) => p.id, (p) => tsOf(p.updatedAt));
   if (gPeta.menangCloud.length > 0) {
     await savePetaKelasList(gPeta.menangCloud);
     hasil.diunduh += gPeta.menangCloud.length;
@@ -601,7 +648,11 @@ async function dorongKeCloud(
   // + hapus tombstone yang gugur di cloud.
   laporkan?.('Menyelaraskan data hapus…', 92);
   const segar = muatTombstoneLokal();
-  const collCloud: Record<string, string> = { siswa: 'siswa', pengguna: 'pengguna', tutup: 'tutup' };
+  // D7: ptk & peta WAJIB dipetakan ke koleksi cloud-nya (sebelumnya hanya
+  // siswa/pengguna/tutup) — tanpa ini dokumen cloud GTK/peta tidak ikut
+  // dihapus saat tombstone diunggah, sehingga data terhapus "hidup lagi"
+  // dari cloud. 'rombel' disertakan antisipatif (belum ada alur hapus).
+  const collCloud: Record<string, string> = { siswa: 'siswa', pengguna: 'pengguna', tutup: 'tutup', ptk: 'ptk', peta: 'peta', rombel: 'rombel' };
   if (segar.length > 0) {
     await tulisBatch(
       key,
