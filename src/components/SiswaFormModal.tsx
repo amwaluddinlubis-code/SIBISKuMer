@@ -5,6 +5,8 @@ import { Siswa, JenisKelamin, Agama, TingkatKelas, JalurMasuk, StatusSiswa, Pred
 interface SiswaFormModalProps {
   initialData?: Siswa | null;
   jenjang?: JenjangSekolah;
+  /** Daftar siswa lain untuk validasi duplikat NISN. */
+  existingSiswa?: Siswa[];
   onSave: (siswa: Siswa) => Promise<void>;
   onClose: () => void;
 }
@@ -12,6 +14,7 @@ interface SiswaFormModalProps {
 export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
   initialData,
   jenjang = 'SMP',
+  existingSiswa = [],
   onSave,
   onClose
 }) => {
@@ -150,6 +153,16 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
     }
     if (!formData.nisn.trim()) {
       alert('NISN siswa wajib diisi!');
+      setActiveSection('identitas');
+      return;
+    }
+    // Cegah duplikat NISN (kunci identitas resmi siswa)
+    const nisnBersih = formData.nisn.trim();
+    const duplikat = (existingSiswa || []).find(
+      (s) => s.nisn?.trim() === nisnBersih && s.id !== formData.id
+    );
+    if (duplikat) {
+      alert(`NISN ${nisnBersih} sudah digunakan oleh "${duplikat.namaLengkap}". Setiap siswa wajib memiliki NISN yang unik.`);
       setActiveSection('identitas');
       return;
     }
@@ -989,7 +1002,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="font-bold text-amber-950 text-sm flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-amber-600" />
-                    Projek Penguatan Profil Pelajar Pancasila (P5)
+                    Projek Penguatan Profil Lulusan
                   </h4>
                 </div>
 
