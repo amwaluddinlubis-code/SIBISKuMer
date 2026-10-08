@@ -43,6 +43,7 @@ import {
 } from './utils/db';
 import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, TingkatKelas, PetaKelas, ModeTampilan } from './types';
 import { buildSnapshot } from './utils/arsip';
+import { useIdleLogout } from './hooks/useIdleLogout';
 import { resolveTemaEfektif, bacaModeTampilan, simpanModeTampilan, terapkanModeTampilan, modeBerikutnya } from './utils/tema';
 import { getDaftarTahunAjaran, getTahunDiizinkan } from './utils/tahunAjaran';
 import { tahunSesiEfektif, siswaTerlihatSesi } from './utils/sesi';
@@ -280,6 +281,8 @@ export default function App() {
   );
 
   // Check initial user authentication session (+ sesi tahun ajaran)
+  // S2: sesi dari localStorage TIDAK langsung dipercaya — divalidasi ulang ke
+  // database (user harus ADA & status 'aktif'), dan role/nama diambil dari DB.
   useEffect(() => {
     const sessionUser = getCurrentUserSession();
     const impUser = getImpersonateSession();
@@ -296,18 +299,49 @@ export default function App() {
       /* abaikan */
     }
 
-    if (sessionUser) {
-      // Sesi lama tanpa TA: tetap izinkan masuk, TA akan dilengkapi
-      // setelah data dimuat (efek validasi di bawah).
-      setCurrentUser(sessionUser);
-      setImpersonator(impUser);
-      setSessionTahun(sessionTA);
-      setIsLoginOpen(false);
-    } else {
+    if (!sessionUser) {
       clearSessionTahunAjaran();
       setSessionTahun(null);
       setIsLoginOpen(true);
+      return;
     }
+
+    // S2: validasi sesi ke database sebelum peran dari localStorage dipakai.
+    (async () => {
+      try {
+        const users = await getAllUsers();
+        const dbUser =
+          users.find((u) => u.id === sessionUser.id) ??
+          users.find((u) => u.username.toLowerCase() === sessionUser.username.toLowerCase());
+        if (!dbUser || dbUser.status !== 'aktif') {
+          // S2: akun tidak ada / dinonaktifkan → paksa logout, jangan restore sesi.
+          clearCurrentUserSession();
+          clearImpersonateSession();
+          clearSessionTahunAjaran();
+          setCurrentUser(null);
+          setImpersonator(null);
+          setSessionTahun(null);
+          setIsLoginOpen(true);
+          toast('Sesi berakhir: akun tidak ditemukan atau dinonaktifkan.', 'error');
+          return;
+        }
+        // Sesi lama tanpa TA: tetap izinkan masuk, TA akan dilengkapi
+        // setelah data dimuat (efek validasi di bawah).
+        setCurrentUserSession(dbUser); // S2: sinkronkan sesi tersimpan dengan data DB
+        setCurrentUser(dbUser); // S2: pakai role/nama dari DB, bukan dari sesi
+        setImpersonator(impUser);
+        setSessionTahun(sessionTA);
+        setIsLoginOpen(false);
+      } catch {
+        // S2: gagal membaca DB saat boot → tolak sesi, jangan percaya peran buta.
+        clearCurrentUserSession();
+        clearImpersonateSession();
+        setCurrentUser(null);
+        setImpersonator(null);
+        setIsLoginOpen(true);
+        toast('Gagal memvalidasi sesi. Silakan masuk kembali.', 'error');
+      }
+    })();
   }, []);
 
   // Penjadwal cadangan otomatis: centang tiap menit, snapshot bila jatuh tempo.
@@ -546,7 +580,8 @@ export default function App() {
           args.tahunBaru,
           (g.nextTingkat || g.tingkat) as TingkatKelas,
           g.status === 'Lulus' ? g.rombel : g.nextRombel.trim().toUpperCase(),
-          g.status
+          g.status,
+          args.tahunTutup // F1: tahun sesi yang ditutup → tahunLama riwayat
         );
       }
 
@@ -745,6 +780,18 @@ export default function App() {
     setIsLoginOpen(true);
   };
 
+  // S3: logout otomatis setelah 30 menit tanpa aktivitas (perangkat bersama di
+  // sekolah tidak boleh membiarkan sesi terbuka). Timer di-reset pada setiap
+  // aktivitas user dan dibersihkan saat logout/unmount oleh hook.
+  useIdleLogout(
+    () => {
+      toast('Anda keluar otomatis karena 30 menit tidak aktif.', 'warning');
+      handleLogout();
+    },
+    30 * 60 * 1000,
+    !!currentUser
+  );
+
   const handleSwitchTahun = useCallback((tahun: string) => {
     const t = (tahun || '').trim();
     if (!t) return;
@@ -765,8 +812,24 @@ export default function App() {
     toast(`Sesi tahun ajaran: ${t}.`, 'success');
   }, [currentUser, daftarTahunAjaran]);
 
-  const handleStartImpersonate = (operatorUser: AppUser) => {
+  // S2: izin impersonate diverifikasi dari data database — peran administrator
+  // dicek ulang terhadap record DB yang masih aktif, bukan dari memori.
+  const handleStartImpersonate = async (operatorUser: AppUser) => {
     if (!currentUser) return;
+    let bolehMenyamar = false;
+    try {
+      const users = await getAllUsers();
+      const dbSelf =
+        users.find((u) => u.id === currentUser.id) ??
+        users.find((u) => u.username.toLowerCase() === currentUser.username.toLowerCase());
+      bolehMenyamar = !!dbSelf && dbSelf.status === 'aktif' && isAdministrator(dbSelf); // S2
+    } catch {
+      bolehMenyamar = false;
+    }
+    if (!bolehMenyamar) {
+      toast('Akses ditolak: impersonate hanya untuk Administrator yang masih aktif.', 'error');
+      return;
+    }
     if (sessionTahun && !canUserAccessTahun(operatorUser, sessionTahun)) {
       toast(`Operator @${operatorUser.username} tidak memiliki akses ke sesi TA ${sessionTahun}.`, 'error');
       return;
