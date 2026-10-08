@@ -226,7 +226,7 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
         <div className="relative z-10 max-w-3xl">
           <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-blue-800/80 text-blue-200 text-xs font-semibold mb-2">
             <Server className="w-3.5 h-3.5 text-amber-300" />
-            Integrasi Resmi Dapodik Kemdikbudristek RI
+            Integrasi Resmi Dapodik Kemendikdasmen RI
           </div>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
             Sinkronisasi Web Service Dapodik Lokal

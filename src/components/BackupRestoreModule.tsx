@@ -36,6 +36,7 @@ import {
   DriveBackupFile 
 } from '../utils/googleDriveService';
 import { User } from 'firebase/auth';
+import { encryptBackup, decryptBackup, isEncryptedBackup } from '../utils/backupCrypto';
 
 interface BackupRestoreModuleProps {
   sekolah: SekolahProfile;
@@ -60,6 +61,8 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
   // Local state
   const [isExportingLocal, setIsExportingLocal] = useState(false);
   const [isImportingLocal, setIsImportingLocal] = useState(false);
+  const [exportPassword, setExportPassword] = useState('');
+  const [importPassword, setImportPassword] = useState('');
 
   // Drive actions state
   const [isUploadingDrive, setIsUploadingDrive] = useState(false);
@@ -134,7 +137,7 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     }
   };
 
-  // Local Backup: Download JSON file
+  // Local Backup: Download JSON file (opsional: terenkripsi dengan password)
   const handleExportLocal = async () => {
     try {
       setIsExportingLocal(true);
@@ -142,9 +145,15 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
       const schoolName = (sekolah.nama || 'Sekolah').replace(/[^a-zA-Z0-9]/g, '_');
       const dateStr = new Date().toISOString().slice(0, 10);
       const timeStr = new Date().toTimeString().slice(0, 5).replace(':', '-');
-      const filename = `Backup_BukuInduk_${schoolName}_${dateStr}_${timeStr}.json`;
 
-      const blob = new Blob([jsonStr], { type: 'application/json' });
+      let payload = jsonStr;
+      let filename = `Backup_BukuInduk_${schoolName}_${dateStr}_${timeStr}.json`;
+      if (exportPassword.trim()) {
+        payload = await encryptBackup(jsonStr, exportPassword.trim());
+        filename = `Backup_BukuInduk_${schoolName}_${dateStr}_${timeStr}.enc.json`;
+      }
+
+      const blob = new Blob([payload], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -154,7 +163,10 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      showStatus('success', `Cadangan lokal berhasil diunduh (${filename}).`);
+      showStatus('success', exportPassword.trim()
+        ? `Cadangan TERENKRIPSI berhasil diunduh (${filename}). Simpan password baik-baik — tanpa password file tidak bisa dibuka.`
+        : `Cadangan lokal berhasil diunduh (${filename}).`);
+      setExportPassword('');
     } catch (err: any) {
       showStatus('error', `Gagal membuat cadangan lokal: ${err.message}`);
     } finally {
@@ -162,7 +174,7 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     }
   };
 
-  // Local Restore: Select JSON file from computer
+  // Local Restore: Select JSON file from computer (mendukung file terenkripsi)
   const handleImportLocal = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -175,9 +187,18 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     try {
       setIsImportingLocal(true);
       const text = await file.text();
-      const res = await importDatabaseBackup(text);
+      let jsonStr = text;
+      if (isEncryptedBackup(text)) {
+        if (!importPassword.trim()) {
+          showStatus('error', 'File ini terenkripsi. Masukkan password cadangan pada kolom di bawah, lalu pilih berkas lagi.');
+          return;
+        }
+        jsonStr = await decryptBackup(text, importPassword.trim());
+      }
+      const res = await importDatabaseBackup(jsonStr);
       if (res.success) {
         showStatus('success', res.message);
+        setImportPassword('');
         onDataChanged();
       } else {
         showStatus('error', `Gagal memulihkan data: ${res.message}`);
@@ -410,6 +431,18 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
                     <p className="text-[11px] text-slate-500 mt-1">
                       Menghasilkan file snapshot lengkap yang siap diunduh secara instan tanpa membutuhkan koneksi internet.
                     </p>
+                    <div className="mt-2.5">
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Password enkripsi <span className="font-normal text-slate-400">(opsional, min. 8 karakter — sangat disarankan untuk file di flashdisk)</span>
+                      </label>
+                      <input
+                        type="password"
+                        value={exportPassword}
+                        onChange={(e) => setExportPassword(e.target.value)}
+                        placeholder="Kosongkan = file biasa tanpa enkripsi"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                      />
+                    </div>
                   </div>
                   <button
                     onClick={handleExportLocal}
@@ -431,15 +464,27 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
                       Pulihkan dari Komputer Lokal (Upload .json)
                     </h4>
                     <p className="text-[11px] text-slate-600 mt-1">
-                      Pilih berkas cadangan .json dari komputer Anda untuk memulihkan seluruh data ke aplikasi.
+                      Pilih berkas cadangan .json dari komputer Anda untuk memulihkan seluruh data ke aplikasi. Mendukung file terenkripsi (.enc.json).
                     </p>
+                    <div className="mt-2.5">
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Password file terenkripsi <span className="font-normal text-slate-400">(hanya bila file .enc.json)</span>
+                      </label>
+                      <input
+                        type="password"
+                        value={importPassword}
+                        onChange={(e) => setImportPassword(e.target.value)}
+                        placeholder="Masukkan password cadangan terenkripsi"
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
+                      />
+                    </div>
                   </div>
                   <label className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer">
                     <Upload className="w-3.5 h-3.5" />
                     <span>{isImportingLocal ? 'Memulihkan...' : 'Pilih Berkas'}</span>
                     <input
                       type="file"
-                      accept=".json"
+                      accept=".json,.enc.json,application/json"
                       onChange={handleImportLocal}
                       disabled={isImportingLocal}
                       className="hidden"
