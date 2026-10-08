@@ -23,7 +23,7 @@ import {
   Play
 } from 'lucide-react';
 import { SekolahProfile, AppUser, AutoBackupSnapshot } from '../types';
-import { exportDatabaseBackup, importDatabaseBackup, resetToInitialData, clearDatabase, deleteAutoSnapshot, parseBackupPayload, importSelectiveSiswa, type BackupPayload } from '../utils/db';
+import { exportDatabaseBackup, importDatabaseBackup, resetToInitialData, clearDatabase, deleteAutoSnapshot, parseBackupPayload, importSelectiveSiswa, type BackupPayload, type RestoreMode } from '../utils/db';
 import { catatAudit } from '../utils/audit';
 import {
   bacaAutoBackupSetting,
@@ -104,6 +104,26 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
   // Local state
   const [isExportingLocal, setIsExportingLocal] = useState(false);
   const [isImportingLocal, setIsImportingLocal] = useState(false);
+
+  // D3: mode restore baru ('gabung' | 'ganti-total') + pratinjau berkas
+  // sebelum eksekusi (untuk cek NPSN & konfirmasi sekolah lain).
+  const [restoreMode, setRestoreMode] = useState<RestoreMode>('gabung');
+  const [ackSekolahLain, setAckSekolahLain] = useState(false);
+  const [fileRestore, setFileRestore] = useState<{
+    namaFile: string;
+    teks: string;
+    npsnBackup: string;
+    namaSekolahBackup: string;
+    totalSiswa: number;
+  } | null>(null);
+
+  /** D3: true bila NPSN berkas berbeda dari NPSN sekolah aktif. */
+  const npsnBerkasBeda = (): boolean => {
+    if (!fileRestore) return false;
+    const aktif = (sekolah.npsn || '').trim();
+    const berkas = (fileRestore.npsnBackup || '').trim();
+    return !!aktif && !!berkas && aktif !== berkas;
+  };
 
   // Drive actions state
   const [isUploadingDrive, setIsUploadingDrive] = useState(false);
@@ -265,35 +285,83 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     }
   };
 
-  // Local Restore: Select JSON file from computer
-  const handleImportLocal = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // D3: Langkah 1 — pilih berkas: baca & pratinjau (cek NPSN) TANPA langsung
+  // memulihkan. User memilih mode restore & konfirmasi dulu di panel pratinjau.
+  const handlePilihBerkasRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
+    try {
+      const teks = await file.text();
+      const { payload, totalSiswa } = parseBackupPayload(teks);
+      setFileRestore({
+        namaFile: file.name,
+        teks,
+        npsnBackup: (payload.sekolah?.npsn || '').trim(),
+        namaSekolahBackup: payload.sekolah?.nama || '(tanpa nama sekolah)',
+        totalSiswa,
+      });
+      setRestoreMode('gabung');
+      setAckSekolahLain(false);
+    } catch (err: any) {
+      setFileRestore(null);
+      showStatus('error', `Berkas cadangan tidak valid: ${err.message}`);
+    }
+  };
 
-    if (!(await confirmDialog(`Peringatan: Memulihkan cadangan "${file.name}" akan menimpa data siswa dan konfigurasi yang ada. Lanjutkan pemulihan?`, { confirmLabel: 'Ya, Pulihkan' }))) {
-      e.target.value = '';
+  // D3: Langkah 2 — eksekusi restore dengan mode & konfirmasi yang dipilih.
+  const handleEksekusiRestore = async () => {
+    if (!fileRestore || isImportingLocal) return;
+    const bedaSekolah = npsnBerkasBeda();
+    // D3: NPSN berkas ≠ NPSN aktif → checkbox wajib dicentang, kalau tidak
+    // restore akan DITOLAK (oleh UI ini maupun oleh server).
+    if (bedaSekolah && !ackSekolahLain) {
+      showStatus('error', 'Wajib centang "Saya paham file ini berisi data sekolah lain (NPSN berbeda)" untuk melanjutkan.');
+      return;
+    }
+    const labelMode = restoreMode === 'ganti-total'
+      ? 'GANTI TOTAL (seluruh data sekolah aktif dihapus dulu)'
+      : 'GABUNG (data berkas digabung ke data yang ada)';
+    if (!(await confirmDialog(
+      `Pulihkan cadangan "${fileRestore.namaFile}" dengan mode ${labelMode}?${bedaSekolah ? '\nPERHATIAN: NPSN berkas berbeda dari sekolah aktif.' : ''}`,
+      { confirmLabel: 'Ya, Pulihkan', danger: restoreMode === 'ganti-total' }
+    ))) {
       return;
     }
 
+    setIsImportingLocal(true);
     try {
-      setIsImportingLocal(true);
-      const text = await file.text();
-      const res = await importDatabaseBackup(text);
-      if (res.success) {
-        showStatus('success', res.message);
+      const res = await importDatabaseBackup(fileRestore.teks, {
+        mode: restoreMode,
+        konfirmasiSekolahLain: ackSekolahLain,
+      });
+      // D3: tampilkan hasil restore (ditolak/digabung/diganti + alasan) ke user.
+      if (res.status === 'ditolak') {
+        showStatus('error', `Pemulihan DITOLAK: ${res.alasan || res.message}`);
         catatAudit('backup_pulihkan', {
           entitas: 'backup',
-          ringkasan: `Pulihkan dari file lokal "${file.name}" (${res.count} siswa)`,
+          ringkasan: `Restore DITOLAK "${fileRestore.namaFile}": ${res.alasan || res.message}`,
+        });
+      } else if (res.status === 'diganti' || res.status === 'digabung') {
+        const label = res.status === 'diganti' ? 'DIGANTI TOTAL' : 'DIGABUNG';
+        showStatus('success', `Pemulihan ${label}: ${res.message}`);
+        catatAudit('backup_pulihkan', {
+          entitas: 'backup',
+          ringkasan: `Pulihkan dari file lokal "${fileRestore.namaFile}" mode ${restoreMode} (${res.count} siswa)`,
         });
         onDataChanged();
-      } else {
+      } else if (!res.success) {
         showStatus('error', `Gagal memulihkan data: ${res.message}`);
+      } else {
+        showStatus('success', res.message);
+        onDataChanged();
       }
     } catch (err: any) {
       showStatus('error', `Gagal memproses file cadangan lokal: ${err.message}`);
     } finally {
       setIsImportingLocal(false);
-      e.target.value = '';
+      setFileRestore(null);
+      setAckSekolahLain(false);
     }
   };
 
@@ -777,12 +845,84 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
                     <input
                       type="file"
                       accept=".json"
-                      onChange={handleImportLocal}
+                      onChange={handlePilihBerkasRestore}
                       disabled={isImportingLocal}
                       className="hidden"
                     />
                   </label>
                 </div>
+                {/* D3: panel pratinjau berkas + pilihan mode restore */}
+                {fileRestore && (
+                  <div className="mt-3 rounded-xl border border-emerald-300 bg-white p-3 text-xs space-y-3">
+                    <div>
+                      <div className="font-bold text-slate-900 truncate">{fileRestore.namaFile}</div>
+                      <div className="text-slate-600 mt-0.5">
+                        {fileRestore.namaSekolahBackup} • NPSN berkas:{' '}
+                        <strong>{fileRestore.npsnBackup || '-'}</strong> vs NPSN aktif:{' '}
+                        <strong>{(sekolah.npsn || '').trim() || '-'}</strong> • {fileRestore.totalSiswa} siswa
+                      </div>
+                      {npsnBerkasBeda() && (
+                        <div className="mt-1.5 flex items-start gap-1.5 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 font-semibold">
+                          <ShieldAlert className="w-4 h-4 shrink-0 mt-px" />
+                          <span>Berkas ini berasal dari sekolah lain (NPSN berbeda). Pernyataan di bawah wajib dicentang untuk melanjutkan.</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="font-bold text-slate-800">Mode pemulihan:</div>
+                      <label className="flex items-start gap-2 cursor-pointer text-slate-700">
+                        <input
+                          type="radio"
+                          name="restore-mode"
+                          checked={restoreMode === 'gabung'}
+                          onChange={() => setRestoreMode('gabung')}
+                          className="mt-0.5"
+                        />
+                        <span><strong>Gabung</strong> — data berkas digabung ke data yang ada (upsert, data lama tetap).</span>
+                      </label>
+                      <label className="flex items-start gap-2 cursor-pointer text-slate-700">
+                        <input
+                          type="radio"
+                          name="restore-mode"
+                          checked={restoreMode === 'ganti-total'}
+                          onChange={() => setRestoreMode('ganti-total')}
+                          className="mt-0.5"
+                        />
+                        <span><strong>Ganti total</strong> — <span className="text-rose-700 font-semibold">hapus dulu seluruh data sekolah aktif</span>, lalu pulihkan dari berkas.</span>
+                      </label>
+                    </div>
+                    <label className={`flex items-start gap-2 rounded-lg border px-2 py-1.5 cursor-pointer ${npsnBerkasBeda() ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
+                      <input
+                        type="checkbox"
+                        checked={ackSekolahLain}
+                        onChange={(e) => setAckSekolahLain(e.target.checked)}
+                        className="mt-0.5"
+                      />
+                      <span className="font-semibold text-slate-800">
+                        Saya paham file ini berisi data sekolah lain (NPSN berbeda)
+                        {npsnBerkasBeda() ? ' — wajib dicentang.' : '.'}
+                      </span>
+                    </label>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { setFileRestore(null); setAckSekolahLain(false); }}
+                        disabled={isImportingLocal}
+                        className="px-3 py-1.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50 disabled:opacity-60 cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleEksekusiRestore}
+                        disabled={isImportingLocal}
+                        className="px-4 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold disabled:opacity-60 cursor-pointer"
+                      >
+                        {isImportingLocal ? 'Memulihkan…' : 'Pulihkan Sekarang'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
