@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import crypto from 'crypto';
 // Catatan: 'vite' diimpor dinamis hanya saat development agar bundel produksi
 // (dist/server.cjs, dipakai aplikasi desktop Electron) tidak butuh vite runtime.
 import { mockDapodikPesertaDidik, mockDapodikSekolah, mockDapodikRombel, mockDapodikPtk, mockDapodikPengguna } from './src/data/initialData';
@@ -32,6 +33,9 @@ async function startServer() {
   }
 
   async function fetchDapodikRaw(targetUrl: string, token: string, timeoutMs: number): Promise<any> {
+    // S4 (audit token): ke Dapodik HANYA dikirim header Authorization yang
+    // dibangun dari field `token` eksplisit di body — header mentah peminta
+    // (req.headers) TIDAK PERNAH diteruskan ke Dapodik.
     // Coba 2x: Dapodik desktop kadang menolak request pertama / kewalahan request beruntun
     let lastErr: any = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -104,7 +108,103 @@ async function startServer() {
     return `${targetUrl}${sep}semester_id=${encodeURIComponent(sid)}`;
   }
 
-  app.post('/api/dapodik/fetch-sekolah', async (req, res) => {
+  // ============ S4: Pengamanan proxy Web Service Dapodik (anti-SSRF) ============
+  // Proxy ini mem-fetch host/port yang dikirim peminta — tanpa pengaman, siapa
+  // pun di LAN bisa memaksa server me-fetch host/port internal arbitrer.
+  // Tiga lapis pengaman: (1) allowlist host, (2) validasi port, (3) header rahasia.
+
+  /** S4: host yang selalu diizinkan — loopback lokal saja. */
+  const DAPODIK_LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+  /** S4: host tambahan yang diizinkan eksplisit via env DAPODIK_ALLOW_HOSTS (comma-separated). */
+  function dapodikExtraAllowHosts(): Set<string> {
+    return new Set(
+      String(process.env.DAPODIK_ALLOW_HOSTS || '')
+        .split(',')
+        .map((h) => h.trim().toLowerCase().replace(/^\[|\]$/g, ''))
+        .filter(Boolean)
+    );
+  }
+
+  /** S4: host hanya boleh loopback atau tercantum di DAPODIK_ALLOW_HOSTS. */
+  function isDapodikHostAllowed(rawHost: unknown): boolean {
+    if (typeof rawHost !== 'string') return false;
+    const host = rawHost.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+    if (!host) return false;
+    if (DAPODIK_LOOPBACK_HOSTS.has(host)) return true;
+    return dapodikExtraAllowHosts().has(host);
+  }
+
+  /** S4: perbandingan secret constant-time (tahan timing attack). */
+  function secretsMatch(provided: string, expected: string): boolean {
+    const a = Buffer.from(provided, 'utf8');
+    const b = Buffer.from(expected, 'utf8');
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  }
+
+  /** S4: middleware pengaman untuk semua endpoint proxy Dapodik. */
+  function dapodikProxyGuard(
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) {
+    // (3) Secret proxy WAJIB dikonfigurasi admin; tanpanya SEMUA request proxy ditolak.
+    const proxySecret = process.env.DAPODIK_PROXY_SECRET;
+    if (!proxySecret) {
+      return res.status(503).json({
+        success: false,
+        message:
+          'Proxy Dapodik dinonaktifkan: admin server belum mengatur variabel lingkungan DAPODIK_PROXY_SECRET. ' +
+          'Atur DAPODIK_PROXY_SECRET ke nilai acak yang kuat, lalu restart server.',
+      });
+    }
+    const provided = String(req.get('x-dapodik-secret') || '');
+    if (!provided || !secretsMatch(provided, proxySecret)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Akses proxy Dapodik ditolak: header x-dapodik-secret tidak ada atau tidak cocok.',
+      });
+    }
+
+    // (2) Port harus integer 1-65535, selain itu tolak dengan 400.
+    const rawPort = req.body?.port;
+    const portCandidate = rawPort === undefined || rawPort === null || rawPort === '' ? 5774 : rawPort;
+    const portNum =
+      typeof portCandidate === 'number'
+        ? portCandidate
+        : /^\d+$/.test(String(portCandidate).trim())
+          ? Number(String(portCandidate).trim())
+          : NaN;
+    if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+      return res.status(400).json({
+        success: false,
+        message: `Port Dapodik tidak valid ("${String(rawPort ?? '').slice(0, 40)}"): harus bilangan bulat 1-65535.`,
+      });
+    }
+
+    // (1) Host hanya boleh loopback atau tercantum di DAPODIK_ALLOW_HOSTS.
+    const rawHost =
+      req.body?.host === undefined || req.body?.host === null || req.body?.host === ''
+        ? 'localhost'
+        : req.body.host;
+    if (!isDapodikHostAllowed(rawHost)) {
+      return res.status(403).json({
+        success: false,
+        message:
+          `Host Dapodik "${String(rawHost).slice(0, 80)}" tidak diizinkan. ` +
+          'Proxy hanya boleh menjangkau localhost/127.0.0.1/::1 atau host yang tercantum di env DAPODIK_ALLOW_HOSTS.',
+      });
+    }
+
+    // Teruskan nilai yang sudah divalidasi ke handler agar URL dibangun dari input aman.
+    req.body.host = typeof rawHost === 'string' ? rawHost.trim() : rawHost;
+    req.body.port = portNum;
+    return next();
+  }
+  // ============ akhir S4 ============
+
+  app.post('/api/dapodik/fetch-sekolah', dapodikProxyGuard, async (req, res) => {
     const { host = 'localhost', port = 5774, npsn, token, semesterId } = req.body;
     const targetUrl = withSemester(
       `http://${host}:${port}/WebService/getSekolah?npsn=${npsn || ''}`,
@@ -156,7 +256,7 @@ async function startServer() {
       note: 'Data emulator Pengguna Web Service Dapodik.',
     });
   });
-  app.post('/api/dapodik/test-connection', async (req, res) => {
+  app.post('/api/dapodik/test-connection', dapodikProxyGuard, async (req, res) => {
     const { host = 'localhost', port = 5774, npsn, token } = req.body;
     const targetUrl = `http://${host}:${port}/WebService/getSekolah?npsn=${npsn || ''}`;
 
@@ -178,7 +278,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/dapodik/fetch-peserta-didik', async (req, res) => {
+  app.post('/api/dapodik/fetch-peserta-didik', dapodikProxyGuard, async (req, res) => {
     const { host = 'localhost', port = 5774, npsn, token, semesterId } = req.body;
     const targetUrl = withSemester(
       `http://${host}:${port}/WebService/getPesertaDidik?npsn=${npsn || ''}`,
@@ -241,14 +341,14 @@ async function startServer() {
     }
   }
 
-  app.post('/api/dapodik/fetch-rombel', (req, res) =>
+  app.post('/api/dapodik/fetch-rombel', dapodikProxyGuard, (req, res) =>
     proxyDapodikList(req, res, 'getRombonganBelajar', 6000)
   );
   // Urutan default getGtk dulu (terbukti ada di Dapodik 2026/2027); getPTK untuk versi lama
-  app.post('/api/dapodik/fetch-ptk', (req, res) =>
+  app.post('/api/dapodik/fetch-ptk', dapodikProxyGuard, (req, res) =>
     proxyDapodikList(req, res, 'getGtk', 6000)
   );
-  app.post('/api/dapodik/fetch-pengguna', (req, res) =>
+  app.post('/api/dapodik/fetch-pengguna', dapodikProxyGuard, (req, res) =>
     proxyDapodikList(req, res, 'getPengguna', 6000)
   );
 
@@ -275,8 +375,11 @@ async function startServer() {
     });
   }
 
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
+  // S4: bind ke loopback secara default agar proxy tidak terekspos ke LAN;
+  // override bila memang perlu via env HOST (mis. HOST=0.0.0.0).
+  const LISTEN_HOST = process.env.HOST || '127.0.0.1';
+  const server = app.listen(PORT, LISTEN_HOST, () => {
+    console.log(`Server running on http://${LISTEN_HOST}:${PORT}`);
   });
 
   server.on('error', (err: NodeJS.ErrnoException) => {

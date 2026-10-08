@@ -161,3 +161,28 @@ Aturan sesi aktif (cutoff) ✅ SELESAI (2026-09-16): sesi = batas atas data
 masuk TA sesi + cap riwayat awal; tutup/buka tahun hanya di sesinya; Terapkan
 Dapodik diblokir bila sesi < tahun aktif profil; pindah sesi diaudit
 (`sesi_pindah`). Master data tak berdimensi tahun tetap dapat diubah.
+
+## Tahap 5b — Hardening Temuan Analisis Ulang ✅ SELESAI (2026-10-09)
+
+Analisis ulang read-only menemukan 43 temuan (3 kritis, 11 tinggi, 16 sedang,
+13 rendah). 3 kritis diperbaiki lebih dulu, lalu 10 temuan tinggi pada gelombang ini.
+
+| ID | Temuan | Perbaikan (file) |
+|----|--------|------------------|
+| S1 | Kredensial default hardcode | `LoginModal.tsx`: hapus `pass` tak-terpakai dari quickAccounts; `AppUser.mustChangePassword` + alur wajib ganti kata sandi saat login pertama (audit `ganti_password_bawaan`) |
+| D1 | Sinkron cloud crash (TDZ `cloudIds`) | `cloudSync.ts`: deklarasi dipindah sebelum pemakaian |
+| D2 | Aturan Firestore terbuka | `firestore.rules`: koleksi dibatasi, `pinHash` dikunci, root hanya dibuat dengan PIN (deploy ulang rules via `firebase deploy --only firestore:rules`) |
+| S2 | Otorisasi role murni sisi klien | `App.tsx`: sesi divalidasi ulang ke DB saat boot (user harus ada & aktif, role dari DB); impersonate verifikasi admin ke DB; gagal → paksa logout |
+| S3 | Idle logout tak terpasang | `App.tsx` + `useIdleLogout.ts`: logout otomatis 30 menit idle + toast |
+| S4 | SSRF proxy Dapodik | `server.ts`: allowlist host, validasi port, header `x-dapodik-secret` wajib (env `DAPODIK_PROXY_SECRET`), bind bawaan `127.0.0.1`; frontend kirim secret via `VITE_DAPODIK_PROXY_SECRET` (`dapodikSync.ts`, `.env.example`) |
+| F1 | Promosi ganda menulis riwayat tahun sama | `db.ts`: `promoteSiswaKenaikanKelas(..., tahunSesiLama?)`; `App.tsx` teruskan `args.tahunTutup`, `NilaiRaportView` teruskan `tahunAjaranSebelumnya(target)` |
+| F2 | Siswa Lulus/Keluar "dibangkitkan" promosi | `NilaiRaportView.tsx`: kandidat promosi hanya status Aktif + guard eksplisit |
+| F3 | Fallback nama-buta menimpa NISN | `dapodikSync.ts`: cocok nama + tgl lahir; NISN lokal tak pernah ditimpa; beda NISN → konflik manual |
+| F4 | Tarik identitas menimpa tahun tanpa konfirmasi | `PengaturanSekolahView.tsx`: dialog konfirmasi bila tahun/semester Dapodik berbeda (bawaan: tidak diubah) |
+| D3 | Restore = merge tanpa cek NPSN | `db.ts`: `importBackupData(json, {mode: 'gabung'|'ganti-total', konfirmasiSekolahLain})` → `{status: 'ditolak'|'digabung'|'diganti'}`; `BackupRestoreModule.tsx`: pratinjau + pilihan mode + checkbox sekolah lain |
+| D5 | Baca IDB error mengabaikan cache LS | `db.ts`: fallback ke LS ter-scope; `initialUsersList` tidak lagi jadi fallback baca |
+| D6 | `saveSiswa` salah mengira record rusak sebagai IDB mati | `db.ts`: record tanpa id langsung throw; hanya error IDB-tak-tersedia yang fallback ke LS |
+
+Verifikasi: `npx tsc --noEmit` — nol error baru di semua file yang disentuh
+(34 error pre-existing di file lain tidak berubah). Sisa 16 temuan sedang +
+13 rendah belum dikerjakan.

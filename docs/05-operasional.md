@@ -65,8 +65,12 @@ Password tersimpan sebagai hash (bukan plaintext); 5x salah login mengunci akun
    dibuat bila database berisi siswa.
 2. **Rutin (mingguan):** Backup → unduh JSON (`Backup_BukuInduk_<sekolah>_<tgl>.json`);
    simpan 2 salinan (laptop TU + flashdisk/Drive).
-3. **Restore:** Backup → pilih file → baca peringatan → konfirmasi → tunggu status sukses →
-   verifikasi jumlah siswa. File invalid ditolak otomatis.
+3. **Restore:** Backup → pilih file → pratinjau (nama sekolah, NPSN berkas vs aktif,
+   jumlah siswa) → pilih mode **Gabung** (tambah/upsert, bawaan) atau **Ganti total**
+   (hapus dulu seluruh data sekolah aktif, lalu restore) → bila NPSN berkas ≠ NPSN
+   sekolah aktif, wajib centang "Saya paham file ini berisi data sekolah lain" →
+   konfirmasi → tunggu status (ditolak/digabung/diganti + alasan) → verifikasi jumlah
+   siswa. File invalid atau NPSN beda tanpa konfirmasi ditolak otomatis.
 4. **Awal tahun ajaran (ritme Dapodik — urutan baku):** (a) backup penuh;
    (b) buka tab **Arsip → Tutup Tahun Ajaran**: susun rencana (Lulus/Naik/Tinggal
    per rombel, target terisi otomatis) → tutup, promosikan & kunci → tahun aktif
@@ -127,6 +131,11 @@ project sesuai `firebase-applet-config.json`):**
 2. Daftarkan IP + token di Dapodik → Pengaturan → Web Service, lalu **restart Dapodik**.
 3. Isi host/port/NPSN/token (+ `semesterId`, default `20261`) → Tes Koneksi → Tarik (atau Simulasi bila offline).
 4. Periksa tab Baru/Berbeda/Sama (+ progres `SyncProgressBar`) → centang → Terapkan → catat `sync_logs`.
+   - Pencocokan tanpa ID/NISN/NIK memakai **nama + tanggal lahir** (keduanya harus
+     cocok); NISN lokal yang sudah terisi **tidak pernah** ditimpa NISN Dapodik yang
+     berbeda — dicatat sebagai **konflik** untuk ditinjau manual.
+   - Bila tahun ajaran/semester dari Dapodik berbeda dengan profil aktif, aplikasi
+     meminta konfirmasi eksplisit sebelum mengubah (bawaan: tidak diubah).
 5. Bila respons kosong untuk rombel/PTK, coba alias method (`getGtk` ↔ `getPTK`) via `wsMethod`.
 
 ## 5a. Multi-Sekolah (satu laptop, banyak DB) — khusus Administrator
@@ -161,6 +170,21 @@ aktif. SOP:
 
 ## 7. Keamanan Operasional (minimum)
 
-Ganti kredensial bawaan, batasi `rombelAkses` per operator, backup terenkripsi/terbatas
-akses, dan jangan membagikan token Web Service Dapodik. Hash password + audit log
-dijadwalkan di Tahap 5 (`06-roadmap.md`).
+- **Kata sandi bawaan wajib diganti** saat login pertama (akun `administrator` /
+  `operator_bukuinduk` / `operator_kesiswaan` tidak bisa dipakai sebelum diganti,
+  min. 8 karakter; tercatat di Log Audit).
+- **Logout otomatis** setelah 30 menit tidak ada aktivitas.
+- Sesi login divalidasi ulang ke database saat aplikasi dibuka; akun yang sudah
+  dinonaktifkan tidak bisa memakai sesi lama.
+- Batas `rombelAkses` per operator; backup tersimpan terbatas akses; jangan
+  membagikan token Web Service Dapodik.
+
+### 7a. Proxy Dapodik (server.ts) — variabel env
+
+| Env | Fungsi |
+|-----|--------|
+| `DAPODIK_PROXY_SECRET` | **Wajib di server** bila fitur proxy dipakai — tanpa ini semua request `/api/dapodik/*` ditolak 503. Nilai harus sama dengan `VITE_DAPODIK_PROXY_SECRET` di frontend. |
+| `VITE_DAPODIK_PROXY_SECRET` | Secret yang dikirim frontend via header `x-dapodik-secret`. |
+| `DAPODIK_ALLOW_HOSTS` | Daftar host Dapodik tambahan yang diizinkan (comma-separated). `localhost`/`127.0.0.1`/`::1` selalu diizinkan; host publik selalu ditolak (anti-SSRF). |
+| `HOST` | Bind address server (bawaan `127.0.0.1`; set `0.0.0.0` hanya bila perlu diakses dari LAN dan sudah memahami risikonya). |
+| `PORT` | Port server (angka 1–65535). |

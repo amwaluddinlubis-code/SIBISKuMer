@@ -75,6 +75,18 @@ function newSyncId(prefix: string, fallback = ''): string {
   return `${prefix}-${fallback || Date.now().toString(36)}-${rand}`;
 }
 
+/** S4: secret bersama untuk endpoint proxy /api/dapodik/* — wajib sejak
+ *  Worker D (tanpa header x-dapodik-secret server menolak dengan 403/503
+ *  setelah admin menyet DAPODIK_PROXY_SECRET). Diambil dari env build-time
+ *  Vite; fallback string kosong bila tidak diset. */
+function dapodikProxySecret(): string {
+  try {
+    return (import.meta.env?.VITE_DAPODIK_PROXY_SECRET as string) || '';
+  } catch {
+    return '';
+  }
+}
+
 export function convertDapodikToSekolahProfile(
   raw: DapodikRawSekolah,
   existing: SekolahProfile
@@ -139,7 +151,8 @@ export async function fetchDapodikSekolah(
   try {
     const proxyRes = await fetch('/api/dapodik/fetch-sekolah', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // S4: header secret wajib untuk endpoint proxy Dapodik.
+      headers: { 'Content-Type': 'application/json', 'x-dapodik-secret': dapodikProxySecret() },
       body: JSON.stringify({ host, port, npsn, token })
     });
 
@@ -269,7 +282,9 @@ export function convertDapodikToSiswa(
       dapodikId: raw.peserta_didik_id || existing.dapodikId,
       namaLengkap: (raw.nama || existing.namaLengkap).toUpperCase(),
       jenisKelamin: raw.jenis_kelamin || existing.jenisKelamin,
-      nisn: raw.nisn || existing.nisn,
+      // F3: NISN lokal yang sudah terisi tidak pernah ditimpa NISN Dapodik
+      // yang berbeda (mencegah NISN ganda akibat salah-merge record).
+      nisn: (existing.nisn || '').trim() ? existing.nisn : (raw.nisn || ''),
       nipd: raw.nipd || existing.nipd,
       nik: raw.nik || existing.nik,
       tempatLahir: raw.tempat_lahir || existing.tempatLahir,
@@ -447,22 +462,33 @@ export function compareDapodikWithExisting(
   const existingByDapodikId = new Map<string, Siswa>();
   const existingByNisn = new Map<string, Siswa>();
   const existingByNik = new Map<string, Siswa>();
-  const existingByName = new Map<string, Siswa>();
+  // F3: fallback pencocokan nama-buta DIHAPUS — nama yang umum di Indonesia
+  // (mis. "Muhammad Rizky") rawan salah-merge record milik orang lain lalu
+  // menimpa NISN/TTL lokal. Fallback hanya boleh cocok bila NAMA *dan*
+  // TANGGAL LAHIR sama-sama persis.
+  const existingByNameDob = new Map<string, Siswa>();
 
   for (const s of existingList) {
     if (s.dapodikId) existingByDapodikId.set(String(s.dapodikId).trim(), s);
     if (s.nisn) existingByNisn.set(s.nisn.trim(), s);
     if (s.nik) existingByNik.set(s.nik.trim(), s);
-    if (s.namaLengkap) existingByName.set(s.namaLengkap.trim().toUpperCase(), s);
+    const namaNorm = (s.namaLengkap || '').trim().toUpperCase();
+    const dobNorm = (s.tanggalLahir || '').trim();
+    if (namaNorm && dobNorm) existingByNameDob.set(`${namaNorm}|${dobNorm}`, s);
   }
 
   for (const dpk of dapodikList) {
     const dpkId = dpk.peserta_didik_id ? String(dpk.peserta_didik_id).trim() : '';
+    // F3: kunci fallback nama+tanggal lahir — hanya dipakai bila keduanya
+    // terisi di kedua sisi; bila tidak, fallback dianggap tidak cocok.
+    const namaDpk = (dpk.nama || '').trim().toUpperCase();
+    const dobDpk = (dpk.tanggal_lahir || '').trim();
+    const nameDobKey = namaDpk && dobDpk ? `${namaDpk}|${dobDpk}` : '';
     const matched =
       (dpkId && existingByDapodikId.get(dpkId)) ||
       (dpk.nisn && existingByNisn.get(dpk.nisn.trim())) ||
       (dpk.nik && existingByNik.get(dpk.nik.trim())) ||
-      existingByName.get((dpk.nama || '').trim().toUpperCase());
+      (nameDobKey ? existingByNameDob.get(nameDobKey) : undefined);
 
     if (!matched) {
       result.baru.push(dpk);
@@ -471,8 +497,16 @@ export function compareDapodikWithExisting(
       if (dpk.nama && dpk.nama.trim().toUpperCase() !== matched.namaLengkap.trim().toUpperCase()) {
         perubahan.push(`Nama: "${matched.namaLengkap}" -> "${dpk.nama.trim().toUpperCase()}"`);
       }
-      if (dpk.nisn && dpk.nisn.trim() !== matched.nisn.trim()) {
-        perubahan.push(`NISN: "${matched.nisn}" -> "${dpk.nisn}"`);
+      // F3: NISN lokal yang sudah terisi TIDAK PERNAH ditimpa NISN Dapodik
+      // yang berbeda — dicatat sebagai konflik di daftar tinjauan manual.
+      const nisnLokal = (matched.nisn || '').trim();
+      const nisnDpk = (dpk.nisn || '').trim();
+      if (nisnDpk && nisnDpk !== nisnLokal) {
+        if (nisnLokal) {
+          perubahan.push(`KONFLIK NISN (tidak ditimpa otomatis): lokal "${nisnLokal}" vs Dapodik "${nisnDpk}" — tinjau manual!`);
+        } else {
+          perubahan.push(`NISN: "-" -> "${nisnDpk}"`);
+        }
       }
       if (dpk.nipd && dpk.nipd.trim() !== matched.nipd.trim()) {
         perubahan.push(`NIPD: "${matched.nipd}" -> "${dpk.nipd}"`);
@@ -542,7 +576,8 @@ export async function fetchDapodikWebservice(
   try {
     const proxyRes = await fetch('/api/dapodik/fetch-peserta-didik', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // S4: header secret wajib untuk endpoint proxy Dapodik.
+      headers: { 'Content-Type': 'application/json', 'x-dapodik-secret': dapodikProxySecret() },
       body: JSON.stringify({ host, port, npsn, token, semesterId: config.semesterId })
     });
 
@@ -615,7 +650,8 @@ export async function testDapodikConnection(
   try {
     const proxyRes = await fetch('/api/dapodik/test-connection', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // S4: header secret wajib untuk endpoint proxy Dapodik.
+      headers: { 'Content-Type': 'application/json', 'x-dapodik-secret': dapodikProxySecret() },
       body: JSON.stringify({ host, port, npsn, token })
     });
 
@@ -705,7 +741,8 @@ async function fetchDapodikList<T>(
     try {
       const proxyRes = await fetch(proxyPath, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // S4: header secret wajib untuk endpoint proxy Dapodik.
+        headers: { 'Content-Type': 'application/json', 'x-dapodik-secret': dapodikProxySecret() },
         body: JSON.stringify({ host, port, npsn: config.npsn, token: config.token, wsMethod: method })
       });
       if (proxyRes.ok) {
