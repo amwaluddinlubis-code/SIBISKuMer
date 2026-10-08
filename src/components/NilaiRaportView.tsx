@@ -33,7 +33,8 @@ import {
   TingkatKelas, 
   FaseKurikulum, 
   AppUser,
-  PtkRef 
+  PtkRef,
+  RiwayatTahunAjaran
 } from '../types';
 import {
   getTingkatOptions,
@@ -44,9 +45,10 @@ import {
   buildInitialNilaiMapel,
   getFaseKurikulum,
   getRaportList,
-  getNilaiList
+  getNilaiList,
+  hitungRataRataNilai
 } from '../utils/raportUtils';
-import { saveSiswaRaport, deleteSiswaRaport, promoteSiswaKenaikanKelas, getTahunAjaranTerakhirSiswa, tahunAjaranSebelumnya } from '../utils/db';
+import { saveSiswaRaport, deleteSiswaRaport, promoteSiswaKenaikanKelas, getTahunAjaranTerakhirSiswa, tahunAjaranSebelumnya, getSiswaById, saveSiswa } from '../utils/db';
 import { tahunBerikutnya } from '../utils/arsip';
 import { canUserAccessTahun } from '../utils/tahunAjaran';
 import { opsiTahunMaksSesi, tahanMaksSesi } from '../utils/sesi';
@@ -55,6 +57,7 @@ import { KopSuratView } from './KopSuratView';
 import { GtkAutocomplete } from './GtkAutocomplete';
 import { toast, confirmDialog } from '../utils/notify';
 import { validateRaportForm } from '../utils/validation';
+import { catatAudit } from '../utils/audit';
 import { startTopProgress, doneTopProgress } from '../utils/progress';
 
 interface NilaiRaportViewProps {
@@ -286,11 +289,9 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
       return;
     }
 
-    // Recalculate average
-    const total = activeRaportForm.nilaiMapel.reduce((sum, m) => sum + (Number(m.nilaiAkhir) || 0), 0);
-    const avg = activeRaportForm.nilaiMapel.length > 0 
-      ? Number((total / activeRaportForm.nilaiMapel.length).toFixed(1)) 
-      : 0;
+    // F7: rata-rata memakai helper tunggal (1 desimal, sama dengan cetak/ekspor);
+    // F14: nilai null ("belum dinilai") diabaikan, bukan dihitung sebagai 0.
+    const avg = hitungRataRataNilai(activeRaportForm.nilaiMapel);
 
     const toSave: RaportSemester = {
       ...activeRaportForm,
@@ -302,6 +303,58 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
     startTopProgress();
     try {
       await saveSiswaRaport(editingRaportSiswa.id, toSave);
+
+      // F12: keputusan "Lulus" pada raport mempropagasi statusSiswa — raport
+      // bilang Lulus tapi status tetap Aktif adalah inkonsistensi. Terapkan
+      // status 'Lulus' SEKALIGUS catat jejaknya (riwayat + audit), dengan
+      // konfirmasi dulu mengikuti pola confirmDialog di codebase ini.
+      if (toSave.statusKenaikan === 'Lulus' && editingRaportSiswa.statusSiswa !== 'Lulus') {
+        const okLulus = await confirmDialog(
+          `"${editingRaportSiswa.namaLengkap}" dinyatakan LULUS pada raport TP ${toSave.tahunAjaran} Semester ${toSave.semester}. Terapkan status siswa menjadi "Lulus" (keluar dari daftar aktif)?`,
+          { confirmLabel: 'Ya, Terapkan Lulus', danger: false }
+        );
+        if (okLulus) {
+          const siswaAktual = (await getSiswaById(editingRaportSiswa.id)) || editingRaportSiswa;
+          const taBerjalan = (toSave.tahunAjaran || '').trim();
+          // Jangan tulis entri riwayat ganda untuk tahun yang sama.
+          const sudahTercatat = taBerjalan
+            ? (siswaAktual.riwayatTahunAjaran || []).some(
+                (r) =>
+                  r.tahunAjaran === taBerjalan &&
+                  (r.statusAkhirTahun === 'Lulus' || r.statusKenaikan === 'Lulus')
+              )
+            : true;
+          const riwayatBaru: RiwayatTahunAjaran[] = sudahTercatat
+            ? siswaAktual.riwayatTahunAjaran || []
+            : [
+                ...(siswaAktual.riwayatTahunAjaran || []),
+                {
+                  id: `rth-lulus-${Date.now()}-${siswaAktual.id}`,
+                  tahunAjaran: taBerjalan,
+                  tingkat: toSave.tingkat,
+                  rombel: toSave.rombel,
+                  statusAkhirTahun: 'Lulus',
+                  statusKenaikan: 'Lulus',
+                  catatan: `Lulus satuan pendidikan (keputusan raport TP ${toSave.tahunAjaran} Semester ${toSave.semester})`
+                } as RiwayatTahunAjaran
+              ];
+          await saveSiswa({
+            ...siswaAktual,
+            statusSiswa: 'Lulus',
+            tanggalKeluar: toSave.tanggalRaport || new Date().toISOString().split('T')[0],
+            alasanKeluar: 'Lulus satuan pendidikan',
+            riwayatTahunAjaran: riwayatBaru,
+            updatedAt: new Date().toISOString()
+          });
+          catatAudit('siswa_ubah', {
+            entitas: 'siswa',
+            entitasId: siswaAktual.id,
+            ringkasan: `Status "${siswaAktual.namaLengkap}" → Lulus (keputusan raport TP ${toSave.tahunAjaran} Semester ${toSave.semester})`
+          });
+          toast(`Status "${siswaAktual.namaLengkap}" diperbarui menjadi Lulus.`, 'success');
+        }
+      }
+
       onDataChanged();
       toast(`Nilai raport ${editingRaportSiswa.namaLengkap} (TP ${toSave.tahunAjaran} Semester ${toSave.semester}) berhasil disimpan.`, 'success');
       setEditingRaportSiswa(null);
@@ -317,6 +370,9 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
   const handleAutoGenerateDeskripsi = () => {
     if (!activeRaportForm) return;
     const updatedMapel = activeRaportForm.nilaiMapel.map((m) => {
+      // F14: mapel "belum dinilai" (null) dilewati — jangan tulis predikat/
+      // deskripsi seolah nilainya 0.
+      if (m.nilaiAkhir === null || m.nilaiAkhir === undefined) return m;
       const pred = calculatePredikat(m.nilaiAkhir);
       const desk = generateDeskripsiOtomatis(m.mataPelajaran, m.nilaiAkhir, jenjang, activeRaportForm.tingkat);
       return {
@@ -1009,14 +1065,8 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
                 <div className="text-right">
                   <span className="text-slate-500 text-[11px] block">Rata-rata Nilai:</span>
                   <span className="text-lg font-black text-blue-900">
-                    {activeRaportForm.nilaiMapel.length > 0
-                      ? (
-                          activeRaportForm.nilaiMapel.reduce(
-                            (acc, m) => acc + (Number(m.nilaiAkhir) || 0),
-                            0
-                          ) / activeRaportForm.nilaiMapel.length
-                        ).toFixed(1)
-                      : 0}
+                    {/* F7+F14: helper tunggal; nilai null ("belum dinilai") diabaikan. */}
+                    {hitungRataRataNilai(activeRaportForm.nilaiMapel).toFixed(1)}
                   </span>
                 </div>
               </div>
@@ -1075,15 +1125,22 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
                               aria-label={`Nilai ${m.mataPelajaran || `baris ${mIdx + 1}`} (0-100)`}
                               min={0}
                               max={100}
-                              value={m.nilaiAkhir}
+                              value={m.nilaiAkhir ?? ''}
                               onChange={(e) => {
-                                const raw = e.target.value === '' ? 0 : Number(e.target.value);
-                                const val = Number.isFinite(raw) ? Math.min(100, Math.max(0, raw)) : 0;
+                                // F14: input dikosongkan → simpan null ("belum dinilai"),
+                                // BUKAN 0, agar tidak menekan rata-rata tanpa jejak.
+                                const kosong = e.target.value === '';
+                                const raw = kosong ? NaN : Number(e.target.value);
+                                const val = kosong
+                                  ? null
+                                  : Number.isFinite(raw)
+                                    ? Math.min(100, Math.max(0, raw))
+                                    : null;
                                 const copy = [...activeRaportForm.nilaiMapel];
                                 copy[mIdx] = { 
                                   ...copy[mIdx], 
                                   nilaiAkhir: val,
-                                  predikat: calculatePredikat(val)
+                                  predikat: val === null ? undefined : calculatePredikat(val)
                                 };
                                 setActiveRaportForm({ ...activeRaportForm, nilaiMapel: copy });
                               }}
@@ -1094,7 +1151,10 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
                           <td className="py-2.5 px-3 text-center">
                             <span
                               className={`px-2 py-1 rounded font-bold text-xs ${
-                                m.predikat === 'A'
+                                // F14: "belum dinilai" (null) tampil netral '-', bukan predikat D.
+                                m.nilaiAkhir === null || m.nilaiAkhir === undefined
+                                  ? 'bg-slate-100 text-slate-500'
+                                  : m.predikat === 'A'
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : m.predikat === 'B'
                                   ? 'bg-blue-100 text-blue-800'
@@ -1103,7 +1163,10 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
                                   : 'bg-rose-100 text-rose-800'
                               }`}
                             >
-                              {m.predikat || calculatePredikat(m.nilaiAkhir)}
+                              {m.predikat ||
+                                (m.nilaiAkhir === null || m.nilaiAkhir === undefined
+                                  ? '-'
+                                  : calculatePredikat(m.nilaiAkhir))}
                             </span>
                           </td>
 
@@ -1447,10 +1510,14 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
                           {m.mataPelajaran}
                         </td>
                         <td className="border border-slate-400 p-2 text-center font-bold text-slate-900">
-                          {m.nilaiAkhir}
+                          {m.nilaiAkhir ?? '-'}
                         </td>
                         <td className="border border-slate-400 p-2 text-center font-bold">
-                          {m.predikat || calculatePredikat(m.nilaiAkhir)}
+                          {/* F14: "belum dinilai" (null) tampil '-', bukan predikat D. */}
+                          {m.predikat ||
+                            (m.nilaiAkhir === null || m.nilaiAkhir === undefined
+                              ? '-'
+                              : calculatePredikat(m.nilaiAkhir))}
                         </td>
                         <td className="border border-slate-400 p-2 space-y-1">
                           {m.capaianTertinggi && (
