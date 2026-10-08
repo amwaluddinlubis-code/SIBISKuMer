@@ -46,7 +46,7 @@ import {
   getRaportList,
   getNilaiList
 } from '../utils/raportUtils';
-import { saveSiswaRaport, deleteSiswaRaport, promoteSiswaKenaikanKelas, getTahunAjaranTerakhirSiswa } from '../utils/db';
+import { saveSiswaRaport, deleteSiswaRaport, promoteSiswaKenaikanKelas, getTahunAjaranTerakhirSiswa, tahunAjaranSebelumnya } from '../utils/db';
 import { tahunBerikutnya } from '../utils/arsip';
 import { canUserAccessTahun } from '../utils/tahunAjaran';
 import { opsiTahunMaksSesi, tahanMaksSesi } from '../utils/sesi';
@@ -183,6 +183,14 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
       return true;
     });
   }, [siswaList, searchQuery, selectedRombel, selectedTingkat]);
+
+  // F2: kandidat promosi tab Kenaikan Kelas HANYA siswa berstatus 'Aktif'.
+  // Siswa arsip ('Lulus'/'Mutasi Keluar'/lainnya) disaring dari daftar agar
+  // tidak pernah terpilih untuk dipromosi.
+  const kandidatPromosi = useMemo(
+    () => filteredSiswa.filter((s) => s.statusSiswa === 'Aktif'),
+    [filteredSiswa]
+  );
 
   // Helper to get student's raport for current filter
   const getRaportForStudent = (s: Siswa, tahun: string, semester: '1' | '2'): RaportSemester | undefined => {
@@ -359,16 +367,21 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
     }
     // Lewati siswa yang tahun terakhirnya terkunci arsip (riwayatnya tak boleh ditulis ulang).
     const terkunci = (tahunTerkunci || []).map((t) => t.trim());
-    const byId = new Map((siswaList || []).map((s) => [s.id, s]));
+    // F2: anotasi tipe eksplisit agar guard status di bawah ter-typecheck.
+    const byId = new Map<string, Siswa>((siswaList || []).map((s) => [s.id, s]));
     const boleh = selectedForPromotion.filter((id) => {
       const s = byId.get(id);
       if (!s) return false;
+      // F2: guard eksplisit — promosi HANYA untuk status 'Aktif'. Siswa
+      // arsip ('Lulus'/'Mutasi Keluar'/lainnya) tidak boleh diproses karena
+      // eksekusi memaksa statusSiswa kembali 'Aktif'.
+      if (s.statusSiswa !== 'Aktif') return false;
       const tahunLama = (getTahunAjaranTerakhirSiswa(s) || '').trim();
       return !(tahunLama && terkunci.includes(tahunLama));
     });
     const ditahan = selectedForPromotion.length - boleh.length;
     if (ditahan > 0) {
-      toast(`${ditahan} siswa dilewati karena tahun terakhirnya terkunci arsip.`, 'warning');
+      toast(`${ditahan} siswa dilewati (bukan status Aktif atau tahun terakhirnya terkunci arsip).`, 'warning');
     }
     if (boleh.length === 0) {
       toast('Tidak ada siswa yang dapat dipromosi (semua terkunci arsip).', 'error');
@@ -401,7 +414,8 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
         targetPromotionTahun,
         targetPromotionTingkat,
         targetPromotionRombel,
-        targetPromotionStatus
+        targetPromotionStatus,
+        tahunAjaranSebelumnya(targetPromotionTahun.trim()) // F1: tahun sesi promosi → tahunLama riwayat
       );
       toast(`Berhasil memperbarui data multi-tahun untuk ${count} siswa!`, 'success');
       setSelectedForPromotion([]);
@@ -413,11 +427,12 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
     }
   };
 
+  // F2: pilih-semua hanya menyentuh kandidat Aktif.
   const handleToggleSelectAll = () => {
-    if (selectedForPromotion.length === filteredSiswa.length) {
+    if (selectedForPromotion.length === kandidatPromosi.length && kandidatPromosi.length > 0) {
       setSelectedForPromotion([]);
     } else {
-      setSelectedForPromotion(filteredSiswa.map((s) => s.id));
+      setSelectedForPromotion(kandidatPromosi.map((s) => s.id));
     }
   };
 
@@ -785,6 +800,10 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
               </h3>
               <p className="text-xs text-slate-500">
                 Pilih peserta didik yang dinyatakan naik kelas atau lulus, kemudian tentukan rombel dan tahun ajaran tujuan untuk mencatat riwayat kenaikan kelas multi-tahun secara otomatis.
+                {/* F2: hanya status 'Aktif' yang ditampilkan — siswa arsip (Lulus/Mutasi Keluar/dsb.) tidak dapat dipromosi. */}
+                <span className="block mt-1 font-semibold text-slate-600">
+                  Hanya siswa berstatus Aktif yang ditampilkan sebagai kandidat promosi.
+                </span>
               </p>
             </div>
 
@@ -794,7 +813,7 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
                 onClick={handleToggleSelectAll}
                 className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-xs transition flex items-center gap-1.5"
               >
-                {selectedForPromotion.length === filteredSiswa.length && filteredSiswa.length > 0 ? (
+                {selectedForPromotion.length === kandidatPromosi.length && kandidatPromosi.length > 0 ? (
                   <>
                     <CheckSquare className="w-4 h-4 text-blue-600" />
                     Batal Pilih Semua
@@ -802,7 +821,7 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
                 ) : (
                   <>
                     <Square className="w-4 h-4 text-slate-500" />
-                    Pilih Semua ({filteredSiswa.length})
+                    Pilih Semua ({kandidatPromosi.length})
                   </>
                 )}
               </button>
@@ -885,7 +904,8 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
 
           {/* List Siswa Checkable */}
           <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden max-h-96 overflow-y-auto">
-            {filteredSiswa.map((s) => {
+            {/* F2: hanya kandidat berstatus 'Aktif' yang dirender sebagai kandidat promosi */}
+            {kandidatPromosi.map((s) => {
               const isChecked = selectedForPromotion.includes(s.id);
               return (
                 <div
