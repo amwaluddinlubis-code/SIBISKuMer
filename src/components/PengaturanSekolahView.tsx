@@ -169,22 +169,48 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
       }
 
       const updated = convertDapodikToSekolahProfile(res.data, profile);
-      setProfile(updated);
-      await saveSekolahProfile(updated);
-      onUpdateSekolah(updated);
+      // F4: tarikan identitas Dapodik tidak boleh mengubah tahun/semester
+      // aktif secara diam-diam (berbahaya bila Dapodik belum rollover —
+      // tahun aktif bisa mundur tanpa disadari). Bila tahun/semester dari
+      // Dapodik berbeda dengan profil aktif, minta konfirmasi eksplisit via
+      // ConfirmDialogHost; default = TIDAK diubah.
+      const taBaru = (updated.tahunAjaran || '').trim();
+      const taAktif = (profile.tahunAjaran || '').trim();
+      const smBaru = (updated.semesterAktif || '').trim();
+      const smAktif = (profile.semesterAktif || '').trim();
+      const taBerubah = !!taBaru && taBaru !== taAktif;
+      const smBerubah = !!smBaru && smBaru !== smAktif;
+      let finalProfile = updated;
+      if (taBerubah || smBerubah) {
+        const ok = await confirmDialog(
+          `Data Dapodik membawa ${taBerubah ? `tahun ajaran ${taBaru}` : ''}${taBerubah && smBerubah ? ' dan ' : ''}${smBerubah ? `semester ${smBaru}` : ''}, berbeda dengan profil aktif (TA ${taAktif || '-'}, semester ${smAktif || '-'}).\n\nUbah tahun/semester aktif mengikuti Dapodik? Bila Dapodik belum rollover sebaiknya TIDAK — pilih Batal agar tahun/semester aktif tetap.`,
+          { confirmLabel: 'Ya, Ikuti Dapodik', cancelLabel: 'Batal (Tetap)', danger: true }
+        );
+        if (!ok) {
+          // Default aman: pertahankan tahun/semester aktif.
+          finalProfile = {
+            ...updated,
+            tahunAjaran: taBerubah ? profile.tahunAjaran : updated.tahunAjaran,
+            semesterAktif: smBerubah ? profile.semesterAktif : updated.semesterAktif,
+          };
+        }
+      }
+      setProfile(finalProfile);
+      await saveSekolahProfile(finalProfile);
+      onUpdateSekolah(finalProfile);
 
       const active = getActiveSchool();
       if (active) {
         saveSchoolEntry({
           ...active,
-          nama: updated.nama,
-          npsn: updated.npsn,
-          jenjang: updated.jenjang || active.jenjang,
-          bentukPendidikan: updated.bentukPendidikan,
+          nama: finalProfile.nama,
+          npsn: finalProfile.npsn,
+          jenjang: finalProfile.jenjang || active.jenjang,
+          bentukPendidikan: finalProfile.bentukPendidikan,
         });
       }
 
-      setSyncSuccessMsg(`Identitas sekolah berhasil diperbarui dari Dapodik: ${updated.nama} (NPSN: ${updated.npsn}). Kepala Sekolah: ${updated.kepalaSekolah}.`);
+      setSyncSuccessMsg(`Identitas sekolah berhasil diperbarui dari Dapodik: ${finalProfile.nama} (NPSN: ${finalProfile.npsn}). Kepala Sekolah: ${finalProfile.kepalaSekolah}.`);
       setTimeout(() => setSyncSuccessMsg(null), 6000);
     } catch (err: any) {
       toast(`Gagal sinkronisasi identitas sekolah: ${err.message}. Anda juga dapat menguji coba menggunakan simulasi.`, 'error');
