@@ -473,7 +473,7 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
             <div className="border border-slate-300 rounded overflow-hidden page-break-inside-avoid">
               <div className="bg-slate-800 text-white font-bold px-3 py-1.5 text-[11px] uppercase tracking-wide flex items-center justify-between">
                 <span>G. PROJEK PENGUATAN PROFIL PELAJAR PANCASILA (P5) & EKSTRAKURIKULER</span>
-                <span className="text-[10px] text-amber-300 font-normal">Karakter Profil Pelajar Pancasila</span>
+                <span className="text-[10px] text-amber-300 font-normal">Karakter Profil Lulusan</span>
               </div>
               <div className="p-3 space-y-3 text-[11px]">
                 {siswa.p5Projects && siswa.p5Projects.length > 0 ? (
@@ -831,7 +831,7 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
 
                         <div className="border border-slate-300 p-2 rounded bg-slate-50">
                           <span className="font-bold text-slate-800 block mb-1">Catatan Wali Kelas:</span>
-                          <p className="italic text-slate-700">{sem.catatanWaliKelas || 'Tingkatkan terus prestasi belajarmu dan pertahankan karakter Profil Pelajar Pancasila.'}</p>
+                          <p className="italic text-slate-700">{sem.catatanWaliKelas || 'Tingkatkan terus prestasi belajarmu dan pertahankan karakter Profil Lulusan.'}</p>
                           {sem.keteranganKenaikan && (
                             <p className="mt-1 font-bold text-blue-950">
                               Keputusan: <span className="underline">{sem.keteranganKenaikan}</span>
