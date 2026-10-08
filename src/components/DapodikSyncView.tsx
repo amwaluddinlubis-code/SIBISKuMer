@@ -39,8 +39,8 @@ import {
   DapodikComparisonResult,
   RombelComparison
 } from '../utils/dapodikSync';
-import { saveDapodikConfig, addSyncLog, saveSiswa, saveSekolahProfile, saveRombelRefs, savePtkRefs, saveUser, getAllUsers, getAllRombelRefs, getAllPtkRefs } from '../utils/db';
-import { toast } from '../utils/notify';
+import { saveDapodikConfig, addSyncLog, saveSiswa, saveSekolahProfile, saveRombelRefs, savePtkRefs, saveUser, getAllUsers, getAllRombelRefs, getAllPtkRefs, kunciOperasiPanjang, bukaKunciOperasiPanjang } from '../utils/db';
+import { toast, confirmDialog } from '../utils/notify';
 import { catatAudit } from '../utils/audit';
 import { validateDapodikConfig } from '../utils/validation';
 import { SyncProgressBar, SyncStep, SyncResult } from './SyncProgressBar';
@@ -55,6 +55,20 @@ interface DapodikSyncViewProps {
   /** Sesi tahun ajaran login — sinkron selalu menulis ke tahun aktif database. */
   sessionTahun?: string | null;
   onRefreshData: () => void;
+}
+
+// D14: NPSN dari Dapodik tidak boleh menimpa NPSN profil aktif tanpa
+// konfirmasi eksplisit (salah konfigurasi Dapodik bisa menimpa identitas
+// sekolah). Default = JANGAN ubah (false bila user membatalkan).
+async function konfirmasiUbahNpsn(npsnDapodik: string, npsnAktif: string): Promise<boolean> {
+  const d = (npsnDapodik || '').trim();
+  const a = (npsnAktif || '').trim();
+  if (!d || !a || d === a) return true;
+  return confirmDialog(
+    `NPSN dari Dapodik (${d}) BERBEDA dengan profil sekolah aktif (${a}). ` +
+    `Ubah NPSN sekolah menjadi ${d}?`,
+    { confirmLabel: 'Ya, Ubah NPSN', danger: true }
+  );
 }
 
 export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
@@ -350,9 +364,12 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
   const handleSyncSekolahOnly = async () => {
     if (!dapodikSekolah) return;
     const updated = convertDapodikToSekolahProfile(dapodikSekolah, sekolah);
-    await saveSekolahProfile(updated);
-    onUpdateSekolah(updated);
-    const msg = `Identitas Sekolah berhasil disinkronkan dari Dapodik: ${updated.nama} (NPSN: ${updated.npsn}). Kepala Sekolah: ${updated.kepalaSekolah}.`;
+    // D14: NPSN berbeda → konfirmasi eksplisit; default = pertahankan NPSN lama.
+    const bolehUbahNpsn = await konfirmasiUbahNpsn(dapodikSekolah.npsn || '', sekolah.npsn || '');
+    const final = bolehUbahNpsn ? updated : { ...updated, npsn: sekolah.npsn };
+    await saveSekolahProfile(final);
+    onUpdateSekolah(final);
+    const msg = `Identitas Sekolah berhasil disinkronkan dari Dapodik: ${final.nama} (NPSN: ${final.npsn}). Kepala Sekolah: ${final.kepalaSekolah}.`;
     setSchoolSyncMessage(msg);
     toast('Identitas sekolah berhasil disinkronkan!', 'success');
     setTimeout(() => setSchoolSyncMessage(null), 5000);
@@ -374,7 +391,8 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
     setSyncResult(null);
     setSyncTitle('Menerapkan Sinkronisasi ke Buku Induk');
     setSyncPercent(2);
-    setSyncSteps([
+    // D11: kunci operasi panjang — ganti sekolah aktif ditolak selama apply.
+    kunciOperasiPanjang();    setSyncSteps([
       { id: 'sekolah', label: 'Profil Sekolah', status: 'pending', detail: 'Menunggu…' },
       { id: 'referensi', label: 'Rombel & PTK', status: 'pending', detail: 'Menunggu…' },
       { id: 'akun', label: 'Akun Operator', status: 'pending', detail: 'Menunggu…' },
@@ -392,9 +410,12 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
       setStep('sekolah', { status: 'active', detail: 'Menyimpan identitas sekolah…' });
       if (syncSekolahChecked && dapodikSekolah) {
         const updatedSekolah = convertDapodikToSekolahProfile(dapodikSekolah, sekolah);
-        await saveSekolahProfile(updatedSekolah);
-        onUpdateSekolah(updatedSekolah);
-        setStep('sekolah', { status: 'success', detail: `Terbarui: ${updatedSekolah.nama}` });
+        // D14: NPSN berbeda → konfirmasi eksplisit; default = pertahankan NPSN lama.
+        const bolehUbahNpsn = await konfirmasiUbahNpsn(dapodikSekolah.npsn || '', sekolah.npsn || '');
+        const finalSekolah = bolehUbahNpsn ? updatedSekolah : { ...updatedSekolah, npsn: sekolah.npsn };
+        await saveSekolahProfile(finalSekolah);
+        onUpdateSekolah(finalSekolah);
+        setStep('sekolah', { status: 'success', detail: `Terbarui: ${finalSekolah.nama}` });
       } else {
         setStep('sekolah', { status: 'skipped', detail: 'Dilewati (tidak dicentang/tidak ada data)' });
       }
@@ -572,6 +593,8 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
       toast(`Kesalahan saat menyimpan sinkronisasi: ${msg}`, 'error');
     } finally {
       setLoadingSync(false);
+      // D11: selalu lepas kunci operasi panjang.
+      bukaKunciOperasiPanjang();
     }
   };
 
@@ -743,6 +766,13 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
                 placeholder="Salin token dari menu Pengaturan Web Service di aplikasi Dapodik"
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none"
               />
+              {/* S7: token tersimpan plaintext di perangkat ini (IndexedDB /
+                  localStorage) — tidak ikut file backup, tetapi siapa pun
+                  yang memegang perangkat dapat membacanya. */}
+              <p className="mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                Token tersimpan <strong>plaintext</strong> di perangkat ini. Jangan bagikan file
+                backup/config yang memuatnya; token tidak ikut diekspor ke file backup.
+              </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 pt-2">
