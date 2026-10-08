@@ -3,7 +3,7 @@ import { Shield, KeyRound, UserCheck, AlertCircle, LogIn, Sparkles, School, User
 import { AppUser } from '../types';
 import { getAllUsers, saveUser, getSekolahProfile, getTutupTahun, getAllPetaKelas, setSessionTahunAjaran, getSessionTahunAjaran } from '../utils/db';
 import { verifyPassword, hashPassword } from '../utils/password';
-import { cekKunciLogin, catatGagalLogin, catatSuksesLogin, LOGIN_MAX_GAGAL } from '../utils/security';
+import { cekKunciLoginAsync, catatGagalLoginAsync, catatSuksesLoginAsync, LOGIN_MAX_GAGAL } from '../utils/security';
 import { catatAudit } from '../utils/audit';
 import { getDaftarTahunAjaran, getTahunDiizinkan } from '../utils/tahunAjaran';
 import { toast } from '../utils/notify';
@@ -28,6 +28,11 @@ const HIGHLIGHTS = [
   { icon: Printer, text: 'Cetak induk + kartu pelajar' },
   { icon: Database, text: 'Offline-first + backup JSON' },
 ];
+
+// S8: pesan generik yang SAMA PERSIS untuk "username tak terdaftar" maupun
+// "password salah" agar tidak bisa dipakai enumerasi username. Audit internal
+// (catatAudit) boleh tetap spesifik, tapi pesan ke pengguna harus identik.
+const PESAN_KREDENSIAL_SALAH = 'Username atau kata sandi salah.';
 
 export const LoginModal: React.FC<LoginModalProps> = ({
   users,
@@ -136,7 +141,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setTimeout(() => {
       void (async () => {
       const cleanUser = username.trim().toLowerCase();
-      const cleanPass = password.trim();
+      // S10: password TIDAK di-trim — "rahasia " dan "rahasia" adalah password berbeda.
+      // (trim hanya untuk username). Kompatibilitas hash lama ditangani verifyPassword.
+      const cleanPass = password;
 
       const userList = internalUsers && internalUsers.length > 0 ? internalUsers : initialUsersList;
       const matchedUser = userList.find(
@@ -144,8 +151,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       );
 
       if (!matchedUser) {
-        setError('Username tidak terdaftar dalam sistem.');
-        toast('Gagal masuk: username tidak terdaftar.', 'error');
+        // S8: pesan generik — sama persis dengan kasus password salah.
+        setError(PESAN_KREDENSIAL_SALAH);
+        toast('Gagal masuk: username atau kata sandi salah.', 'error');
         setIsLoading(false);
         return;
       }
@@ -158,7 +166,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       }
 
       // Kunci login: tolak sebelum verifikasi bila masih dalam masa kunci.
-      const statusKunci = cekKunciLogin(cleanUser);
+      // S12: cek gabungan localStorage + IndexedDB (async).
+      const statusKunci = await cekKunciLoginAsync(cleanUser);
       if (statusKunci.terkunci) {
         setError(`Akun dikunci sementara karena ${LOGIN_MAX_GAGAL}x salah kata sandi. Coba lagi dalam ±${statusKunci.sisaMenit} menit.`);
         toast('Akun dikunci sementara. Coba lagi nanti.', 'error');
@@ -180,13 +189,15 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       try {
         const hasil = await verifyPassword(cleanPass, matchedUser.password);
         if (!hasil.ok) {
-          const sesudah = catatGagalLogin(cleanUser);
+          // S12: catat ke localStorage + IndexedDB (async).
+          const sesudah = await catatGagalLoginAsync(cleanUser);
           if (sesudah.terkunci) {
             setError(`Salah kata sandi ${LOGIN_MAX_GAGAL}x — akun dikunci ±${sesudah.sisaMenit} menit.`);
             toast('Akun dikunci sementara karena terlalu banyak upaya gagal.', 'error');
           } else {
-            setError(`Kata sandi (password) salah. Sisa ${sesudah.sisaUpaya}x upaya sebelum dikunci.`);
-            toast('Gagal masuk: kata sandi salah.', 'error');
+            // S8: pesan generik — sama persis dengan kasus username tak terdaftar.
+            setError(PESAN_KREDENSIAL_SALAH);
+            toast('Gagal masuk: username atau kata sandi salah.', 'error');
           }
           catatAudit('login_gagal', {
             entitas: 'sesi',
@@ -198,9 +209,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           setIsLoading(false);
           return;
         }
-        catatSuksesLogin(cleanUser);
-        if (hasil.legacy) {
-          // Migrasi transparan: plaintext lama yang cocok langsung di-hash.
+        await catatSuksesLoginAsync(cleanUser); // S12: hapus hitungan di kedua lapisan
+        if (hasil.legacy || hasil.perluRehash) {
+          // Migrasi transparan: plaintext lama ATAU hash lama (format trim, S10)
+          // yang cocok langsung di-hash ulang ke format baru (tanpa trim).
           try {
             loginUser = { ...matchedUser, password: await hashPassword(cleanPass) };
             await saveUser(loginUser);
@@ -234,12 +246,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     e.preventDefault();
     if (!wajibGanti) return;
     setError(null);
-    const p1 = passBaru.trim();
+    // S10: password baru tidak di-trim (spasi adalah bagian password yang sah).
+    const p1 = passBaru;
     if (p1.length < 8) {
       setError('Kata sandi baru minimal 8 karakter.');
       return;
     }
-    if (p1 !== passBaru2.trim()) {
+    if (p1 !== passBaru2) {
       setError('Konfirmasi kata sandi tidak sama.');
       return;
     }

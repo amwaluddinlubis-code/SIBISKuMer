@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { PtkRef, RombelRef } from '../types';
 import { savePtkRef, deletePtkRef } from '../utils/db';
+import { catatHapusCloud } from '../utils/tombstone';
 import { PageControl } from './PageControl';
 import { toast, confirmDialog } from '../utils/notify';
 import { unduhExcel } from '../utils/excel';
@@ -215,6 +216,9 @@ export const GtkView: React.FC<GtkViewProps> = ({ ptk, rombel, isAdmin, onOpenSy
     if (!ok) return;
     try {
       await deletePtkRef(p.id);
+      // D7: catat hapus agar dirambatkan ke cloud (tanpa ini data terhapus
+      // "hidup lagi" dari salinan cloud).
+      catatHapusCloud('ptk', p.id);
       toast(`Data GTK "${p.nama}" berhasil dihapus.`, 'success');
       if (detail?.id === p.id) setDetail(null);
       onDataChanged();
