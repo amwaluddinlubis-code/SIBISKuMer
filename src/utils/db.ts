@@ -644,9 +644,11 @@ export async function getAllSiswa(): Promise<Siswa[]> {
       req.onerror = () => reject(req.error);
     });
   } catch {
+    // D5: baca IDB gagal karena ERROR → fallback ke localStorage ter-scope.
+    // Cache LS kosong = kembalikan [] (jangan memunculkan data contoh).
     const raw = localStorage.getItem(sk(LS_KEYS.SISWA));
     // Salin agar pemanggil tidak memutasi konstanta modul (anti-bocor antar-sekolah).
-    return raw ? JSON.parse(raw) : [...initialSiswaList];
+    return raw ? JSON.parse(raw) : [];
   }
 }
 
@@ -666,17 +668,42 @@ export async function getSiswaById(id: string): Promise<Siswa | null> {
   }
 }
 
+/** D6 — True bila error IndexedDB menandakan DATA buruk (record tanpa id /
+ *  kunci tak valid / pelanggaran constraint). Error semacam ini takkan pernah
+ *  pulih dengan menulis ke localStorage, jadi harus dilempar — bukan dibungkam. */
+function isIdbDataError(err: unknown): boolean {
+  const name = (err as { name?: string } | null)?.name;
+  return name === 'DataError' || name === 'ConstraintError';
+}
+
 export async function saveSiswa(siswa: Siswa): Promise<void> {
+  // D6: record tanpa id adalah error data — lempar segera dengan pesan jelas,
+  // jangan ditulis diam-diam ke localStorage (takkan pernah terbaca lagi).
+  if (!siswa || typeof siswa.id !== 'string' || !siswa.id.trim()) {
+    throw new Error('saveSiswa dibatalkan: data siswa tanpa id yang valid (id wajib diisi).');
+  }
   try {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORES.SISWA, 'readwrite');
       const store = tx.objectStore(STORES.SISWA);
       const req = store.put(siswa);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
+      tx.onabort = () => reject(tx.error || req.error || new Error('Transaksi IndexedDB dibatalkan.'));
     });
-  } catch {
+  } catch (err) {
+    // D6: error data (DataError/ConstraintError) → lempar Error yang jelas.
+    if (isIdbDataError(err)) {
+      const nama = (err as { name?: string })?.name || 'DataError';
+      const detail = (err as Error)?.message ? `: ${(err as Error).message}` : '';
+      throw new Error(
+        `saveSiswa gagal: data siswa "${siswa.id}" ditolak IndexedDB (${nama}${detail}). ` +
+        `Periksa struktur data siswa — tidak ditulis ke localStorage agar tidak hilang diam-diam.`
+      );
+    }
+    // Hanya error yang menandakan IDB tak tersedia (open gagal / koneksi
+    // putus / transaksi abort) yang fallback ke localStorage ter-scope.
     const all = await getAllSiswa();
     const idx = all.findIndex((s) => s.id === siswa.id);
     if (idx >= 0) {
@@ -889,12 +916,32 @@ export function getTahunAjaranTerakhirSiswa(s: Siswa): string {
   return '';
 }
 
+/** F1 — Tahun ajaran SEBELUM tahun tujuan (format TAHUN/TAHUN).
+ *  Dipakai pemanggil promosi agar baris riwayat memakai tahun sesi promosi
+ *  yang sedang berjalan (tahun yang ditutup), bukan tebakan dari data terakhir
+ *  yang rusak pada promosi beruntun. '' bila format tak valid. */
+export function tahunAjaranSebelumnya(tahunAjaran: string): string {
+  const m = /^(\d{4})\/(\d{4})$/.exec(String(tahunAjaran || '').trim());
+  if (!m) return '';
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  if (b !== a + 1) return '';
+  return `${a - 1}/${a}`;
+}
+
 export async function promoteSiswaKenaikanKelas(
   siswaIds: string[],
   nextTahunAjaran: string,
   nextTingkat: TingkatKelas,
   nextRombel: string,
-  status: 'Naik Kelas' | 'Lulus' | 'Tinggal di Kelas' = 'Naik Kelas'
+  status: 'Naik Kelas' | 'Lulus' | 'Tinggal di Kelas' = 'Naik Kelas',
+  // F1: tahun sesi promosi yang sedang berjalan (tahun yang DITUTUP), dipakai
+  // sebagai tahunLama baris riwayat. WAJIB diisi pemanggil agar promosi
+  // beruntun tak menulis dua baris riwayat dengan tahunAjaran yang sama:
+  //  - pemanggil tutup-tahun massal: teruskan tahun yang ditutup (args.tahunTutup);
+  //  - pemanggil promosi manual: teruskan tahunAjaranSebelumnya(targetTahun).
+  // Bila kosong, perilaku lama dipakai (tebakan getTahunAjaranTerakhirSiswa).
+  tahunSesiLama?: string
 ): Promise<number> {
   let count = 0;
   const nowIso = new Date().toISOString();
@@ -906,7 +953,9 @@ export async function promoteSiswaKenaikanKelas(
     // bukan diterimaDiTingkat yang bisa sudah bertahun-tahun lalu).
     const tingkatLama = getTingkatAktifSiswa(s);
     const rombelLama = s.rombelSaatIni;
-    const tahunLama = getTahunAjaranTerakhirSiswa(s) || nextTahunAjaran;
+    // F1: tahunLama = tahun sesi promosi yang sedang berjalan (eksplisit),
+    // bukan tebakan dari raport/riwayat terakhir.
+    const tahunLama = (tahunSesiLama || '').trim() || getTahunAjaranTerakhirSiswa(s) || nextTahunAjaran;
 
     const existingHistory = s.riwayatTahunAjaran || [];
     const prevYearHistory = {
@@ -1395,6 +1444,10 @@ function memKey(storeName: string): string {
 }
 
 async function getAllFromStore<T>(storeName: string, lsKey: string): Promise<T[]> {
+  // D5: baca IndexedDB gagal karena ERROR (req.onerror / throw sinkron) BUKAN
+  // berarti data kosong — selalu fallback ke localStorage ter-scope (lsKey
+  // sudah di-scope per sekolah oleh pemanggil via sk()), lalu memori sesi.
+  // Tidak pernah mengembalikan data contoh/akun default dari sini.
   try {
     const db = await openDB();
     const fromIdb: T[] = await new Promise((resolve) => {
@@ -1533,6 +1586,23 @@ export async function deletePtkRef(id: string): Promise<void> {
 
 // ---------------- USER CRUD & AUTH ----------------
 
+/** D5 — Baca daftar user dari cache localStorage ter-scope.
+ *  Dipakai saat baca IndexedDB gagal karena ERROR. Cache kosong → [].
+ *  JANGAN kembalikan initialUsersList di sini: akun default
+ *  (administrator/operator123) yang muncul saat IDB error adalah bug keamanan. */
+function readUsersFromScopedLS(): AppUser[] {
+  try {
+    const raw = localStorage.getItem(sk(LS_KEYS.USERS));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed as AppUser[];
+    }
+  } catch {
+    /* abaikan — kembalikan [] */
+  }
+  return [];
+}
+
 export async function getAllUsers(): Promise<AppUser[]> {
   try {
     const db = await openDB();
@@ -1543,16 +1613,19 @@ export async function getAllUsers(): Promise<AppUser[]> {
       req.onsuccess = () => {
         const users: AppUser[] = req.result || [];
         if (users.length === 0) {
+          // Database benar-benar kosong (pra-seed): akun bawaan agar admin
+          // bisa login pertama kali. BUKAN fallback saat IDB error.
           resolve(initialUsersList);
         } else {
           resolve(users);
         }
       };
-      req.onerror = () => resolve([...initialUsersList]);
+      // D5: IDB error → fallback ke localStorage ter-scope, bukan akun default.
+      req.onerror = () => resolve(readUsersFromScopedLS());
     });
   } catch {
-    const raw = localStorage.getItem(sk(LS_KEYS.USERS));
-    return raw ? JSON.parse(raw) : [...initialUsersList];
+    // D5: openDB gagal → fallback ke localStorage ter-scope; kosong → [].
+    return readUsersFromScopedLS();
   }
 }
 
@@ -1697,6 +1770,29 @@ export function clearSessionTahunAjaran(): void {
 
 // ---------------- BACKUP & RESTORE ----------------
 
+/** D3 — Mode restore backup. */
+export type RestoreMode = 'gabung' | 'ganti-total';
+
+/** D3 — Opsi restore backup. */
+export interface RestoreOptions {
+  /** 'gabung' (default): upsert ke data yang ada. 'ganti-total': hapus dulu
+   *  seluruh data sekolah aktif, lalu restore dari file. */
+  mode?: RestoreMode;
+  /** true = user mencentang "saya paham ini data sekolah lain" — mengizinkan
+   *  restore file yang NPSN-nya berbeda dari sekolah aktif. */
+  konfirmasiSekolahLain?: boolean;
+}
+
+/** D3 — Hasil restore yang jelas. Field success/message/count dipertahankan
+ *  demi kompatibilitas pemanggil lama (BackupRestoreModule, PengaturanSekolahView). */
+export interface RestoreResult {
+  status: 'ditolak' | 'digabung' | 'diganti';
+  alasan?: string;
+  success: boolean;
+  message: string;
+  count: number;
+}
+
 export interface BackupPayload {
   app: string;
   version: string;
@@ -1746,11 +1842,54 @@ export async function exportAllData(): Promise<string> {
   return JSON.stringify(payload, null, 2);
 }
 
-export async function importBackupData(jsonString: string): Promise<{ success: boolean; message: string; count: number }> {
+/**
+ * D3 — Restore file backup JSON.
+ * - mode 'gabung' (default): perilaku lama, upsert ke data yang ada.
+ * - mode 'ganti-total': hapus dulu seluruh data sekolah aktif, lalu restore.
+ * - Restore DITOLAK bila NPSN di file ≠ NPSN sekolah aktif, kecuali pemanggil
+ *   menyetel konfirmasiSekolahLain: true (user mencentang "saya paham ini
+ *   data sekolah lain").
+ * Mengembalikan { status: 'ditolak' | 'digabung' | 'diganti', alasan? }.
+ */
+export async function importBackupData(
+  jsonString: string,
+  opts?: RestoreOptions
+): Promise<RestoreResult> {
+  const mode: RestoreMode = opts?.mode === 'ganti-total' ? 'ganti-total' : 'gabung';
+  const tolak = (alasan: string): RestoreResult => ({
+    status: 'ditolak',
+    alasan,
+    success: false,
+    message: alasan,
+    count: 0,
+  });
   try {
     const data: BackupPayload = JSON.parse(jsonString);
     if (!data.siswa || !Array.isArray(data.siswa)) {
-      throw new Error('Format data cadangan tidak valid (tidak ada array siswa).');
+      return tolak('Format data cadangan tidak valid (tidak ada array siswa).');
+    }
+
+    // D3: cegah profil/data sekolah lain menimpa sekolah aktif tanpa sadar.
+    const npsnBackup = String(data.sekolah?.npsn || '').trim();
+    if (npsnBackup) {
+      let npsnAktif = '';
+      try {
+        npsnAktif = String((await getSekolahProfile())?.npsn || '').trim();
+      } catch {
+        /* profil tak terbaca — tak bisa memverifikasi, lewati cek */
+      }
+      if (npsnAktif && npsnBackup !== npsnAktif && !opts?.konfirmasiSekolahLain) {
+        return tolak(
+          `Restore ditolak: file cadangan milik sekolah lain (NPSN ${npsnBackup}), ` +
+          `sedangkan sekolah aktif bernpsn ${npsnAktif}. ` +
+          `Centang "saya paham ini data sekolah lain" untuk melanjutkan.`
+        );
+      }
+    }
+
+    // D3: mode 'ganti-total' — hapus dulu seluruh data sekolah aktif.
+    if (mode === 'ganti-total') {
+      await clearDatabase();
     }
 
     if (data.sekolah) {
@@ -1770,6 +1909,12 @@ export async function importBackupData(jsonString: string): Promise<{ success: b
       }
       // Backup lama menyimpan plaintext — migrasikan ke hash.
       await migrateUserPasswordsToHash().catch(() => undefined);
+    } else if (mode === 'ganti-total') {
+      // D3: 'ganti-total' menghapus akun juga — pastikan admin bawaan tersedia
+      // bila file backup tidak membawa daftar user, agar tak terkunci keluar.
+      for (const u of await withHashedPasswords(initialUsersList)) {
+        await saveUser(u);
+      }
     }
 
     if (data.rombel && Array.isArray(data.rombel)) {
@@ -1797,14 +1942,18 @@ export async function importBackupData(jsonString: string): Promise<{ success: b
     }
 
     return {
+      status: mode === 'ganti-total' ? 'diganti' : 'digabung',
       success: true,
       message: `Berhasil memulihkan data ${data.siswa.length} siswa dan konfigurasi sistem.`,
       count: data.siswa.length
     };
   } catch (err: any) {
+    const alasan = err.message || 'Gagal memproses file JSON cadangan';
     return {
+      status: 'ditolak',
+      alasan,
       success: false,
-      message: err.message || 'Gagal memproses file JSON cadangan',
+      message: alasan,
       count: 0
     };
   }
