@@ -198,9 +198,10 @@ function hashFallback(plain: string): string {
   return `sha256-iter$${FALLBACK_ITER}$${saltHex}$${h}`;
 }
 
-/** Hash kata sandi baru. Melempar bila kosong. */
+/** Hash kata sandi baru. Melempar bila kosong.
+ *  S10: password TIDAK di-trim — "rahasia " dan "rahasia" adalah password berbeda. */
 export async function hashPassword(plain: string): Promise<string> {
-  const pw = (plain || '').trim();
+  const pw = typeof plain === 'string' ? plain : '';
   if (!pw) throw new Error('Kata sandi tidak boleh kosong.');
   if (hasSubtle()) return hashPbkdf2(pw);
   return hashFallback(pw);
@@ -237,15 +238,16 @@ export interface VerifyResult {
   ok: boolean;
   /** True bila cocok sebagai LEGACY plaintext — panggil `hashPassword` lalu simpan ulang. */
   legacy: boolean;
+  /** S10: true bila cocok lewat fallback TRIM (hash lama dari password ter-trim) —
+   *  pemanggil wajib me-re-hash ke format baru (tanpa trim). */
+  perluRehash: boolean;
 }
 
-/**
- * Verifikasi kata sandi terhadap nilai tersimpan (hash modern ATAU legacy plaintext).
- * Tidak pernah melempar untuk input normal; return { ok:false } bila tidak cocok.
- */
-export async function verifyPassword(plain: unknown, stored: unknown): Promise<VerifyResult> {
-  const pw = typeof plain === 'string' ? plain.trim() : '';
-  if (!pw || typeof stored !== 'string' || !stored) return { ok: false, legacy: false };
+/** Inti pencocokan hash — tanpa trim apa pun (S10). */
+async function cocokkanPassword(
+  pw: string,
+  stored: string
+): Promise<{ ok: boolean; legacy: boolean }> {
   if (stored.startsWith('pbkdf2-sha256$')) {
     if (!hasSubtle()) return { ok: false, legacy: false };
     const [, iterS, saltB64, hashB64] = stored.split('$');
@@ -261,6 +263,29 @@ export async function verifyPassword(plain: unknown, stored: unknown): Promise<V
   }
   // LEGACY: plaintext lama — cocokkan langsung agar migrasi transparan.
   return { ok: stored === pw, legacy: stored === pw };
+}
+
+/**
+ * Verifikasi kata sandi terhadap nilai tersimpan (hash modern ATAU legacy plaintext).
+ * Tidak pernah melempar untuk input normal; return { ok:false } bila tidak cocok.
+ *
+ * S10: password TIDAK di-trim. Verifikasi pertama TANPA trim; bila gagal, coba
+ * fallback DENGAN trim untuk kompatibilitas hash lama yang dibuat dari password
+ * ter-trim. Bila fallback yang cocok, kembalikan `perluRehash: true` agar
+ * pemanggil me-re-hash ke format baru (tanpa trim).
+ */
+export async function verifyPassword(plain: unknown, stored: unknown): Promise<VerifyResult> {
+  const pw = typeof plain === 'string' ? plain : '';
+  const gagal: VerifyResult = { ok: false, legacy: false, perluRehash: false };
+  if (!pw || typeof stored !== 'string' || !stored) return gagal;
+  const cocok = await cocokkanPassword(pw, stored);
+  if (cocok.ok) return { ok: true, legacy: cocok.legacy, perluRehash: false };
+  const pwTrim = pw.trim();
+  if (pwTrim && pwTrim !== pw) {
+    const cocokLama = await cocokkanPassword(pwTrim, stored);
+    if (cocokLama.ok) return { ok: true, legacy: cocokLama.legacy, perluRehash: true }; // S10
+  }
+  return gagal;
 }
 
 /**

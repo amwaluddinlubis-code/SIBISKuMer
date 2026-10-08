@@ -18,7 +18,11 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
   // Fondasi sesi: kohort = siswa yang terlibat pada tahun sesi
   // (riwayat/raport/riwayat-tahun cocok, atau tanpa catatan = roster berjalan).
   const sesi = (sessionTahun || sekolah.tahunAjaran || '').trim();
-  const kohort = sesi ? siswa.filter((s) => siswaTerlibatTahun(s, sesi)) : siswa;
+  // F6: angka resmi rekap hanya mencakup siswa Aktif — siswa berstatus
+  // 'Mutasi Keluar'/'Lulus'/'Mengundurkan Diri'/'Meninggal Dunia' dikecualikan
+  // dari kohort agar tidak ikut terhitung di laporan dinas.
+  const kohort = (sesi ? siswa.filter((s) => siswaTerlibatTahun(s, sesi)) : siswa)
+    .filter((s) => (s.statusSiswa || 'Aktif') === 'Aktif');
   const total = kohort.length;
   const jenjang = sekolah.jenjang || (sekolah.bentukPendidikan?.toUpperCase().includes('SD') ? 'SD' : 'SMP');
   const faseHeader = jenjang === 'SD' ? 'Fase A–C SD' : 'Fase D SMP';
@@ -31,12 +35,15 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
   };
 
   // 1. Group by Rombel (rombel siswa PADA tahun sesi)
-  const rombelMap: Record<string, { L: number; P: number; total: number }> = {};
+  // F5: L = jenisKelamin 'L', P = 'P', X = kosong/null ("belum diisi").
+  // Jenis kelamin kosong TIDAK boleh dihitung sebagai Perempuan.
+  const rombelMap: Record<string, { L: number; P: number; X: number; total: number }> = {};
   kohort.forEach((s) => {
     const r = rombelPadaTahun(s, sesi || null, sekolah.tahunAjaran) || 'Belum Ada';
-    if (!rombelMap[r]) rombelMap[r] = { L: 0, P: 0, total: 0 };
+    if (!rombelMap[r]) rombelMap[r] = { L: 0, P: 0, X: 0, total: 0 };
     if (s.jenisKelamin === 'L') rombelMap[r].L++;
-    else rombelMap[r].P++;
+    else if (s.jenisKelamin === 'P') rombelMap[r].P++;
+    else rombelMap[r].X++;
     rombelMap[r].total++;
   });
   const rombelList = Object.entries(rombelMap).sort((a, b) => a[0].localeCompare(b[0]));
@@ -97,9 +104,9 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
       const judul = `REKAPITULASI BUKU INDUK — ${sekolah.nama || ''} — TA ${sesi || sekolah.tahunAjaran}`;
       const sheetRombel = [
         [judul], [],
-        ['Rombel', 'Laki-laki (L)', 'Perempuan (P)', 'Jumlah Total', 'Keterangan Fase'],
-        ...rombelList.map(([rombel, c]) => [`Rombel ${rombel}`, c.L, c.P, c.total, faseOfRombel(rombel)]),
-        ['TOTAL KESELURUHAN', rombelList.reduce((a, c) => a + c[1].L, 0), rombelList.reduce((a, c) => a + c[1].P, 0), total, '100% Terdaftar'],
+        ['Rombel', 'Laki-laki (L)', 'Perempuan (P)', 'JK Belum Diisi (X)', 'Jumlah Total', 'Keterangan Fase'],
+        ...rombelList.map(([rombel, c]) => [`Rombel ${rombel}`, c.L, c.P, c.X, c.total, faseOfRombel(rombel)]),
+        ['TOTAL KESELURUHAN', rombelList.reduce((a, c) => a + c[1].L, 0), rombelList.reduce((a, c) => a + c[1].P, 0), rombelList.reduce((a, c) => a + c[1].X, 0), total, '100% Terdaftar'],
       ];
       const sheetAgama = [
         [judul], [],
@@ -203,6 +210,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
                   <th className="p-2.5">Tingkat / Rombel</th>
                   <th className="p-2.5 text-center">Laki-laki (L)</th>
                   <th className="p-2.5 text-center">Perempuan (P)</th>
+                  <th className="p-2.5 text-center">JK Belum Diisi</th>
                   <th className="p-2.5 text-center">Jumlah Total</th>
                   <th className="p-2.5">Keterangan Fase</th>
                 </tr>
@@ -213,6 +221,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
                     <td className="p-2.5 font-bold text-slate-900">Rombel {rombel}</td>
                     <td className="p-2.5 text-center text-blue-700 font-semibold">{counts.L}</td>
                     <td className="p-2.5 text-center text-rose-700 font-semibold">{counts.P}</td>
+                    <td className="p-2.5 text-center text-amber-700 font-semibold">{counts.X}</td>
                     <td className="p-2.5 text-center font-bold text-slate-900">{counts.total}</td>
                     <td className="p-2.5 text-slate-500 text-[11px]">
                       {faseOfRombel(rombel)}
@@ -226,6 +235,9 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
                   </td>
                   <td className="p-2.5 text-center text-rose-900">
                     {rombelList.reduce((acc, curr) => acc + curr[1].P, 0)}
+                  </td>
+                  <td className="p-2.5 text-center text-amber-900">
+                    {rombelList.reduce((acc, curr) => acc + curr[1].X, 0)}
                   </td>
                   <td className="p-2.5 text-center text-slate-900">{total}</td>
                   <td className="p-2.5 text-[11px] text-slate-600">100% Terdaftar</td>

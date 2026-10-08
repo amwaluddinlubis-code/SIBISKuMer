@@ -18,6 +18,16 @@ function sanitasiNamaSheet(nama: string): string {
   return bersih || 'Sheet1';
 }
 
+/**
+ * S11: cegah formula injection — sel string yang diawali `=`, `+`, `-`, atau `@`
+ * diberi prefix kutip tunggal (') agar Excel/LibreOffice memperlakukannya
+ * sebagai teks biasa, bukan formula. Angka tidak disentuh.
+ */
+function amanDariFormula(v: SelExcel): SelExcel {
+  if (typeof v === 'string' && /^[=+\-@]/.test(v)) return `'${v}`;
+  return v;
+}
+
 function hitungLebar(baris: SelExcel[][]): number[] {
   const nKol = Math.max(0, ...baris.map((r) => r.length));
   const lebar: number[] = [];
@@ -43,7 +53,10 @@ export async function buatWorkbook(lembar: LembarExcel[]): Promise<{ XLSX: typeo
     let i = 2;
     while (pakai.includes(nama)) nama = sanitasiNamaSheet(`${l.nama} ${i++}`);
     pakai.push(nama);
-    const ws = XLSX.utils.aoa_to_sheet(l.baris as unknown[][]);
+    // S11: sanitasi SEMUA sel string sebelum menjadi worksheet — semua ekspor
+    // yang lewat fungsi terpusat ini otomatis terlindungi formula injection.
+    const barisAman = l.baris.map((r) => r.map(amanDariFormula));
+    const ws = XLSX.utils.aoa_to_sheet(barisAman as unknown[][]);
     ws['!cols'] = (l.lebar || hitungLebar(l.baris)).map((wch) => ({ wch }));
     XLSX.utils.book_append_sheet(wb, ws, nama);
   }

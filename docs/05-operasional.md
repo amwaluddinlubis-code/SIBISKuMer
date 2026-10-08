@@ -178,6 +178,26 @@ aktif. SOP:
   dinonaktifkan tidak bisa memakai sesi lama.
 - Batas `rombelAkses` per operator; backup tersimpan terbatas akses; jangan
   membagikan token Web Service Dapodik.
+- **Pesan login generik**: "Username atau kata sandi salah." untuk semua kasus
+  gagal (anti-enumerasi username).
+- **Kata sandi tidak lagi di-trim**: spasi di awal/akhir kini dianggap bagian dari
+  kata sandi. Hash lama (dibuat dari versi trim) tetap bisa login sekali, lalu
+  otomatis di-hash ulang ke format baru.
+- **Kunci brute-force ganda**: hitungan gagal disimpan di localStorage DAN
+  IndexedDB — menghapus localStorage saja tidak membuka kunci.
+- **Token Dapodik tidak ikut file backup** (dieksklusi saat ekspor); token
+  tersimpan plaintext di perangkat — jangan bagikan file profil/DB mentah.
+- **Rekapitulasi**: hanya siswa Aktif yang dihitung; jenis kelamin kosong masuk
+  kolom "Belum Diisi" (tidak lagi dihitung Perempuan).
+- **Nilai kosong = "belum dinilai"** (null), bukan 0; rata-rata memakai pembulatan
+  tunggal 1 desimal di simpan/cetak/ekspor.
+- **Keputusan "Lulus" di raport** meminta konfirmasi lalu mengubah status siswa +
+  menulis riwayat (tidak diam-diam).
+- **Tutup tahun**: promosi ditulis sekaligus; tahun hanya dikunci bila semua
+  promosi berhasil.
+- **Ganti NPSN via sinkron Dapodik** selalu meminta konfirmasi eksplisit.
+- **Ganti sekolah ditolak** selama impor backup / sinkronisasi Dapodik berjalan
+  (mencegah tulis ke DB sekolah yang salah).
 
 ### 7a. Proxy Dapodik (server.ts) — variabel env
 

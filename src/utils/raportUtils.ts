@@ -374,3 +374,26 @@ export function normalizeSiswaRaport(siswa: Siswa): Siswa {
   const list = getRaportList(siswa).map(normalizeRaport);
   return { ...siswa, nilaiRaport: list, raportSemester: list };
 }
+
+/** F7 — Pembulatan TUNGGAL untuk rata-rata nilai raport: 1 desimal dengan
+ *  aturan Math.round(n*10)/10. Dipakai di simpan (NilaiRaportView), cetak
+ *  (CetakBukuInduk), dan ekspor agar angka dokumen resmi selalu sama dengan
+ *  data tersimpan. PENTING: helper ini TIDAK mengubah/migrasi data lama —
+ *  hanya menyamakan logika pembulatan ke depan. */
+export function bulatkanNilai(nilai: number): number {
+  if (!Number.isFinite(nilai)) return 0;
+  return Math.round(nilai * 10) / 10;
+}
+
+/** F14 — Rata-rata nilai mapel; nilai null/undefined ("belum dinilai")
+ *  DIABAIKAN — tidak dihitung sebagai 0 dan tidak ikut penyebut — agar
+ *  mapel yang belum dinilai tidak menekan rata-rata tanpa jejak.
+ *  Hasil memakai aturan pembulatan tunggal bulatkanNilai (F7). */
+export function hitungRataRataNilai(list: Array<{ nilaiAkhir?: number | null }>): number {
+  const valid = (list || []).filter(
+    (m) => typeof m?.nilaiAkhir === 'number' && Number.isFinite(m.nilaiAkhir)
+  );
+  if (valid.length === 0) return 0;
+  const total = valid.reduce((acc, m) => acc + (m.nilaiAkhir as number), 0);
+  return bulatkanNilai(total / valid.length);
+}

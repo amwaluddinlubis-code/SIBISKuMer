@@ -2,8 +2,16 @@ import { Siswa, SekolahProfile, DapodikConfig, AppUser, RaportSemester } from '.
 
 /** Hasil validasi satu field identitas. */
 export interface FieldIssue {
-  field: 'namaLengkap' | 'nisn' | 'nik' | 'nipd' | 'noKk';
+  field: 'namaLengkap' | 'nisn' | 'nik' | 'nipd' | 'noKk' | 'tanggalLahir';
   message: string;
+}
+
+/** F10 — Hasil validateIdentitasSiswa: array berisi error blokir (kompatibel
+ *  dengan pemakaian lama: `issues.length > 0` tetap berarti "gagal"),
+ *  plus properti opsional `warnings` untuk peringatan NON-blokir
+ *  (mis. tanggal lahir kosong) yang tidak menggagalkan simpan. */
+export interface IdentitasValidationResult extends Array<FieldIssue> {
+  warnings: FieldIssue[];
 }
 
 const ONLY_DIGITS = /^[0-9]+$/;
@@ -50,12 +58,23 @@ function findDuplicate(
 /**
  * Validasi identitas unik + format.
  * Dipakai SiswaFormModal sebelum onSave, dan bisa dipakai ulang saat impor/sinkron.
+ *
+ * F10: tanggalLahir & tanggalDiterima bersifat OPSIONAL pada parameter
+ * (pemanggil lama yang tidak mengirimnya tetap kompatibel) — bila dikirim,
+ * tanggal lahir divalidasi: (a) tidak boleh di masa depan [error], (b) tidak
+ * boleh setelah tanggal diterima/masuk sekolah [error], (c) bila kosong
+ * mengikuti konvensi fungsi ini (hanya namaLengkap & nisn yang wajib keras):
+ * field opsional yang kosong → peringatan di `result.warnings`, bukan error.
  */
 export function validateIdentitasSiswa(
-  data: Pick<Siswa, 'id' | 'namaLengkap' | 'nisn' | 'nik' | 'nipd' | 'noKk'>,
+  data: Pick<Siswa, 'id' | 'namaLengkap' | 'nisn' | 'nik' | 'nipd' | 'noKk'> & {
+    tanggalLahir?: string;
+    tanggalDiterima?: string;
+  },
   existing: Siswa[] = []
-): FieldIssue[] {
+): IdentitasValidationResult {
   const issues: FieldIssue[] = [];
+  const warnings: FieldIssue[] = [];
 
   if (!data.namaLengkap || !data.namaLengkap.trim()) {
     issues.push({ field: 'namaLengkap', message: 'Nama lengkap siswa wajib diisi.' });
@@ -94,7 +113,50 @@ export function validateIdentitasSiswa(
     issues.push({ field: 'noKk', message: 'No. KK harus 16 digit angka bila diisi.' });
   }
 
-  return issues;
+  // F10: validasi tanggal lahir.
+  const tglLahirRaw = (data.tanggalLahir || '').trim();
+  if (!tglLahirRaw) {
+    warnings.push({ field: 'tanggalLahir', message: 'Tanggal lahir belum diisi.' });
+  } else {
+    const lahir = parseTanggalYmd(tglLahirRaw);
+    if (!lahir) {
+      issues.push({ field: 'tanggalLahir', message: 'Tanggal lahir tidak valid (gunakan format YYYY-MM-DD).' });
+    } else {
+      const hariIni = new Date();
+      hariIni.setHours(0, 0, 0, 0);
+      if (lahir.getTime() > hariIni.getTime()) {
+        issues.push({ field: 'tanggalLahir', message: 'Tanggal lahir tidak boleh di masa depan.' });
+      }
+      const tglDiterimaRaw = (data.tanggalDiterima || '').trim();
+      if (tglDiterimaRaw) {
+        const diterima = parseTanggalYmd(tglDiterimaRaw);
+        if (diterima && lahir.getTime() > diterima.getTime()) {
+          issues.push({
+            field: 'tanggalLahir',
+            message: 'Tanggal lahir tidak boleh setelah tanggal diterima di sekolah.'
+          });
+        }
+      }
+    }
+  }
+
+  const result = issues as IdentitasValidationResult;
+  result.warnings = warnings;
+  return result;
+}
+
+/** F10 — Parse tanggal 'YYYY-MM-DD' sebagai tanggal lokal; null bila format
+ *  tak valid atau tanggal tak ada (mis. 2026-02-30). */
+function parseTanggalYmd(v: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const dt = new Date(y, mo - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
+  return dt;
 }
 
 // ---------------- Validasi form umum (wajib / format) ----------------
