@@ -1,26 +1,54 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Database, 
-  Download, 
-  Upload, 
-  Cloud, 
-  HardDrive, 
-  RefreshCw, 
-  Trash2, 
-  ShieldAlert, 
-  CheckCircle2, 
-  AlertCircle, 
-  FileJson, 
-  Lock, 
+import {
+  Database,
+  Download,
+  Upload,
+  Cloud,
+  HardDrive,
+  RefreshCw,
+  Trash2,
+  ShieldAlert,
+  CheckCircle2,
+  AlertCircle,
+  FileJson,
+  Lock,
   RotateCcw,
   LogOut,
   ExternalLink,
   Calendar,
   Layers,
-  FileCheck
+  FileCheck,
+  Timer,
+  History,
+  Play
 } from 'lucide-react';
-import { SekolahProfile, AppUser } from '../types';
-import { exportDatabaseBackup, importDatabaseBackup, resetToInitialData, clearDatabase } from '../utils/db';
+import { SekolahProfile, AppUser, AutoBackupSnapshot } from '../types';
+import { exportDatabaseBackup, importDatabaseBackup, resetToInitialData, clearDatabase, deleteAutoSnapshot, parseBackupPayload, importSelectiveSiswa, type BackupPayload } from '../utils/db';
+import { catatAudit } from '../utils/audit';
+import {
+  bacaAutoBackupSetting,
+  simpanAutoBackupSetting,
+  jalankanAutoBackup,
+  daftarSnapshot,
+  AUTOBACKUP_PILIHAN_MENIT,
+} from '../utils/autoBackup';
+import type { User as FirebaseUser } from 'firebase/auth';
+import {
+  pantauAuthCloud,
+  signInGoogleCloud,
+  signOutGoogleCloud,
+} from '../utils/firebaseApp';
+import {
+  kunciSekolahCloud,
+  adaCloudSekolah,
+  siapkanPinCloud,
+  apakahPinTerverifikasi,
+  tarikCloud,
+  unggahCloud,
+  sinkronCloud,
+  statusCloudTerakhir,
+  type HasilCloud,
+} from '../utils/cloudSync';
 import { 
   initDriveAuth, 
   signInWithGoogleDrive, 
@@ -36,12 +64,27 @@ import {
   DriveBackupFile 
 } from '../utils/googleDriveService';
 import { User } from 'firebase/auth';
-import { encryptBackup, decryptBackup, isEncryptedBackup } from '../utils/backupCrypto';
+import { toast, confirmDialog } from '../utils/notify';
 
 interface BackupRestoreModuleProps {
   sekolah: SekolahProfile;
   currentUser?: AppUser | null;
   onDataChanged: () => void;
+}
+
+function formatSnapWaktu(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return iso;
+  }
+}
+
+function formatUkuran(bytes: number): string {
+  if (!bytes) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(2)} MB`;
 }
 
 export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
@@ -61,13 +104,45 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
   // Local state
   const [isExportingLocal, setIsExportingLocal] = useState(false);
   const [isImportingLocal, setIsImportingLocal] = useState(false);
-  const [exportPassword, setExportPassword] = useState('');
-  const [importPassword, setImportPassword] = useState('');
 
   // Drive actions state
   const [isUploadingDrive, setIsUploadingDrive] = useState(false);
   const [processingFileId, setProcessingFileId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+  // Cadangan otomatis state
+  const [autoCfg, setAutoCfg] = useState(() => bacaAutoBackupSetting());
+  const [snapshots, setSnapshots] = useState<AutoBackupSnapshot[]>([]);
+  const [isAutoBusy, setIsAutoBusy] = useState(false);
+  const [restoringSnapId, setRestoringSnapId] = useState<string | null>(null);
+
+  // Restore selektif state
+  const [selektif, setSelektif] = useState<{
+    namaFile: string;
+    totalSiswa: number;
+    rombel: Array<{ rombel: string; jumlah: number }>;
+    payload: BackupPayload;
+  } | null>(null);
+  const [selektifPilih, setSelektifPilih] = useState<string[]>([]);
+  const [isSelektifBusy, setIsSelektifBusy] = useState(false);
+
+  // Sinkron cloud state
+  const [cloudUser, setCloudUser] = useState<FirebaseUser | null>(null);
+  const [cloudKey, setCloudKey] = useState('');
+  const [cloudAda, setCloudAda] = useState<boolean | null>(null);
+  const [pinInput, setPinInput] = useState('');
+  const [pinOk, setPinOk] = useState(false);
+  const [isCloudBusy, setIsCloudBusy] = useState(false);
+  const [cloudProg, setCloudProg] = useState<{ tahap: string; persen: number } | null>(null);
+  const [cloudStatus, setCloudStatus] = useState(() => statusCloudTerakhir());
+
+  const muatSnapshots = async () => {
+    try {
+      setSnapshots(await daftarSnapshot());
+    } catch {
+      setSnapshots([]);
+    }
+  };
 
   // Listen to Firebase auth state for Google Drive
   useEffect(() => {
@@ -89,8 +164,29 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    setAutoCfg(bacaAutoBackupSetting());
+    void muatSnapshots();
+  }, []);
+
+  useEffect(() => {
+    setCloudKey(kunciSekolahCloud());
+    setPinOk(apakahPinTerverifikasi());
+    setCloudStatus(statusCloudTerakhir());
+    const stop = pantauAuthCloud((u) => {
+      setCloudUser(u);
+      if (!u) {
+        setCloudAda(null);
+        setPinOk(false);
+      }
+    });
+    return stop;
+  }, []);
+
   const showStatus = (type: 'success' | 'error' | 'info', text: string) => {
     setStatusMessage({ type, text });
+    // Notifikasi global untuk setiap aksi simpan/gagal backup-restore.
+    toast(text, type === 'success' ? 'success' : type === 'error' ? 'error' : 'info');
     setTimeout(() => {
       setStatusMessage(null);
     }, 6000);
@@ -137,7 +233,7 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     }
   };
 
-  // Local Backup: Download JSON file (opsional: terenkripsi dengan password)
+  // Local Backup: Download JSON file
   const handleExportLocal = async () => {
     try {
       setIsExportingLocal(true);
@@ -145,15 +241,9 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
       const schoolName = (sekolah.nama || 'Sekolah').replace(/[^a-zA-Z0-9]/g, '_');
       const dateStr = new Date().toISOString().slice(0, 10);
       const timeStr = new Date().toTimeString().slice(0, 5).replace(':', '-');
+      const filename = `Backup_BukuInduk_${schoolName}_${dateStr}_${timeStr}.json`;
 
-      let payload = jsonStr;
-      let filename = `Backup_BukuInduk_${schoolName}_${dateStr}_${timeStr}.json`;
-      if (exportPassword.trim()) {
-        payload = await encryptBackup(jsonStr, exportPassword.trim());
-        filename = `Backup_BukuInduk_${schoolName}_${dateStr}_${timeStr}.enc.json`;
-      }
-
-      const blob = new Blob([payload], { type: 'application/json' });
+      const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -163,10 +253,11 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      showStatus('success', exportPassword.trim()
-        ? `Cadangan TERENKRIPSI berhasil diunduh (${filename}). Simpan password baik-baik — tanpa password file tidak bisa dibuka.`
-        : `Cadangan lokal berhasil diunduh (${filename}).`);
-      setExportPassword('');
+      showStatus('success', `Cadangan lokal berhasil diunduh (${filename}).`);
+      catatAudit('backup_buat', {
+        entitas: 'backup',
+        ringkasan: `Unduh cadangan manual (${filename})`,
+      });
     } catch (err: any) {
       showStatus('error', `Gagal membuat cadangan lokal: ${err.message}`);
     } finally {
@@ -174,12 +265,12 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     }
   };
 
-  // Local Restore: Select JSON file from computer (mendukung file terenkripsi)
+  // Local Restore: Select JSON file from computer
   const handleImportLocal = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!confirm(`Peringatan: Memulihkan cadangan "${file.name}" akan menimpa data siswa dan konfigurasi yang ada. Lanjutkan pemulihan?`)) {
+    if (!(await confirmDialog(`Peringatan: Memulihkan cadangan "${file.name}" akan menimpa data siswa dan konfigurasi yang ada. Lanjutkan pemulihan?`, { confirmLabel: 'Ya, Pulihkan' }))) {
       e.target.value = '';
       return;
     }
@@ -187,18 +278,13 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     try {
       setIsImportingLocal(true);
       const text = await file.text();
-      let jsonStr = text;
-      if (isEncryptedBackup(text)) {
-        if (!importPassword.trim()) {
-          showStatus('error', 'File ini terenkripsi. Masukkan password cadangan pada kolom di bawah, lalu pilih berkas lagi.');
-          return;
-        }
-        jsonStr = await decryptBackup(text, importPassword.trim());
-      }
-      const res = await importDatabaseBackup(jsonStr);
+      const res = await importDatabaseBackup(text);
       if (res.success) {
         showStatus('success', res.message);
-        setImportPassword('');
+        catatAudit('backup_pulihkan', {
+          entitas: 'backup',
+          ringkasan: `Pulihkan dari file lokal "${file.name}" (${res.count} siswa)`,
+        });
         onDataChanged();
       } else {
         showStatus('error', `Gagal memulihkan data: ${res.message}`);
@@ -252,7 +338,7 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
       return;
     }
 
-    if (!confirm(`Konfirmasi Pemulihan: Apakah Anda yakin ingin memulihkan database dari file Google Drive "${file.name}"?\nData lokal yang ada saat ini akan diperbarui sesuai arsip tersebut.`)) {
+    if (!(await confirmDialog(`Konfirmasi Pemulihan: Apakah Anda yakin ingin memulihkan database dari file Google Drive "${file.name}"?\nData lokal yang ada saat ini akan diperbarui sesuai arsip tersebut.`, { confirmLabel: 'Ya, Pulihkan' }))) {
       return;
     }
 
@@ -262,6 +348,10 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
       const res = await importDatabaseBackup(jsonStr);
       if (res.success) {
         showStatus('success', `Berhasil memulihkan dari Google Drive: ${res.message}`);
+        catatAudit('backup_pulihkan', {
+          entitas: 'backup',
+          ringkasan: `Pulihkan dari Google Drive "${file.name}" (${res.count} siswa)`,
+        });
         onDataChanged();
       } else {
         showStatus('error', `Gagal memulihkan: ${res.message}`);
@@ -279,7 +369,7 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     const token = googleToken || getDriveAccessToken();
     if (!token) return;
 
-    if (!confirm(`Hapus file cadangan "${file.name}" dari Google Drive secara permanen?`)) {
+    if (!(await confirmDialog(`Hapus file cadangan "${file.name}" dari Google Drive secara permanen?`, { confirmLabel: 'Ya, Hapus' }))) {
       return;
     }
 
@@ -298,27 +388,253 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
   // Reset to sample data
   const handleResetSample = async () => {
     if (!isAdmin) {
-      alert('Tindakan ini memerlukan hak akses Administrator.');
+      toast('Tindakan ini memerlukan hak akses Administrator.', 'error');
       return;
     }
-    if (confirm('Kembalikan database ke data contoh Kurikulum Merdeka? Data kustom akan digantikan dengan data sampel.')) {
-      await resetToInitialData();
-      onDataChanged();
-      showStatus('success', 'Data contoh Kurikulum Merdeka berhasil dimuat kembali!');
+    if (await confirmDialog('Kembalikan database ke data contoh Kurikulum Merdeka? Data kustom akan digantikan dengan data sampel.', { confirmLabel: 'Ya, Kembalikan' })) {
+      try {
+        await resetToInitialData();
+        onDataChanged();
+        catatAudit('backup_reset', {
+          entitas: 'backup',
+          ringkasan: 'Database dikembalikan ke data contoh',
+        });
+        showStatus('success', 'Data contoh Kurikulum Merdeka berhasil dimuat kembali!');
+      } catch (err: unknown) {
+        showStatus('error', `Gagal memuat data contoh: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
   };
 
   // Clear all data
   const handleClearAll = async () => {
     if (!isAdmin) {
-      alert('Tindakan ini memerlukan hak akses Administrator.');
+      toast('Tindakan ini memerlukan hak akses Administrator.', 'error');
       return;
     }
-    const input = prompt('PERINGATAN KRUSIAL: Seluruh data siswa dan riwayat akan dihapus permanen!\nKetik "HAPUS" untuk melanjutkan:');
-    if (input === 'HAPUS') {
-      await clearDatabase();
+    const ok = await confirmDialog('PERINGATAN KRUSIAL: Seluruh data siswa dan riwayat akan dihapus permanen! Lanjutkan penghapusan?', { confirmLabel: 'Ya, Hapus Semua' });
+    if (ok) {
+      try {
+        await clearDatabase();
+        onDataChanged();
+        catatAudit('backup_reset', {
+          entitas: 'backup',
+          ringkasan: 'Database dikosongkan total',
+        });
+        showStatus('info', 'Database aplikasi telah dikosongkan.');
+      } catch (err: unknown) {
+        showStatus('error', `Gagal mengosongkan database: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  };
+
+  // ---- Cadangan otomatis ----
+  const handleToggleAuto = () => {
+    const berikutnya = simpanAutoBackupSetting({ aktif: !autoCfg.aktif });
+    setAutoCfg(berikutnya);
+    showStatus('info', berikutnya.aktif ? 'Cadangan otomatis DIAKTIFKAN.' : 'Cadangan otomatis dimatikan.');
+  };
+
+  const handleIntervalAuto = (menit: number) => {
+    setAutoCfg(simpanAutoBackupSetting({ intervalMenit: menit, aktif: true }));
+    showStatus('info', `Interval cadangan otomatis: tiap ${menit} menit.`);
+  };
+
+  const handleSnapshotNow = async () => {
+    setIsAutoBusy(true);
+    try {
+      const hasil = await jalankanAutoBackup(currentUser?.username || 'admin');
+      if (hasil.jalan) {
+        showStatus('success', `Snapshot otomatis tersimpan (${hasil.pesan})`);
+        catatAudit('backup_buat', {
+          entitas: 'backup',
+          ringkasan: `Snapshot otomatis manual (${hasil.pesan})`,
+        });
+      } else {
+        showStatus('info', `Snapshot dilewati: ${hasil.pesan}`);
+      }
+      setAutoCfg(bacaAutoBackupSetting());
+      await muatSnapshots();
+    } catch (err: unknown) {
+      showStatus('error', `Gagal membuat snapshot: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsAutoBusy(false);
+    }
+  };
+
+  const handleDownloadSnap = (snap: AutoBackupSnapshot) => {
+    const schoolName = (sekolah.nama || 'Sekolah').replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `AutoBackup_${schoolName}_${snap.timestamp.slice(0, 10)}_${snap.timestamp.slice(11, 16).replace(':', '-')}.json`;
+    const blob = new Blob([snap.payload], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showStatus('success', `Snapshot ${formatSnapWaktu(snap.timestamp)} diunduh (${filename}).`);
+  };
+
+  const handleRestoreSnap = async (snap: AutoBackupSnapshot) => {
+    const ok = await confirmDialog(
+      `Pulihkan database dari snapshot otomatis ${formatSnapWaktu(snap.timestamp)} (${snap.jumlahSiswa} siswa)? Data saat ini akan ditimpa.`,
+      { confirmLabel: 'Ya, Pulihkan' }
+    );
+    if (!ok) return;
+    setRestoringSnapId(snap.id);
+    try {
+      const res = await importDatabaseBackup(snap.payload);
+      if (res.success) {
+        showStatus('success', `Dipulihkan dari snapshot: ${res.message}`);
+        catatAudit('backup_pulihkan', {
+          entitas: 'backup',
+          ringkasan: `Pulihkan dari snapshot otomatis ${formatSnapWaktu(snap.timestamp)} (${res.count} siswa)`,
+        });
+        onDataChanged();
+      } else {
+        showStatus('error', `Gagal memulihkan snapshot: ${res.message}`);
+      }
+    } catch (err: unknown) {
+      showStatus('error', `Gagal memulihkan snapshot: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setRestoringSnapId(null);
+    }
+  };
+
+  const handleDeleteSnap = async (snap: AutoBackupSnapshot) => {
+    const ok = await confirmDialog(`Hapus snapshot otomatis ${formatSnapWaktu(snap.timestamp)}?`, { confirmLabel: 'Ya, Hapus' });
+    if (!ok) return;
+    try {
+      await deleteAutoSnapshot(snap.id);
+      await muatSnapshots();
+      showStatus('info', 'Snapshot dihapus.');
+    } catch (err: unknown) {
+      showStatus('error', `Gagal menghapus snapshot: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  // ---- Sinkron cloud antar-perangkat ----
+  const handleCloudLogin = async () => {
+    try {
+      const u = await signInGoogleCloud();
+      showStatus('success', `Masuk Google: ${u.email || 'akun terhubung'}.`);
+    } catch (err: unknown) {
+      showStatus('error', `Gagal masuk Google: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleCloudLogout = async () => {
+    try {
+      await signOutGoogleCloud();
+      setPinInput('');
+      showStatus('info', 'Keluar dari akun Google cloud.');
+    } catch (err: unknown) {
+      showStatus('error', `Gagal keluar: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleCekCloud = async () => {
+    try {
+      const ada = await adaCloudSekolah();
+      setCloudAda(ada);
+      showStatus('info', ada ? 'Rumah cloud sekolah ini SUDAH ada — masukkan PIN untuk verifikasi.' : 'Belum ada rumah cloud — buat PIN untuk memulai.');
+    } catch (err: unknown) {
+      showStatus('error', `Gagal memeriksa cloud: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handlePinCloud = async () => {
+    if (!pinInput.trim()) {
+      toast('Masukkan PIN sekolah dulu.', 'warning');
+      return;
+    }
+    try {
+      const r = await siapkanPinCloud(pinInput);
+      setPinOk(true);
+      setCloudAda(true);
+      setPinInput('');
+      showStatus('success', r.baru ? 'Rumah cloud + PIN dibuat. Perangkat ini terverifikasi.' : 'PIN benar. Perangkat ini terverifikasi.');
+    } catch (err: unknown) {
+      showStatus('error', `PIN ditolak: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const ringkasHasil = (h: HasilCloud): string => {
+    const bag = [`↓ ${h.diunduh}`, `↑ ${h.diunggah}`];
+    if (h.peringatan.length > 0) bag.push(`${h.peringatan.length} peringatan`);
+    return bag.join(' • ');
+  };
+
+  const jalankanCloud = async (
+    aksi: 'unggah' | 'unduh' | 'sinkron',
+    fn: (prog: (tahap: string, persen: number) => void) => Promise<HasilCloud>
+  ) => {
+    setIsCloudBusy(true);
+    setCloudProg({ tahap: 'Memulai…', persen: 0 });
+    try {
+      const hasil = await fn((tahap, persen) => setCloudProg({ tahap, persen }));
+      const ringkas = ringkasHasil(hasil);
+      showStatus('success', `Cloud ${aksi} selesai (${ringkas}).`);
+      catatAudit(
+        aksi === 'unggah' ? 'cloud_unggah' : aksi === 'unduh' ? 'cloud_unduh' : 'cloud_sinkron',
+        { entitas: 'backup', ringkasan: `Cloud ${aksi} (${ringkas})`, detail: hasil.peringatan.slice(0, 3).join('; ') || undefined }
+      );
+      if (aksi !== 'unggah') onDataChanged();
+      setCloudStatus(statusCloudTerakhir());
+    } catch (err: unknown) {
+      showStatus('error', `Cloud ${aksi} gagal: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsCloudBusy(false);
+      setCloudProg(null);
+    }
+  };
+  // ---- Restore selektif per-rombel ----
+  const handleSelektifFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const hasil = parseBackupPayload(text);
+      setSelektif({ namaFile: file.name, ...hasil });
+      setSelektifPilih([]);
+      showStatus('info', `File "${file.name}" dimuat: ${hasil.totalSiswa} siswa dalam ${hasil.rombel.length} rombel. Centang rombel yang dipulihkan.`);
+    } catch (err: unknown) {
+      setSelektif(null);
+      showStatus('error', `File bukan cadangan valid: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const toggleSelektifRombel = (rombel: string) => {
+    setSelektifPilih((prev) => (prev.includes(rombel) ? prev.filter((r) => r !== rombel) : [...prev, rombel]));
+  };
+
+  const handleSelektifRestore = async () => {
+    if (!selektif || selektifPilih.length === 0) {
+      toast('Centang minimal satu rombel untuk dipulihkan.', 'warning');
+      return;
+    }
+    const jumlah = selektif.rombel.filter((r) => selektifPilih.includes(r.rombel)).reduce((n, r) => n + r.jumlah, 0);
+    const ok = await confirmDialog(
+      `Pulihkan ${jumlah} siswa dari rombel ${selektifPilih.join(', ')}? Data ID yang sama akan ditimpa, sisanya tidak tersentuh.`,
+      { confirmLabel: 'Ya, Pulihkan' }
+    );
+    if (!ok) return;
+    setIsSelektifBusy(true);
+    try {
+      const hasil = await importSelectiveSiswa(selektif.payload, selektifPilih);
+      showStatus('success', `Restore selektif selesai: +${hasil.ditambahkan} baru, ~${hasil.diperbarui} diperbarui (${hasil.total} diproses).`);
+      catatAudit('backup_pulihkan', {
+        entitas: 'backup',
+        ringkasan: `Restore selektif "${selektif.namaFile}" rombel ${selektifPilih.join(', ')} (+${hasil.ditambahkan}/~${hasil.diperbarui})`,
+      });
       onDataChanged();
-      showStatus('info', 'Database aplikasi telah dikosongkan.');
+    } catch (err: unknown) {
+      showStatus('error', `Gagal restore selektif: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsSelektifBusy(false);
     }
   };
 
@@ -431,18 +747,6 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
                     <p className="text-[11px] text-slate-500 mt-1">
                       Menghasilkan file snapshot lengkap yang siap diunduh secara instan tanpa membutuhkan koneksi internet.
                     </p>
-                    <div className="mt-2.5">
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Password enkripsi <span className="font-normal text-slate-400">(opsional, min. 8 karakter — sangat disarankan untuk file di flashdisk)</span>
-                      </label>
-                      <input
-                        type="password"
-                        value={exportPassword}
-                        onChange={(e) => setExportPassword(e.target.value)}
-                        placeholder="Kosongkan = file biasa tanpa enkripsi"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                      />
-                    </div>
                   </div>
                   <button
                     onClick={handleExportLocal}
@@ -464,27 +768,15 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
                       Pulihkan dari Komputer Lokal (Upload .json)
                     </h4>
                     <p className="text-[11px] text-slate-600 mt-1">
-                      Pilih berkas cadangan .json dari komputer Anda untuk memulihkan seluruh data ke aplikasi. Mendukung file terenkripsi (.enc.json).
+                      Pilih berkas cadangan .json dari komputer Anda untuk memulihkan seluruh data ke aplikasi.
                     </p>
-                    <div className="mt-2.5">
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Password file terenkripsi <span className="font-normal text-slate-400">(hanya bila file .enc.json)</span>
-                      </label>
-                      <input
-                        type="password"
-                        value={importPassword}
-                        onChange={(e) => setImportPassword(e.target.value)}
-                        placeholder="Masukkan password cadangan terenkripsi"
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none"
-                      />
-                    </div>
                   </div>
                   <label className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer">
                     <Upload className="w-3.5 h-3.5" />
                     <span>{isImportingLocal ? 'Memulihkan...' : 'Pilih Berkas'}</span>
                     <input
                       type="file"
-                      accept=".json,.enc.json,application/json"
+                      accept=".json"
                       onChange={handleImportLocal}
                       disabled={isImportingLocal}
                       className="hidden"
@@ -724,6 +1016,295 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
           )}
         </div>
       )}
+
+      {/* MODUL 3: CADANGAN OTOMATIS TERJADWAL */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
+              <Timer className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-slate-900">Cadangan Otomatis Terjadwal</h3>
+              <p className="text-[11px] text-slate-500">Snapshot berkala tersimpan di perangkat (maks 5 terbaru)</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={autoCfg.intervalMenit}
+              onChange={(e) => handleIntervalAuto(Number(e.target.value))}
+              className="ui-select !w-auto !text-xs"
+              aria-label="Interval cadangan otomatis"
+              title="Interval cadangan otomatis"
+            >
+              {AUTOBACKUP_PILIHAN_MENIT.map((m) => (
+                <option key={m} value={m}>Tiap {m} menit</option>
+              ))}
+            </select>
+            <button
+              onClick={handleToggleAuto}
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition cursor-pointer ${autoCfg.aktif ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600' : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'}`}
+              title={autoCfg.aktif ? 'Matikan cadangan otomatis' : 'Aktifkan cadangan otomatis'}
+            >
+              {autoCfg.aktif ? 'AKTIF' : 'MATI'}
+            </button>
+            <button
+              onClick={handleSnapshotNow}
+              disabled={isAutoBusy}
+              className="px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+              title="Buat snapshot sekarang"
+            >
+              <Play className="w-3.5 h-3.5" />
+              <span>{isAutoBusy ? 'Menyimpan…' : 'Snapshot Sekarang'}</span>
+            </button>
+          </div>
+        </div>
+
+        <p className="text-[11px] text-slate-500">
+          Terakhir: <strong className="text-slate-700">{autoCfg.terakhirJalan ? formatSnapWaktu(autoCfg.terakhirJalan) : 'belum pernah'}</strong>
+          {autoCfg.terakhirStatus && <span className="text-slate-400"> • {autoCfg.terakhirStatus}</span>}
+        </p>
+
+        {snapshots.length === 0 ? (
+          <div className="py-8 text-center text-slate-400 text-xs space-y-2 border border-dashed border-slate-200 rounded-xl">
+            <History className="w-8 h-8 mx-auto text-slate-300" />
+            <p className="font-medium text-slate-600">Belum ada snapshot otomatis.</p>
+            <p className="text-[11px] text-slate-400">Snapshot pertama dibuat otomatis sesuai interval, atau tekan "Snapshot Sekarang".</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+            {snapshots.map((snap) => {
+              const restoring = restoringSnapId === snap.id;
+              return (
+                <div key={snap.id} className="p-4 hover:bg-slate-50/80 transition flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
+                      <History className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs text-slate-900">{formatSnapWaktu(snap.timestamp)}</h4>
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1 flex-wrap">
+                        <span>{snap.jumlahSiswa} siswa</span>
+                        <span>• {formatUkuran(snap.ukuranBytes)}</span>
+                        <span className="text-slate-400">• oleh {snap.dibuatOleh}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 self-end md:self-auto shrink-0">
+                    <button
+                      onClick={() => handleDownloadSnap(snap)}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 cursor-pointer"
+                      title="Unduh snapshot sebagai file JSON"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Unduh</span>
+                    </button>
+                    <button
+                      onClick={() => void handleRestoreSnap(snap)}
+                      disabled={restoring}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                      title="Pulihkan database dari snapshot ini"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{restoring ? 'Memulihkan…' : 'Pulihkan'}</span>
+                    </button>
+                    <button
+                      onClick={() => void handleDeleteSnap(snap)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                      title="Hapus snapshot ini"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* MODUL 4: RESTORE SELEKTIF PER-ROMBEL */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700">
+              <FileJson className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-slate-900">Restore Selektif per Rombel</h3>
+              <p className="text-[11px] text-slate-500">Pulihkan hanya rombel tertentu dari file cadangan</p>
+            </div>
+          </div>
+          <label className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer">
+            <Upload className="w-3.5 h-3.5" />
+            <span>Pilih File Cadangan</span>
+            <input type="file" accept=".json" onChange={handleSelektifFile} className="hidden" />
+          </label>
+        </div>
+
+        {!selektif ? (
+          <div className="py-8 text-center text-slate-400 text-xs space-y-2 border border-dashed border-slate-200 rounded-xl">
+            <FileJson className="w-8 h-8 mx-auto text-slate-300" />
+            <p className="font-medium text-slate-600">Belum ada file dimuat.</p>
+            <p className="text-[11px] text-slate-400">Pilih file .json cadangan — daftar rombel beserta jumlah siswanya akan tampil untuk dicentang.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-600">
+              File <strong className="font-mono">{selektif.namaFile}</strong>: <strong>{selektif.totalSiswa}</strong> siswa dalam <strong>{selektif.rombel.length}</strong> rombel.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {selektif.rombel.map((r) => {
+                const aktif = selektifPilih.includes(r.rombel);
+                return (
+                  <button
+                    key={r.rombel}
+                    onClick={() => toggleSelektifRombel(r.rombel)}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition cursor-pointer ${aktif ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-emerald-300'}`}
+                    title={aktif ? 'Batalkan pilihan' : 'Pilih rombel ini'}
+                  >
+                    {r.rombel} <span className="tabular-nums opacity-80">({r.jumlah})</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSelektifRestore}
+                disabled={isSelektifBusy || selektifPilih.length === 0}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition cursor-pointer disabled:opacity-60"
+              >
+                {isSelektifBusy ? 'Memulihkan…' : `Pulihkan ${selektifPilih.length} Rombel`}
+              </button>
+              <button
+                onClick={() => { setSelektif(null); setSelektifPilih([]); }}
+                className="px-3 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition cursor-pointer"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* MODUL 5: SINKRON CLOUD ANTAR-PERANGKAT (Firebase gratis) */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center text-sky-700">
+              <Cloud className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-slate-900">Sinkron Cloud Antar-Perangkat</h3>
+              <p className="text-[11px] text-slate-500">Satu data untuk semua laptop • konflik: versi terbaru menang</p>
+            </div>
+          </div>
+          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-md text-[10px] font-bold border border-emerald-100">
+            Tier Gratis
+          </span>
+        </div>
+
+        {/* Langkah 1: Google */}
+        <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
+          <h4 className="font-bold text-xs text-slate-900">1. Akun Google</h4>
+          {cloudUser ? (
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-xs text-slate-700">Masuk sebagai <strong>{cloudUser.email}</strong></span>
+              <button onClick={handleCloudLogout} className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer">
+                Keluar
+              </button>
+            </div>
+          ) : (
+            <button onClick={handleCloudLogin} className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-300 transition cursor-pointer">
+              Masuk dengan Google
+            </button>
+          )}
+        </div>
+
+        {/* Langkah 2: PIN sekolah */}
+        <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
+          <h4 className="font-bold text-xs text-slate-900">2. PIN Sekolah</h4>
+          <p className="text-[11px] text-slate-500">
+            Rumah cloud: <strong className="font-mono">{cloudKey || '…'}</strong>
+            {cloudAda === true && <span className="text-slate-500"> (sudah ada — verifikasi PIN)</span>}
+            {cloudAda === false && <span className="text-slate-500"> (belum ada — buat PIN baru)</span>}
+          </p>
+          {pinOk ? (
+            <p className="text-xs text-emerald-700 font-semibold">✓ Perangkat terverifikasi untuk sesi ini.</p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleCekCloud}
+                disabled={!cloudUser}
+                className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer disabled:opacity-60"
+              >
+                Cek Cloud
+              </button>
+              <input
+                type="password"
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value)}
+                placeholder="PIN (min. 4 karakter)"
+                className="ui-input !w-48"
+                aria-label="PIN sekolah"
+              />
+              <button
+                onClick={handlePinCloud}
+                disabled={!cloudUser || !pinInput.trim()}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition cursor-pointer disabled:opacity-60"
+              >
+                {cloudAda ? 'Verifikasi' : 'Buat / Verifikasi'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Langkah 3: aksi */}
+        <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/50 space-y-3">
+          <h4 className="font-bold text-xs text-emerald-950">3. Sinkronisasi</h4>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => void jalankanCloud('sinkron', (prog) => sinkronCloud(prog))}
+              disabled={!cloudUser || !pinOk || isCloudBusy}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition cursor-pointer disabled:opacity-60"
+              title="Tarik + dorong sekaligus (disarankan)"
+            >
+              {isCloudBusy ? 'Berjalan…' : 'Sinkron Penuh'}
+            </button>
+            <button
+              onClick={() => void jalankanCloud('unggah', (prog) => unggahCloud(prog))}
+              disabled={!cloudUser || !pinOk || isCloudBusy}
+              className="px-3 py-2 bg-blue-700 hover:bg-blue-800 text-white text-xs font-bold rounded-xl transition cursor-pointer disabled:opacity-60"
+            >
+              Unggah Saja
+            </button>
+            <button
+              onClick={() => void jalankanCloud('unduh', (prog) => tarikCloud(prog))}
+              disabled={!cloudUser || !pinOk || isCloudBusy}
+              className="px-3 py-2 bg-slate-600 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition cursor-pointer disabled:opacity-60"
+            >
+              Unduh Saja
+            </button>
+          </div>
+          {cloudProg && (
+            <div className="space-y-1">
+              <div className="h-2 bg-white rounded-full overflow-hidden border border-emerald-200">
+                <div className="h-full bg-emerald-500 transition-all" style={{ width: `${cloudProg.persen}%` }} />
+              </div>
+              <p className="text-[11px] text-slate-600">{cloudProg.tahap} ({cloudProg.persen}%)</p>
+            </div>
+          )}
+          <p className="text-[11px] text-slate-500">
+            Terakhir: <strong className="text-slate-700">{cloudStatus.terakhirSinkron ? new Date(cloudStatus.terakhirSinkron).toLocaleString('id-ID') : 'belum pernah'}</strong>
+            {cloudStatus.ringkasan && <span className="text-slate-400"> • {cloudStatus.ringkasan}</span>}
+          </p>
+          <ul className="text-[11px] text-slate-500 space-y-0.5 list-disc pl-4">
+            <li>Foto ikut sebagai mini (≤60KB) — foto asli resolusi penuh tetap di perangkat masing-masing.</li>
+            <li>Tidak ikut sinkron: koneksi Dapodik per-mesin, log sinkron/audit, snapshot auto-backup.</li>
+            <li>Perangkat pertama: buat PIN lalu Sinkron Penuh. Perangkat lain: masuk Google → Cek Cloud → PIN yang sama → Sinkron Penuh.</li>
+          </ul>
+        </div>
+      </div>
 
       {/* Operasi Khusus Administrator: Muat Data Sampel & Kosongkan */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">

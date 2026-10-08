@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   School, 
   Save, 
@@ -13,47 +13,149 @@ import {
   RefreshCw,
   Sparkles,
   Server,
-  Lock
+  Lock,
+  ImagePlus,
+  Stamp,
+  Palette
 } from 'lucide-react';
-import { SekolahProfile, AppUser, DapodikConfig, JenjangSekolah } from '../types';
-import { saveSekolahProfile, exportDatabaseBackup, importDatabaseBackup, resetToInitialData, clearDatabase } from '../utils/db';
+import { SekolahProfile, AppUser, DapodikConfig, JenjangSekolah, SchoolEntry, KopSurat, TemaMode } from '../types';
+import { saveSekolahProfile, exportDatabaseBackup, importDatabaseBackup, resetToInitialData, clearDatabase, getActiveSchool, saveSchoolEntry } from '../utils/db';
 import { fetchDapodikSekolah, convertDapodikToSekolahProfile } from '../utils/dapodikSync';
-import { defaultSekolahProfile, presetSekolahSD } from '../data/initialData';
+import { toast, confirmDialog } from '../utils/notify';
+import { validateSekolahProfile } from '../utils/validation';
+import { validateKop, getKop, resolveKop } from '../utils/kop';
+import { resolveTemaEfektif, TEMA_LABEL } from '../utils/tema';
+import { processLogoImage, formatKb, MAX_LOGO_BYTES } from '../utils/photo';
+import { KopSuratView } from './KopSuratView';
+import { startTopProgress, doneTopProgress } from '../utils/progress';
 
 interface PengaturanSekolahViewProps {
   sekolah: SekolahProfile;
   currentUser?: AppUser;
   dapodikConfig?: DapodikConfig;
+  /** Sesi tahun ajaran login — dibedakan dari tahun aktif database. */
+  sessionTahun?: string | null;
   onUpdateSekolah: (profile: SekolahProfile) => void;
   onDataChanged: () => void;
+  schools?: SchoolEntry[];
+  activeSchoolId?: string | null;
+  schoolSiswaCounts?: Record<string, number | null>;
+  switchingSchoolId?: string | null;
+  onSwitchSchool?: (id: string) => void;
+  onManageSchools?: () => void;
 }
 
 export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
   sekolah,
   currentUser,
   dapodikConfig,
+  sessionTahun,
   onUpdateSekolah,
-  onDataChanged
+  onDataChanged,
+  schools,
+  activeSchoolId,
+  schoolSiswaCounts,
+  switchingSchoolId,
+  onSwitchSchool,
+  onManageSchools
 }) => {
   const [profile, setProfile] = useState<SekolahProfile>(sekolah);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [importing, setImporting] = useState(false);
   const [syncingDapodik, setSyncingDapodik] = useState(false);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState<'kiri' | 'kanan' | null>(null);
+  const logoKiriRef = useRef<HTMLInputElement>(null);
+  const logoKananRef = useRef<HTMLInputElement>(null);
 
   const isAdmin = currentUser?.role === 'administrator';
+  const kop: KopSurat = getKop(profile);
+
+  const updateKop = (patch: Partial<KopSurat>) => {
+    setProfile((prev) => ({ ...prev, kop: { ...getKop(prev), ...patch } }));
+  };
+
+  const handleLogoFile = async (e: React.ChangeEvent<HTMLInputElement>, sisi: 'kiri' | 'kanan') => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploadingLogo(sisi);
+    startTopProgress();
+    try {
+      const { dataUrl, bytes } = await processLogoImage(file);
+      updateKop(sisi === 'kiri' ? { logoKiriUrl: dataUrl } : { logoKananUrl: dataUrl, logoKananMode: 'gambar' });
+      toast(`Logo ${sisi} tersimpan (${formatKb(bytes)} / maks ${formatKb(MAX_LOGO_BYTES)}). Klik "Simpan Profil Sekolah" untuk menerapkan.`, 'success');
+    } catch (err: unknown) {
+      toast(err instanceof Error ? err.message : 'Gagal memproses logo.', 'error');
+    } finally {
+      setUploadingLogo(null);
+      doneTopProgress();
+    }
+  };
+
+  const handleAutoKop = () => {
+    const kabBersih = (profile.kabupatenKota || '').trim().replace(/^(kab\.?|kota)\s+/i, '');
+    const baris1 =
+      kop.otoritas === 'provinsi'
+        ? `PEMERINTAH ${(profile.provinsi || '').trim().toUpperCase() || 'DAERAH'}`
+        : kop.otoritas === 'kota'
+          ? `PEMERINTAH KOTA${kabBersih ? ` ${kabBersih.toUpperCase()}` : ''}`
+          : `PEMERINTAH KABUPATEN${kabBersih ? ` ${kabBersih.toUpperCase()}` : ''}`;
+    updateKop({
+      baris1,
+      baris2: 'DINAS PENDIDIKAN DAN KEBUDAYAAN',
+    });
+    toast('Baris kop diisi otomatis dari profil. Simpan untuk menerapkan.', 'info');
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    await saveSekolahProfile(profile);
-    onUpdateSekolah(profile);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+    const issues = validateSekolahProfile(profile);
+    if (issues.length > 0) {
+      toast(issues[0], 'error');
+      return;
+    }
+    // Fondasi sesi: perubahan tahun aktif database berdampak ke seluruh sesi.
+    if ((profile.tahunAjaran || '').trim() !== (sekolah.tahunAjaran || '').trim()) {
+      const ok = await confirmDialog(
+        `Ubah tahun aktif database dari ${sekolah.tahunAjaran || '-'} ke ${profile.tahunAjaran}? Sesi login berjalan (${sessionTahun || '-'}) tidak ikut berpindah otomatis.`,
+        { confirmLabel: 'Ya, Ubah Tahun Aktif', danger: true }
+      );
+      if (!ok) return;
+    }
+    const kopIssues = validateKop(getKop(profile));
+    if (kopIssues.length > 0) {
+      toast(kopIssues[0], 'error');
+      return;
+    }
+    startTopProgress();
+    try {
+      await saveSekolahProfile(profile);
+      onUpdateSekolah(profile);
+      // Jaga registry multi-sekolah tetap selaras (nama/NPSN/jenjang untuk pemilih sekolah).
+      const active = getActiveSchool();
+      if (active) {
+        saveSchoolEntry({
+          ...active,
+          nama: profile.nama,
+          npsn: profile.npsn,
+          jenjang: profile.jenjang || active.jenjang,
+          bentukPendidikan: profile.bentukPendidikan,
+        });
+      }
+      setSavedSuccess(true);
+      toast('Profil sekolah berhasil disimpan.', 'success');
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } catch (err: unknown) {
+      toast(`Gagal menyimpan profil sekolah: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      doneTopProgress();
+    }
   };
 
   const handleSyncSekolahFromDapodik = async (isSimulation = false) => {
     if (!dapodikConfig) {
-      alert('Konfigurasi Web Service Dapodik belum tersedia.');
+      toast('Konfigurasi Web Service Dapodik belum tersedia.', 'warning');
       return;
     }
 
@@ -71,10 +173,21 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
       await saveSekolahProfile(updated);
       onUpdateSekolah(updated);
 
+      const active = getActiveSchool();
+      if (active) {
+        saveSchoolEntry({
+          ...active,
+          nama: updated.nama,
+          npsn: updated.npsn,
+          jenjang: updated.jenjang || active.jenjang,
+          bentukPendidikan: updated.bentukPendidikan,
+        });
+      }
+
       setSyncSuccessMsg(`Identitas sekolah berhasil diperbarui dari Dapodik: ${updated.nama} (NPSN: ${updated.npsn}). Kepala Sekolah: ${updated.kepalaSekolah}.`);
       setTimeout(() => setSyncSuccessMsg(null), 6000);
     } catch (err: any) {
-      alert(`Gagal sinkronisasi identitas sekolah: ${err.message}. Anda juga dapat menguji coba menggunakan simulasi.`);
+      toast(`Gagal sinkronisasi identitas sekolah: ${err.message}. Anda juga dapat menguji coba menggunakan simulasi.`, 'error');
     } finally {
       setSyncingDapodik(false);
     }
@@ -93,7 +206,7 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     } catch (err: any) {
-      alert(`Gagal membuat berkas cadangan: ${err.message}`);
+      toast(`Gagal membuat berkas cadangan: ${err.message}`, 'error');
     }
   };
 
@@ -101,7 +214,7 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!confirm('Peringatan: Memulihkan cadangan akan menimpa data yang ada. Lanjutkan?')) {
+    if (!(await confirmDialog('Peringatan: Memulihkan cadangan akan menimpa data yang ada. Lanjutkan?', { confirmLabel: 'Ya, Pulihkan' }))) {
       e.target.value = '';
       return;
     }
@@ -111,13 +224,13 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
       const text = await file.text();
       const res = await importDatabaseBackup(text);
       if (res.success) {
-        alert(res.message);
+        toast(res.message, 'success');
         onDataChanged();
       } else {
-        alert(`Gagal memulihkan: ${res.message}`);
+        toast(`Gagal memulihkan: ${res.message}`, 'error');
       }
     } catch (err: any) {
-      alert(`Gagal membaca berkas: ${err.message}`);
+      toast(`Gagal membaca berkas: ${err.message}`, 'error');
     } finally {
       setImporting(false);
       e.target.value = '';
@@ -126,31 +239,90 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
 
   const handleResetSample = async () => {
     if (!isAdmin) {
-      alert('Tindakan ini memerlukan izin hak akses Administrator.');
+      toast('Tindakan ini memerlukan izin hak akses Administrator.', 'error');
       return;
     }
-    if (confirm('Kembalikan database ke data contoh Kurikulum Merdeka SMP? Data kustom akan digantikan dengan data sampel.')) {
+    if (await confirmDialog('Kembalikan database ke data contoh Kurikulum Merdeka? Data kustom akan digantikan dengan data sampel.', { confirmLabel: 'Ya, Kembalikan' })) {
       await resetToInitialData();
       onDataChanged();
-      alert('Data contoh Kurikulum Merdeka berhasil dimuat!');
+      toast('Data contoh Kurikulum Merdeka berhasil dimuat!', 'success');
     }
   };
 
   const handleClearAll = async () => {
     if (!isAdmin) {
-      alert('Tindakan ini memerlukan izin hak akses Administrator.');
+      toast('Tindakan ini memerlukan izin hak akses Administrator.', 'error');
       return;
     }
-    const input = prompt('PERINGATAN: Seluruh data siswa dan riwayat akan dihapus secara permanen dari browser ini!\nKetik "HAPUS" untuk konfirmasi:');
-    if (input === 'HAPUS') {
+    const ok = await confirmDialog('PERINGATAN: Seluruh data siswa dan riwayat akan dihapus secara permanen dari browser ini! Lanjutkan penghapusan?', { confirmLabel: 'Ya, Hapus Semua' });
+    if (ok) {
       await clearDatabase();
       onDataChanged();
-      alert('Database telah dikosongkan.');
+      toast('Database telah dikosongkan.', 'success');
     }
   };
 
   return (
     <div className="space-y-6">
+      {/* Multi-sekolah / multi-database (admin) */}
+      {isAdmin && schools && schools.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-navy-900 text-gold-300 flex items-center justify-center shrink-0">
+                <Database className="w-4 h-4" />
+              </span>
+              <div>
+                <h3 className="font-bold text-sm text-slate-900">
+                  Multi-Sekolah Aktif ({schools.length} database)
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Tiap sekolah terisolasi di database IndexedDB sendiri. Beralih tanpa login ulang bila username sama tersedia.
+                </p>
+              </div>
+            </div>
+            {onManageSchools && (
+              <button
+                type="button"
+                onClick={onManageSchools}
+                className="px-4 py-2 bg-navy-900 hover:bg-navy-800 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Kelola multi-sekolah
+              </button>
+            )}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {schools.map((s) => {
+              const isActive = s.id === (activeSchoolId || schools[0]?.id);
+              const busy = switchingSchoolId === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  disabled={isActive || !!switchingSchoolId || !onSwitchSchool}
+                  onClick={() => onSwitchSchool?.(s.id)}
+                  title={isActive ? 'Sekolah aktif' : `Beralih ke ${s.nama}`}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border transition cursor-pointer disabled:cursor-default ${
+                    isActive
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-blue-300 hover:text-navy-900'
+                  }`}
+                >
+                  <span className={`px-1.5 py-px rounded text-[10px] font-extrabold ${isActive ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                    {s.jenjang}
+                  </span>
+                  <span className="max-w-44 truncate">{s.nama}</span>
+                  <span className="font-mono font-semibold opacity-70">
+                    {typeof schoolSiswaCounts?.[s.id] === 'number' ? `${schoolSiswaCounts?.[s.id]} siswa` : ''}
+                  </span>
+                  {busy && <RefreshCw className="w-3 h-3 animate-spin" />}
+                  {isActive && <CheckCircle2 className="w-3.5 h-3.5" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {/* Dapodik School Sync Banner */}
       <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-5 rounded-2xl shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -168,7 +340,7 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
                 </span>
               </div>
               <p className="text-xs text-blue-200 mt-1 max-w-2xl leading-relaxed">
-                Identitas resmi satuan pendidikan (Nama Sekolah, NPSN, NSS, Alamat Lengkap, Kepala Sekolah & NIP, serta Tahun Ajaran) dapat ditarik langsung dari aplikasi Dapodik lokal sehingga data selalu konsisten dengan database pusat Kemendikdasmen.
+                Identitas resmi satuan pendidikan (Nama Sekolah, NPSN, NSS, Alamat Lengkap, Kepala Sekolah & NIP, serta Tahun Ajaran) dapat ditarik langsung dari aplikasi Dapodik lokal sehingga data selalu konsisten dengan database pusat Kemdikbudristek.
               </p>
               {profile.lastSyncedWithDapodik && (
                 <p className="text-[11px] text-blue-300 mt-1 flex items-center gap-1.5 font-mono">
@@ -232,47 +404,6 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
           )}
         </div>
 
-        {/* Quick Switcher SD vs SMP */}
-        <div className="mb-5 p-4 rounded-xl bg-blue-50/70 border border-blue-200 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
-          <div>
-            <span className="font-bold text-blue-950 block text-xs">
-              Fleksibilitas Jenjang Satuan Pendidikan: SD & SMP Kurikulum Merdeka
-            </span>
-            <p className="text-slate-600 text-[11px] mt-0.5">
-              Aplikasi ini mendukung jenjang SD (Fase A, B, C / Kelas 1-6) dan SMP (Fase D / Kelas 7-9) dengan template nilai raport, mata pelajaran, dan riwayat multi-tahun yang adaptif.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                setProfile({ ...presetSekolahSD });
-              }}
-              className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                profile.jenjang === 'SD'
-                  ? 'bg-blue-700 text-white shadow-xs'
-                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
-              }`}
-            >
-              <span>Preset SD (Kelas 1-6)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setProfile({ ...defaultSekolahProfile });
-              }}
-              className={`px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                profile.jenjang === 'SMP'
-                  ? 'bg-blue-700 text-white shadow-xs'
-                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
-              }`}
-            >
-              <span>Preset SMP (Kelas 7-9)</span>
-            </button>
-          </div>
-        </div>
-
         <form onSubmit={handleSave} className="space-y-4 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div className="sm:col-span-2">
@@ -289,6 +420,8 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
             <div>
               <label className="block font-semibold text-slate-700 mb-1">Jenjang Sekolah *</label>
               <select
+                required
+                aria-required="true"
                 value={profile.jenjang || 'SMP'}
                 onChange={(e) => {
                   const newJenjang = e.target.value as JenjangSekolah;
@@ -310,6 +443,12 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
               <input
                 type="text"
                 required
+                aria-required="true"
+                inputMode="numeric"
+                minLength={8}
+                maxLength={8}
+                pattern="[0-9]{8}"
+                title="NPSN harus 8 digit angka"
                 value={profile.npsn}
                 onChange={(e) => setProfile({ ...profile, npsn: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none"
@@ -329,19 +468,30 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Tahun Ajaran Aktif</label>
+              <label className="block font-semibold text-slate-700 mb-1">Tahun Ajaran Aktif *</label>
               <input
                 type="text"
+                required
+                aria-required="true"
+                pattern="\d{4}/\d{4}"
+                title="Format: TAHUN/TAHUN (cth. 2026/2027)"
                 value={profile.tahunAjaran}
                 onChange={(e) => setProfile({ ...profile, tahunAjaran: e.target.value })}
-                placeholder="2024/2025"
+                placeholder="2026/2027"
                 className="w-full px-3 py-2 border border-slate-300 rounded-xl"
               />
+              {sessionTahun && profile.tahunAjaran.trim() !== sessionTahun.trim() && (
+                <p className="mt-1 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                  Sesi login Anda TA {sessionTahun} — tahun aktif database {profile.tahunAjaran || '-'}. Perubahan tahun aktif tidak memindahkan sesi; ganti sesi lewat menu pengguna di topbar.
+                </p>
+              )}
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Semester Aktif</label>
+              <label className="block font-semibold text-slate-700 mb-1">Semester Aktif *</label>
               <select
+                required
+                aria-required="true"
                 value={profile.semesterAktif}
                 onChange={(e) => setProfile({ ...profile, semesterAktif: e.target.value as any })}
                 className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white"
@@ -466,9 +616,11 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
             <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h4 className="font-bold text-slate-900">Kepala Sekolah (Penandatangan I)</h4>
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Nama Lengkap & Gelar</label>
+                <label className="block font-semibold text-slate-700 mb-1">Nama Lengkap & Gelar *</label>
                 <input
                   type="text"
+                  required
+                  aria-required="true"
                   value={profile.kepalaSekolah}
                   onChange={(e) => setProfile({ ...profile, kepalaSekolah: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white"
@@ -518,6 +670,274 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
             </button>
           </div>
         </form>
+      </div>
+
+      {/* Kop Surat Cetakan */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <Stamp className="w-5 h-5 text-blue-700" />
+            <div>
+              <h3 className="font-bold text-sm text-slate-900">Kop Surat Cetakan</h3>
+              <p className="text-[11px] text-slate-500">
+                Berlaku untuk Lembar Buku Induk, Transkrip Raport, cetak Raport & Rekapitulasi. Kosongkan baris teks untuk otomatis dari profil.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleAutoKop}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-blue-700" />
+            Isi otomatis dari profil
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+          <div className="space-y-3">
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Baris 1 kop (instansi pembina)</label>
+              <input
+                type="text"
+                value={kop.baris1 || ''}
+                maxLength={150}
+                onChange={(e) => updateKop({ baris1: e.target.value })}
+                placeholder={resolveKop({ ...profile, kop }).baris1}
+                className="w-full px-3 py-2 border border-slate-300 rounded-xl uppercase"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Baris 2 kop (dinas)</label>
+              <input
+                type="text"
+                value={kop.baris2 || ''}
+                maxLength={150}
+                onChange={(e) => updateKop({ baris2: e.target.value })}
+                placeholder={resolveKop({ ...profile, kop }).baris2}
+                className="w-full px-3 py-2 border border-slate-300 rounded-xl uppercase"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                ['tampilBaris1', 'Tampilkan baris 1'],
+                ['tampilBaris2', 'Tampilkan baris 2'],
+                ['tampilAlamat', 'Tampilkan alamat'],
+                ['tampilKontak', 'Tampilkan kontak'],
+              ] as ['tampilBaris1' | 'tampilBaris2' | 'tampilAlamat' | 'tampilKontak', string][]).map(([key, label]) => (
+                <label key={key} className="flex items-center gap-2 cursor-pointer bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={kop[key]}
+                    onChange={(e) => updateKop({ [key]: e.target.checked } as Partial<KopSurat>)}
+                    className="w-4 h-4 accent-blue-700"
+                  />
+                  <span className="font-medium text-slate-700">{label}</span>
+                </label>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+              <input
+                type="checkbox"
+                checked={kop.tampilWebsite}
+                onChange={(e) => updateKop({ tampilWebsite: e.target.checked })}
+                className="w-4 h-4 accent-blue-700"
+              />
+              <span className="font-medium text-slate-700">Sertakan website di baris kontak</span>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block font-semibold text-slate-700 mb-1">Wilayah otomatis baris 1 (bila baris 1 dikosongkan)</label>
+                <select
+                  value={kop.otoritas}
+                  onChange={(e) => updateKop({ otoritas: e.target.value as KopSurat['otoritas'] })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white"
+                >
+                  <option value="kabupaten">Pemerintah Kabupaten … (cth. Madina)</option>
+                  <option value="kota">Pemerintah Kota …</option>
+                  <option value="provinsi">Pemerintah Provinsi …</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Jenis huruf judul</label>
+                <select
+                  value={kop.fontJudul}
+                  onChange={(e) => updateKop({ fontJudul: e.target.value as KopSurat['fontJudul'] })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white"
+                >
+                  <option value="serif">Serif tegas (standar dinas)</option>
+                  <option value="sans">Sans modern</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Ukuran nama sekolah</label>
+                <select
+                  value={kop.ukuranNama}
+                  onChange={(e) => updateKop({ ukuranNama: e.target.value as KopSurat['ukuranNama'] })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white"
+                >
+                  <option value="besar">Besar</option>
+                  <option value="normal">Normal</option>
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block font-semibold text-slate-700 mb-1">Garis bawah kop</label>
+                <select
+                  value={kop.garis}
+                  onChange={(e) => updateKop({ garis: e.target.value as KopSurat['garis'] })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white"
+                >
+                  <option value="ganda">Ganda (standar dinas)</option>
+                  <option value="tunggal">Tunggal</option>
+                  <option value="tanpa">Tanpa garis</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/60">
+                <p className="font-bold text-slate-800">Logo kiri {kop.logoKiriUrl ? '(terpasang)' : '(generik)'}</p>
+                {kop.logoKiriUrl && (
+                  <img src={kop.logoKiriUrl} alt="Pratinjau logo kiri" className="w-16 h-16 object-contain bg-white border border-slate-200 rounded-xl" />
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={uploadingLogo === 'kiri'}
+                    onClick={() => logoKiriRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 hover:bg-blue-800 disabled:opacity-60 text-white font-semibold rounded-xl transition cursor-pointer"
+                  >
+                    <ImagePlus className="w-3.5 h-3.5" />
+                    {uploadingLogo === 'kiri' ? 'Memproses…' : 'Unggah'}
+                  </button>
+                  {kop.logoKiriUrl && (
+                    <button
+                      type="button"
+                      onClick={() => updateKop({ logoKiriUrl: '' })}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-600 font-semibold rounded-xl transition cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Hapus
+                    </button>
+                  )}
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={kop.tampilLogoKiri}
+                    onChange={(e) => updateKop({ tampilLogoKiri: e.target.checked })}
+                    className="w-4 h-4 accent-blue-700"
+                  />
+                  <span>Tampilkan logo kiri</span>
+                </label>
+              </div>
+              <div className="border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/60">
+                <p className="font-bold text-slate-800">Logo kanan</p>
+                <div>
+                  <label className="block font-medium text-slate-600 mb-1">Mode</label>
+                  <select
+                    value={kop.logoKananMode}
+                    onChange={(e) => updateKop({ logoKananMode: e.target.value as KopSurat['logoKananMode'] })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white"
+                  >
+                    <option value="badge">Lencana jenjang (bawaan)</option>
+                    <option value="gambar">Gambar unggahan</option>
+                    <option value="sembunyi">Sembunyikan</option>
+                  </select>
+                </div>
+                {kop.logoKananMode === 'gambar' && (
+                  <>
+                    {kop.logoKananUrl && (
+                      <img src={kop.logoKananUrl} alt="Pratinjau logo kanan" className="w-16 h-16 object-contain bg-white border border-slate-200 rounded-xl" />
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={uploadingLogo === 'kanan'}
+                        onClick={() => logoKananRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 hover:bg-blue-800 disabled:opacity-60 text-white font-semibold rounded-xl transition cursor-pointer"
+                      >
+                        <ImagePlus className="w-3.5 h-3.5" />
+                        {uploadingLogo === 'kanan' ? 'Memproses…' : 'Unggah'}
+                      </button>
+                      {kop.logoKananUrl && (
+                        <button
+                          type="button"
+                          onClick={() => updateKop({ logoKananUrl: '' })}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-600 font-semibold rounded-xl transition cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Hapus
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500">Logo: JPG/PNG/WebP, otomatis dikecilkan (sisi ≤ 512px) & dikompres ≤ 500 KB. Perubahan tersimpan bersama tombol "Simpan Profil Sekolah" di bawah.</p>
+            <input ref={logoKiriRef} type="file" accept="image/*" className="hidden" aria-label="Unggah logo kiri kop" onChange={(e) => void handleLogoFile(e, 'kiri')} />
+            <input ref={logoKananRef} type="file" accept="image/*" className="hidden" aria-label="Unggah logo kanan kop" onChange={(e) => void handleLogoFile(e, 'kanan')} />
+          </div>
+        </div>
+
+        {/* Pratayang kop */}
+        <div>
+          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">Pratayang langsung</p>
+          <div className="border border-slate-200 rounded-xl bg-white p-4">
+            <KopSuratView sekolah={profile} />
+          </div>
+        </div>
+      </div>
+
+      {/* Tema Warna Tampilan (khusus administrator) */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+          <Palette className="w-5 h-5 text-blue-700" />
+          <div>
+            <h3 className="font-bold text-sm text-slate-900">Tema Warna Tampilan</h3>
+            <p className="text-[11px] text-slate-500">
+              Aksen biru untuk SMP, maroon untuk SD. Hanya administrator yang dapat mengubah.
+              Berlaku di layar (cetakan tidak ikut berubah).
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          {(Object.keys(TEMA_LABEL) as TemaMode[]).map((mode) => {
+            const aktif = (profile.tema?.mode || 'otomatis') === mode;
+            return (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setProfile((prev) => ({ ...prev, tema: { mode } }))}
+                aria-pressed={aktif}
+                className={`rounded-2xl border p-3.5 text-left transition cursor-pointer ${
+                  aktif ? 'border-blue-600 ring-2 ring-blue-600/25 bg-blue-50/40' : 'border-slate-200 hover:border-slate-300 bg-white'
+                }`}
+              >
+                <span className="flex items-center gap-1.5 mb-2">
+                  {mode === 'otomatis' && (
+                    <>
+                      <span className="w-5 h-5 rounded-full bg-blue-700 border-2 border-white shadow" />
+                      <span className="w-5 h-5 rounded-full bg-[#7f1d1d] border-2 border-white shadow -ml-3" />
+                    </>
+                  )}
+                  {mode === 'biru' && <span className="w-5 h-5 rounded-full bg-blue-700 border-2 border-white shadow" />}
+                  {mode === 'maroon' && <span className="w-5 h-5 rounded-full bg-[#7f1d1d] border-2 border-white shadow" />}
+                  <strong className="text-slate-900">{TEMA_LABEL[mode].judul}</strong>
+                  {aktif && <CheckCircle2 className="w-4 h-4 text-blue-700 ml-auto" />}
+                </span>
+                <span className="text-slate-500 text-[11px] leading-snug block">{TEMA_LABEL[mode].desc}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-slate-500">
+          Efektif saat ini: <strong className="text-slate-800">{resolveTemaEfektif(profile) === 'maroon' ? 'Maroon' : 'Biru'}</strong>
+          {' '}(jenjang {profile.jenjang || 'SMP'}). Klik "Simpan Profil Sekolah" di bawah untuk menerapkan.
+        </p>
       </div>
 
       {/* Database Backup, Restore & Reset Section */}

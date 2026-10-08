@@ -1,4 +1,4 @@
-import { SekolahProfile, Siswa, DapodikConfig, DapodikRawPesertaDidik, DapodikRawSekolah, AppUser } from '../types';
+import { SekolahProfile, Siswa, DapodikConfig, DapodikRawPesertaDidik, DapodikRawSekolah, DapodikRawRombel, DapodikRawPtk, DapodikRawPengguna, AppUser } from '../types';
 
 export const defaultSekolahProfile: SekolahProfile = {
   nama: 'SMP NEGERI 1 MERDEKA BELAJAR',
@@ -21,9 +21,9 @@ export const defaultSekolahProfile: SekolahProfile = {
   petugasBukuInduk: 'Siti Rahmawati, S.Kom.',
   nipPetugas: '19850820 201001 2 015',
   semesterAktif: '1 (Ganjil)',
-  tahunAjaran: '2024/2025',
-  lastSyncedWithDapodik: '2024-07-20T08:30:00.000Z',
-  syncSource: 'Dapodik Web Service v2024'
+  tahunAjaran: '2026/2027',
+  lastSyncedWithDapodik: '2026-07-20T08:30:00.000Z',
+  syncSource: 'Dapodik Web Service v2026'
 };
 
 export const presetSekolahSD: SekolahProfile = {
@@ -47,9 +47,9 @@ export const presetSekolahSD: SekolahProfile = {
   petugasBukuInduk: 'Ahmad Fauzi, S.Pd.',
   nipPetugas: '19880312 201201 1 008',
   semesterAktif: '1 (Ganjil)',
-  tahunAjaran: '2024/2025',
-  lastSyncedWithDapodik: '2024-07-20T08:30:00.000Z',
-  syncSource: 'Dapodik Web Service v2024'
+  tahunAjaran: '2026/2027',
+  lastSyncedWithDapodik: '2026-07-20T08:30:00.000Z',
+  syncSource: 'Dapodik Web Service v2026'
 };
 
 export const mockDapodikSekolah: DapodikRawSekolah = {
@@ -74,15 +74,15 @@ export const mockDapodikSekolah: DapodikRawSekolah = {
   website: 'https://smpn1merdekabelajar.sch.id',
   kepala_sekolah: 'Dr. H. Ahmad Dahlan, M.Pd.',
   nip_kepala_sekolah: '19740512 199903 1 002',
-  semester_id: '20241',
-  tahun_ajaran: '2024/2025'
+  semester_id: '20261',
+  tahun_ajaran: '2026/2027'
 };
 
 export const initialUsersList: AppUser[] = [
   {
     id: 'usr-admin-01',
     username: 'administrator',
-    password: 'administator',
+    password: 'administrator',
     namaLengkap: 'Administrator Sistem',
     role: 'administrator',
     email: 'admin@smpn1merdekabelajar.sch.id',
@@ -90,8 +90,8 @@ export const initialUsersList: AppUser[] = [
     jabatan: 'Koordinator IT & Kepala Tata Usaha',
     status: 'aktif',
     terakhirLogin: '2026-09-15T10:00:00.000Z',
-    createdAt: '2024-07-01T00:00:00.000Z',
-    updatedAt: '2024-07-01T00:00:00.000Z'
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-07-01T00:00:00.000Z'
   },
   {
     id: 'usr-op-01',
@@ -105,8 +105,8 @@ export const initialUsersList: AppUser[] = [
     rombelAkses: ['7A', '7B', '8A', '8B', '9A', '9B'],
     status: 'aktif',
     terakhirLogin: '2026-09-14T08:20:00.000Z',
-    createdAt: '2024-07-01T00:00:00.000Z',
-    updatedAt: '2024-07-01T00:00:00.000Z'
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-07-01T00:00:00.000Z'
   },
   {
     id: 'usr-op-02',
@@ -120,8 +120,8 @@ export const initialUsersList: AppUser[] = [
     rombelAkses: ['7A', '7B'],
     status: 'aktif',
     terakhirLogin: '2026-09-12T14:15:00.000Z',
-    createdAt: '2024-07-01T00:00:00.000Z',
-    updatedAt: '2024-07-01T00:00:00.000Z'
+    createdAt: '2026-07-01T00:00:00.000Z',
+    updatedAt: '2026-07-01T00:00:00.000Z'
   }
 ];
 
@@ -129,8 +129,8 @@ export const defaultDapodikConfig: DapodikConfig = {
   ip: 'localhost',
   port: 5774,
   npsn: '20104567',
-  token: 'ws_dapodik_smp_2024_auth_key',
-  semesterId: '20241',
+  token: 'ws_dapodik_smp_2026_auth_key',
+  semesterId: '20261',
   autoSync: false
 };
 
@@ -145,7 +145,7 @@ export const initialSiswaList: Siswa[] = [
     namaPanggilan: 'Rizky',
     jenisKelamin: 'L',
     nisn: '0091234567',
-    nipd: '242507001',
+    nipd: '262707001',
     nik: '3201011504090001',
     noKk: '3201011001050008',
     noAktaLahir: '3201-LT-15042009-0012',
@@ -185,7 +185,7 @@ export const initialSiswaList: Siswa[] = [
       tahunLahir: '1978',
       pendidikan: 'S1 Teknik',
       pekerjaan: 'Karyawan Swasta',
-      penghasilan: 'Rp 5.000.000 - Rp 10.000.000',
+      penghasilan: 'Rp. 5,000,000 - Rp. 20,000,000',
       noTelepon: '081234567890',
       status: 'Masih Hidup'
     },
@@ -195,16 +195,16 @@ export const initialSiswaList: Siswa[] = [
       tahunLahir: '1980',
       pendidikan: 'S1 Pendidikan',
       pekerjaan: 'Guru',
-      penghasilan: 'Rp 3.000.000 - Rp 5.000.000',
+      penghasilan: 'Rp. 2,000,000 - Rp. 4,999,999',
       noTelepon: '081398765432',
       status: 'Masih Hidup'
     },
     asalSdMi: 'SD Negeri Sukasari 01',
     npsnSdMi: '20201122',
     noIjazahSd: 'DN-02/D-SD/13/0012345',
-    tahunLulusSd: '2023',
+    tahunLulusSd: '2026',
     lamaBelajarSd: 6,
-    tanggalDiterima: '2023-07-17',
+    tanggalDiterima: '2026-07-17',
     diterimaDiTingkat: '7',
     diterimaDiRombel: '7A',
     rombelSaatIni: '8A',
@@ -217,7 +217,7 @@ export const initialSiswaList: Siswa[] = [
         fase: 'Fase D',
         tingkat: '7',
         semester: '1',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         dimensi: {
           berimanBertakwa: 'Berkembang Sesuai Harapan',
           berkebinekaanGlobal: 'Sedang Berkembang',
@@ -235,7 +235,7 @@ export const initialSiswaList: Siswa[] = [
         fase: 'Fase D',
         tingkat: '7',
         semester: '2',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         dimensi: {
           berimanBertakwa: 'Berkembang Sesuai Harapan',
           berkebinekaanGlobal: 'Sangat Berkembang',
@@ -270,7 +270,7 @@ export const initialSiswaList: Siswa[] = [
         bidang: 'Akademik',
         tingkat: 'Kabupaten/Kota',
         peringkat: 'Juara 2',
-        tahun: '2024',
+        tahun: '2026',
         penyelenggara: 'Dinas Pendidikan Kota Nusantara'
       }
     ],
@@ -279,7 +279,7 @@ export const initialSiswaList: Siswa[] = [
         id: 'rs-01',
         semester: '1',
         tingkat: '7',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         sakit: 2,
         izin: 1,
         alpa: 0,
@@ -290,7 +290,7 @@ export const initialSiswaList: Siswa[] = [
         id: 'rs-02',
         semester: '2',
         tingkat: '7',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         sakit: 1,
         izin: 0,
         alpa: 0,
@@ -301,7 +301,7 @@ export const initialSiswaList: Siswa[] = [
     riwayatTahunAjaran: [
       {
         id: 'rth-01',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         tingkat: '7',
         rombel: '7A',
         waliKelas: 'Dra. Hj. Nurjanah, M.Pd.',
@@ -311,16 +311,16 @@ export const initialSiswaList: Siswa[] = [
     ],
     nilaiRaport: [
       {
-        id: 'rap-001-2023-1',
+        id: 'rap-001-2026-1',
         siswaId: 'sis-001',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         semester: '1',
         tingkat: '7',
         rombel: '7A',
         fase: 'Fase D',
         waliKelas: 'Dra. Hj. Nurjanah, M.Pd.',
         nipWaliKelas: '19760812 200212 2 001',
-        tanggalRaport: '2023-12-22',
+        tanggalRaport: '2026-12-22',
         rataRataNilai: 88.5,
         nilaiMapel: [
           {
@@ -432,16 +432,16 @@ export const initialSiswaList: Siswa[] = [
         statusKenaikan: 'Belum Ditentukan'
       },
       {
-        id: 'rap-001-2023-2',
+        id: 'rap-001-2026-2',
         siswaId: 'sis-001',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         semester: '2',
         tingkat: '7',
         rombel: '7A',
         fase: 'Fase D',
         waliKelas: 'Dra. Hj. Nurjanah, M.Pd.',
         nipWaliKelas: '19760812 200212 2 001',
-        tanggalRaport: '2024-06-21',
+        tanggalRaport: '2026-06-21',
         rataRataNilai: 90.2,
         nilaiMapel: [
           {
@@ -555,9 +555,9 @@ export const initialSiswaList: Siswa[] = [
       }
     ],
     statusSiswa: 'Aktif',
-    createdAt: '2023-07-17T08:00:00.000Z',
-    updatedAt: '2024-07-20T10:30:00.000Z',
-    lastSyncedWithDapodik: '2024-07-20T10:30:00.000Z'
+    createdAt: '2026-07-17T08:00:00.000Z',
+    updatedAt: '2026-07-20T10:30:00.000Z',
+    lastSyncedWithDapodik: '2026-07-20T10:30:00.000Z'
   },
   {
     id: 'sis-002',
@@ -566,7 +566,7 @@ export const initialSiswaList: Siswa[] = [
     namaPanggilan: 'Annisa',
     jenisKelamin: 'P',
     nisn: '0103456789',
-    nipd: '242507002',
+    nipd: '262707002',
     nik: '3201015609100002',
     noKk: '3201011001050015',
     noAktaLahir: '3201-LT-16092010-0044',
@@ -605,7 +605,7 @@ export const initialSiswaList: Siswa[] = [
       tahunLahir: '1975',
       pendidikan: 'S1 Teknik Sipil',
       pekerjaan: 'Wiraswasta',
-      penghasilan: 'Rp 5.000.000 - Rp 10.000.000',
+      penghasilan: 'Rp. 5,000,000 - Rp. 20,000,000',
       noTelepon: '081122334455',
       status: 'Masih Hidup'
     },
@@ -615,16 +615,16 @@ export const initialSiswaList: Siswa[] = [
       tahunLahir: '1977',
       pendidikan: 'S1 Ekonomi',
       pekerjaan: 'Pegawai BUMN',
-      penghasilan: 'Rp 5.000.000 - Rp 10.000.000',
+      penghasilan: 'Rp. 5,000,000 - Rp. 20,000,000',
       noTelepon: '081233445566',
       status: 'Masih Hidup'
     },
     asalSdMi: 'SD Islam Terpadu Al-Fath',
     npsnSdMi: '20205566',
     noIjazahSd: 'DN-02/D-SD/13/0012346',
-    tahunLulusSd: '2023',
+    tahunLulusSd: '2026',
     lamaBelajarSd: 6,
-    tanggalDiterima: '2023-07-17',
+    tanggalDiterima: '2026-07-17',
     diterimaDiTingkat: '7',
     diterimaDiRombel: '7B',
     rombelSaatIni: '8A',
@@ -637,7 +637,7 @@ export const initialSiswaList: Siswa[] = [
         fase: 'Fase D',
         tingkat: '7',
         semester: '1',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         dimensi: {
           berimanBertakwa: 'Berkembang Sesuai Harapan',
           berkebinekaanGlobal: 'Sangat Berkembang',
@@ -672,7 +672,7 @@ export const initialSiswaList: Siswa[] = [
         bidang: 'Akademik',
         tingkat: 'Provinsi',
         peringkat: 'Juara 1',
-        tahun: '2024',
+        tahun: '2026',
         penyelenggara: 'Balai Bahasa Jawa Barat'
       }
     ],
@@ -681,7 +681,7 @@ export const initialSiswaList: Siswa[] = [
         id: 'rs-03',
         semester: '1',
         tingkat: '7',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         sakit: 0,
         izin: 0,
         alpa: 0,
@@ -692,7 +692,7 @@ export const initialSiswaList: Siswa[] = [
         id: 'rs-04',
         semester: '2',
         tingkat: '7',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         sakit: 1,
         izin: 1,
         alpa: 0,
@@ -701,9 +701,9 @@ export const initialSiswaList: Siswa[] = [
       }
     ],
     statusSiswa: 'Aktif',
-    createdAt: '2023-07-17T08:00:00.000Z',
-    updatedAt: '2024-07-20T10:30:00.000Z',
-    lastSyncedWithDapodik: '2024-07-20T10:30:00.000Z'
+    createdAt: '2026-07-17T08:00:00.000Z',
+    updatedAt: '2026-07-20T10:30:00.000Z',
+    lastSyncedWithDapodik: '2026-07-20T10:30:00.000Z'
   },
   {
     id: 'sis-003',
@@ -712,7 +712,7 @@ export const initialSiswaList: Siswa[] = [
     namaPanggilan: 'Daniel',
     jenisKelamin: 'L',
     nisn: '0112345678',
-    nipd: '242507003',
+    nipd: '262707003',
     nik: '3201011802110007',
     noKk: '3201011001050022',
     noAktaLahir: '3201-LT-18022011-0089',
@@ -751,7 +751,7 @@ export const initialSiswaList: Siswa[] = [
       tahunLahir: '1976',
       pendidikan: 'S1 Hukum',
       pekerjaan: 'Advokat / Pengacara',
-      penghasilan: 'Lebih dari Rp 10.000.000',
+      penghasilan: 'Rp. 5,000,000 - Rp. 20,000,000',
       noTelepon: '081377889900',
       status: 'Masih Hidup'
     },
@@ -761,16 +761,16 @@ export const initialSiswaList: Siswa[] = [
       tahunLahir: '1978',
       pendidikan: 'S1 Farmasi',
       pekerjaan: 'Apoteker',
-      penghasilan: 'Rp 5.000.000 - Rp 10.000.000',
+      penghasilan: 'Rp. 5,000,000 - Rp. 20,000,000',
       noTelepon: '081366778899',
       status: 'Masih Hidup'
     },
     asalSdMi: 'SD Santo Yoseph Nusantara',
     npsnSdMi: '20207788',
     noIjazahSd: 'DN-02/D-SD/13/0012347',
-    tahunLulusSd: '2024',
+    tahunLulusSd: '2026',
     lamaBelajarSd: 6,
-    tanggalDiterima: '2024-07-15',
+    tanggalDiterima: '2026-07-15',
     diterimaDiTingkat: '7',
     diterimaDiRombel: '7A',
     rombelSaatIni: '7A',
@@ -783,7 +783,7 @@ export const initialSiswaList: Siswa[] = [
         fase: 'Fase D',
         tingkat: '7',
         semester: '1',
-        tahunAjaran: '2024/2025',
+        tahunAjaran: '2026/2027',
         dimensi: {
           berimanBertakwa: 'Berkembang Sesuai Harapan',
           berkebinekaanGlobal: 'Berkembang Sesuai Harapan',
@@ -811,7 +811,7 @@ export const initialSiswaList: Siswa[] = [
         bidang: 'Olahraga',
         tingkat: 'Kabupaten/Kota',
         peringkat: 'Juara 1',
-        tahun: '2024',
+        tahun: '2026',
         penyelenggara: 'Perbasi Kota Nusantara'
       }
     ],
@@ -820,7 +820,7 @@ export const initialSiswaList: Siswa[] = [
         id: 'rs-05',
         semester: '1',
         tingkat: '7',
-        tahunAjaran: '2024/2025',
+        tahunAjaran: '2026/2027',
         sakit: 0,
         izin: 1,
         alpa: 0,
@@ -829,8 +829,8 @@ export const initialSiswaList: Siswa[] = [
       }
     ],
     statusSiswa: 'Aktif',
-    createdAt: '2024-07-15T08:00:00.000Z',
-    updatedAt: '2024-09-01T09:15:00.000Z'
+    createdAt: '2026-07-15T08:00:00.000Z',
+    updatedAt: '2026-09-01T09:15:00.000Z'
   },
   {
     id: 'sis-004',
@@ -839,7 +839,7 @@ export const initialSiswaList: Siswa[] = [
     namaPanggilan: 'Aisyah',
     jenisKelamin: 'P',
     nisn: '0087654321',
-    nipd: '232407004',
+    nipd: '262407004',
     nik: '3201016212080010',
     noKk: '3201011001050033',
     noAktaLahir: '3201-LT-22122008-0112',
@@ -876,9 +876,9 @@ export const initialSiswaList: Siswa[] = [
       nama: 'Ujang Sudrajat',
       nik: '3201010101700011',
       tahunLahir: '1970',
-      pendidikan: 'SMA / Sederajat',
+      pendidikan: 'SMA / sederajat',
       pekerjaan: 'Pedagang',
-      penghasilan: 'Rp 2.000.000 - Rp 3.000.000',
+      penghasilan: 'Rp. 2,000,000 - Rp. 4,999,999',
       noTelepon: '085211223344',
       status: 'Masih Hidup'
     },
@@ -886,7 +886,7 @@ export const initialSiswaList: Siswa[] = [
       nama: 'Kokom Komariah',
       nik: '3201014101730012',
       tahunLahir: '1973',
-      pendidikan: 'SMP / Sederajat',
+      pendidikan: 'SMP / sederajat',
       pekerjaan: 'Ibu Rumah Tangga',
       penghasilan: 'Tidak Berpenghasilan',
       noTelepon: '085222334455',
@@ -895,9 +895,9 @@ export const initialSiswaList: Siswa[] = [
     asalSdMi: 'SD Negeri Sukamantri 02',
     npsnSdMi: '20203344',
     noIjazahSd: 'DN-02/D-SD/12/0098765',
-    tahunLulusSd: '2022',
+    tahunLulusSd: '2026',
     lamaBelajarSd: 6,
-    tanggalDiterima: '2022-07-18',
+    tanggalDiterima: '2026-07-18',
     diterimaDiTingkat: '7',
     diterimaDiRombel: '7C',
     rombelSaatIni: '9A',
@@ -910,7 +910,7 @@ export const initialSiswaList: Siswa[] = [
         fase: 'Fase D',
         tingkat: '8',
         semester: '2',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         dimensi: {
           berimanBertakwa: 'Berkembang Sesuai Harapan',
           berkebinekaanGlobal: 'Berkembang Sesuai Harapan',
@@ -938,7 +938,7 @@ export const initialSiswaList: Siswa[] = [
         bidang: 'Olahraga',
         tingkat: 'Provinsi',
         peringkat: 'Juara 3',
-        tahun: '2024',
+        tahun: '2026',
         penyelenggara: 'Dispora Provinsi Jawa Barat'
       }
     ],
@@ -947,7 +947,7 @@ export const initialSiswaList: Siswa[] = [
         id: 'rs-06',
         semester: '1',
         tingkat: '8',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         sakit: 1,
         izin: 0,
         alpa: 0,
@@ -958,7 +958,7 @@ export const initialSiswaList: Siswa[] = [
         id: 'rs-07',
         semester: '2',
         tingkat: '8',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         sakit: 0,
         izin: 0,
         alpa: 0,
@@ -967,8 +967,8 @@ export const initialSiswaList: Siswa[] = [
       }
     ],
     statusSiswa: 'Aktif',
-    createdAt: '2022-07-18T08:00:00.000Z',
-    updatedAt: '2024-07-15T09:00:00.000Z'
+    createdAt: '2026-07-18T08:00:00.000Z',
+    updatedAt: '2026-07-15T09:00:00.000Z'
   },
   {
     id: 'sis-005',
@@ -977,7 +977,7 @@ export const initialSiswaList: Siswa[] = [
     namaPanggilan: 'Putra',
     jenisKelamin: 'L',
     nisn: '0109876543',
-    nipd: '242507005',
+    nipd: '262707005',
     nik: '3201010505100013',
     noKk: '3201011001050044',
     noAktaLahir: '3201-LT-05052010-0199',
@@ -1015,7 +1015,7 @@ export const initialSiswaList: Siswa[] = [
       tahunLahir: '1977',
       pendidikan: 'S1 Seni Pertunjukan',
       pekerjaan: 'Seniman / Desainer',
-      penghasilan: 'Rp 5.000.000 - Rp 10.000.000',
+      penghasilan: 'Rp. 5,000,000 - Rp. 20,000,000',
       noTelepon: '081299887766',
       status: 'Masih Hidup'
     },
@@ -1025,16 +1025,16 @@ export const initialSiswaList: Siswa[] = [
       tahunLahir: '1980',
       pendidikan: 'S1 Pendidikan Seni',
       pekerjaan: 'Guru',
-      penghasilan: 'Rp 3.000.000 - Rp 5.000.000',
+      penghasilan: 'Rp. 2,000,000 - Rp. 4,999,999',
       noTelepon: '081288776655',
       status: 'Masih Hidup'
     },
     asalSdMi: 'SD Saraswati Nusantara',
     npsnSdMi: '20208899',
     noIjazahSd: 'DN-02/D-SD/13/0012348',
-    tahunLulusSd: '2023',
+    tahunLulusSd: '2026',
     lamaBelajarSd: 6,
-    tanggalDiterima: '2023-07-17',
+    tanggalDiterima: '2026-07-17',
     diterimaDiTingkat: '7',
     diterimaDiRombel: '7A',
     rombelSaatIni: '8B',
@@ -1047,7 +1047,7 @@ export const initialSiswaList: Siswa[] = [
         fase: 'Fase D',
         tingkat: '7',
         semester: '2',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         dimensi: {
           berimanBertakwa: 'Berkembang Sesuai Harapan',
           berkebinekaanGlobal: 'Berkembang Sesuai Harapan',
@@ -1075,7 +1075,7 @@ export const initialSiswaList: Siswa[] = [
         bidang: 'Seni',
         tingkat: 'Kabupaten/Kota',
         peringkat: 'Juara 1',
-        tahun: '2024',
+        tahun: '2026',
         penyelenggara: 'Balai Pengembangan Talenta Indonesia'
       }
     ],
@@ -1084,7 +1084,7 @@ export const initialSiswaList: Siswa[] = [
         id: 'rs-08',
         semester: '1',
         tingkat: '7',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         sakit: 0,
         izin: 1,
         alpa: 0,
@@ -1095,7 +1095,7 @@ export const initialSiswaList: Siswa[] = [
         id: 'rs-09',
         semester: '2',
         tingkat: '7',
-        tahunAjaran: '2023/2024',
+        tahunAjaran: '2026/2027',
         sakit: 0,
         izin: 0,
         alpa: 0,
@@ -1104,8 +1104,8 @@ export const initialSiswaList: Siswa[] = [
       }
     ],
     statusSiswa: 'Aktif',
-    createdAt: '2023-07-17T08:00:00.000Z',
-    updatedAt: '2024-07-20T10:30:00.000Z'
+    createdAt: '2026-07-17T08:00:00.000Z',
+    updatedAt: '2026-07-20T10:30:00.000Z'
   }
 ];
 
@@ -1116,7 +1116,7 @@ export const mockDapodikPesertaDidik: DapodikRawPesertaDidik[] = [
     nama: 'MUHAMMAD RIZKY PRATAMA',
     jenis_kelamin: 'L',
     nisn: '0091234567',
-    nipd: '242507001',
+    nipd: '262707001',
     nik: '3201011504090001',
     tempat_lahir: 'Bandung',
     tanggal_lahir: '2010-04-15',
@@ -1148,7 +1148,7 @@ export const mockDapodikPesertaDidik: DapodikRawPesertaDidik[] = [
     nama: 'ANNISA AULIA PUTRI',
     jenis_kelamin: 'P',
     nisn: '0103456789',
-    nipd: '242507002',
+    nipd: '262707002',
     nik: '3201015609100002',
     tempat_lahir: 'Jakarta',
     tanggal_lahir: '2010-09-16',
@@ -1180,7 +1180,7 @@ export const mockDapodikPesertaDidik: DapodikRawPesertaDidik[] = [
     nama: 'FATHUR ROHMAN HAKIM',
     jenis_kelamin: 'L',
     nisn: '0119876512',
-    nipd: '242507006',
+    nipd: '262707006',
     nik: '3201012108110016',
     tempat_lahir: 'Bandung',
     tanggal_lahir: '2011-08-21',
@@ -1212,7 +1212,7 @@ export const mockDapodikPesertaDidik: DapodikRawPesertaDidik[] = [
     nama: 'CHELSEA OLIVIA NATASHA',
     jenis_kelamin: 'P',
     nisn: '0118899221',
-    nipd: '242507007',
+    nipd: '262707007',
     nik: '3201016511110019',
     tempat_lahir: 'Surabaya',
     tanggal_lahir: '2011-11-25',
@@ -1244,7 +1244,7 @@ export const mockDapodikPesertaDidik: DapodikRawPesertaDidik[] = [
     nama: 'RAIHAN ATHALLAH GUNADHI',
     jenis_kelamin: 'L',
     nisn: '0098712390',
-    nipd: '232407008',
+    nipd: '262407008',
     nik: '3201010303090022',
     tempat_lahir: 'Cimahi',
     tanggal_lahir: '2009-03-03',
@@ -1270,5 +1270,99 @@ export const mockDapodikPesertaDidik: DapodikRawPesertaDidik[] = [
     tingkat_pendidikan_id: 9,
     berat_badan: 55,
     tinggi_badan: 165
+  }
+];
+
+// Sample data Rombongan Belajar untuk emulator Web Service Dapodik
+export const mockDapodikRombel: DapodikRawRombel[] = [
+  {
+    rombongan_belajar_id: 'dpk-rombel-7a',
+    nama: '7A',
+    tingkat_pendidikan_id: 7,
+    jenis_rombel: 'Reguler',
+    jumlah_anggota: 32,
+    nama_wali: 'Dra. Hj. Nurjanah, M.Pd.',
+    semester_id: '20261'
+  },
+  {
+    rombongan_belajar_id: 'dpk-rombel-7b',
+    nama: '7B',
+    tingkat_pendidikan_id: 7,
+    jenis_rombel: 'Reguler',
+    jumlah_anggota: 30,
+    nama_wali: 'Drs. H. Maman Suparman',
+    semester_id: '20261'
+  },
+  {
+    rombongan_belajar_id: 'dpk-rombel-8a',
+    nama: '8A',
+    tingkat_pendidikan_id: 8,
+    jenis_rombel: 'Reguler',
+    jumlah_anggota: 31,
+    nama_wali: 'Siti Rahmawati, S.Kom.',
+    semester_id: '20261'
+  },
+  {
+    rombongan_belajar_id: 'dpk-rombel-9a',
+    nama: '9A',
+    tingkat_pendidikan_id: 9,
+    jenis_rombel: 'Reguler',
+    jumlah_anggota: 29,
+    nama_wali: 'Budi Santoso, S.Pd.',
+    semester_id: '20261'
+  }
+];
+
+// Sample data PTK untuk emulator Web Service Dapodik
+export const mockDapodikPtk: DapodikRawPtk[] = [
+  {
+    ptk_id: 'dpk-ptk-01',
+    nama: 'Dr. H. Ahmad Dahlan, M.Pd.',
+    nip: '19740512 199903 1 002',
+    nik: '3201011205740001',
+    jenis_ptk_id_str: 'Kepala Sekolah',
+    jenis_kelamin: 'L',
+    status_kepegawaian_id_str: 'PNS',
+    mata_pelajaran_ajar: 'Pendidikan Agama dan Budi Pekerti'
+  },
+  {
+    ptk_id: 'dpk-ptk-02',
+    nama: 'Dra. Hj. Nurjanah, M.Pd.',
+    nip: '19760812 200212 2 001',
+    nik: '3201015208760002',
+    jenis_ptk_id_str: 'Guru Kelas',
+    jenis_kelamin: 'P',
+    status_kepegawaian_id_str: 'PNS',
+    mata_pelajaran_ajar: 'Bahasa Indonesia'
+  },
+  {
+    ptk_id: 'dpk-ptk-03',
+    nama: 'Budi Santoso, S.Pd.',
+    nip: '19880312 201201 1 008',
+    nik: '3201011203880003',
+    jenis_ptk_id_str: 'Guru Mata Pelajaran',
+    jenis_kelamin: 'L',
+    status_kepegawaian_id_str: 'PPPK',
+    mata_pelajaran_ajar: 'Informatika'
+  }
+];
+
+// Sample data Pengguna Dapodik untuk emulator Web Service
+export const mockDapodikPengguna: DapodikRawPengguna[] = [
+  {
+    pengguna_id: 'dpk-user-01',
+    username: 'operator_dapodik',
+    nama: 'Siti Rahmawati, S.Kom.',
+    peran: 'Operator Sekolah',
+    email: 'siti.rahmawati@smpn1merdekabelajar.sch.id',
+    aktif: 1
+  },
+  {
+    pengguna_id: 'dpk-user-02',
+    username: 'bendahara_bos',
+    nama: 'Dewi Sartika, S.E.',
+    peran: 'Bendahara BOS',
+    email: 'bendahara@smpn1merdekabelajar.sch.id',
+    aktif: 1
   }
 ];

@@ -49,13 +49,16 @@ export const SiswaDetailModal: React.FC<SiswaDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden text-xs">
+    <div className="fixed inset-0 z-50 bg-navy-950/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden text-xs anim-scale-in">
         {/* Header Profile Hero */}
-        <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-5 shrink-0 relative">
+        <div className="relative overflow-hidden bg-gradient-to-r from-navy-800 via-navy-900 to-[#0b1e4b] text-white p-5 shrink-0">
+          <div className="absolute top-0 inset-x-0 h-0.5 bg-gradient-to-r from-gold-500 via-gold-300 to-gold-500" />
+          <div className="absolute -right-10 -top-14 w-48 h-48 rounded-full bg-blue-500/20 blur-3xl" />
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition"
+            className="absolute top-4 right-4 p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition z-10"
+            aria-label="Tutup pratinjau"
           >
             <X className="w-5 h-5" />
           </button>
@@ -97,21 +100,21 @@ export const SiswaDetailModal: React.FC<SiswaDetailModalProps> = ({
               <div className="pt-2 flex flex-wrap gap-2 justify-center sm:justify-start">
                 <button
                   onClick={() => onPrintLembar(siswa)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold shadow-xs transition"
+                  className="ui-btn ui-btn-gold"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   Cetak Lembar Induk
                 </button>
                 <button
                   onClick={() => onEdit(siswa)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg font-medium transition border border-white/20"
+                  className="ui-btn bg-white/10 hover:bg-white/20 text-white border border-white/25"
                 >
                   <Edit className="w-3.5 h-3.5" />
                   Edit Data
                 </button>
                 <button
                   onClick={() => onDelete(siswa.id)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600/80 hover:bg-rose-600 text-white rounded-lg font-medium transition"
+                  className="ui-btn ui-btn-danger"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Hapus
@@ -193,11 +196,29 @@ export const SiswaDetailModal: React.FC<SiswaDetailModalProps> = ({
             </div>
           </div>
 
+          {/* Minat & Pendaftaran */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[11px]">
+              <div>
+                <span className="text-slate-500 block">Jenis Pendaftaran:</span>
+                <span className="font-semibold text-slate-900">{siswa.jenisPendaftaran || '-'}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 block">Hobi:</span>
+                <span className="font-semibold text-slate-900">{siswa.hobi || '-'}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 block">Cita-cita:</span>
+                <span className="font-semibold text-slate-900">{siswa.citaCita || '-'}</span>
+              </div>
+            </div>
+          </div>
+
           {/* Projek P5 Kurikulum Merdeka */}
           <div className="bg-amber-50/60 p-4 rounded-xl border border-amber-200 space-y-2">
             <h4 className="font-bold text-amber-950 text-xs uppercase tracking-wider flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-amber-600" />
-              Projek Penguatan Profil Lulusan
+              Projek Penguatan Profil Pelajar Pancasila (P5)
             </h4>
             {siswa.p5Projects && siswa.p5Projects.length > 0 ? (
               <div className="space-y-2">
@@ -220,10 +241,10 @@ export const SiswaDetailModal: React.FC<SiswaDetailModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+        <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
           <button
             onClick={onClose}
-            className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold rounded-xl text-xs transition"
+            className="ui-btn ui-btn-dark"
           >
             Tutup Pratinjau
           </button>

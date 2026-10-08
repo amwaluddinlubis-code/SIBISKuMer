@@ -1,5 +1,5 @@
 export type JenisKelamin = 'L' | 'P';
-export type Agama = 'Islam' | 'Kristen' | 'Katholik' | 'Hindu' | 'Buddha' | 'Khonghucu' | 'Kepercayaan';
+export type Agama = 'Islam' | 'Kristen' | 'Katholik' | 'Hindu' | 'Buddha' | 'Khonghucu' | 'Kepercayaan' | 'Lainnya';
 export type StatusSiswa = 'Aktif' | 'Lulus' | 'Mutasi Keluar' | 'Mengundurkan Diri' | 'Meninggal Dunia';
 export type JenjangSekolah = 'SD' | 'SMP';
 export type TingkatKelasSD = '1' | '2' | '3' | '4' | '5' | '6';
@@ -75,7 +75,7 @@ export interface NilaiMataPelajaran {
 export interface RaportSemester {
   id: string;
   siswaId: string;
-  tahunAjaran: string; // e.g. "2023/2024", "2024/2025"
+  tahunAjaran: string; // e.g. "2026/2027", "2027/2028"
   semester: '1' | '2';
   tingkat: TingkatKelas;
   rombel: string; // e.g. "1A", "7A"
@@ -108,7 +108,7 @@ export type StatusKenaikanKelas = 'Naik Kelas' | 'Tinggal di Kelas' | 'Lulus' | 
 
 export interface RiwayatTahunAjaran {
   id: string;
-  tahunAjaran: string; // e.g. "2022/2023", "2023/2024"
+  tahunAjaran: string; // e.g. "2026/2027", "2027/2028"
   tingkat: TingkatKelas;
   rombel: string;
   waliKelas?: string;
@@ -141,6 +141,9 @@ export interface Siswa {
   statusDalamKeluarga: 'Anak Kandung' | 'Anak Tiri' | 'Anak Angkat';
   bahasaSehariHari: string;
   fotoUrl?: string;
+  /** Mini JPEG (≤60KB) untuk sinkron cloud via Firestore — tanpa Storage.
+   *  Dipakai sebagai fallback tampil bila fotoUrl lokal kosong. */
+  fotoMini?: string;
 
   // B. Kondisi Jasmani & Kesehatan
   golonganDarah: 'A' | 'B' | 'AB' | 'O' | '-';
@@ -161,9 +164,26 @@ export interface Siswa {
   kabupatenKota: string;
   provinsi: string;
   kodePos: string;
-  tinggalDengan: 'Orang Tua' | 'Wali' | 'Asrama' | 'Kost' | 'Panti Asuhan' | 'Lainnya';
+  tinggalDengan: 'Orang Tua' | 'Wali' | 'Asrama' | 'Kost' | 'Panti Asuhan' | 'Pesantren' | 'Lainnya';
   jarakKeSekolahKm: number;
-  transportasiKeSekolah: 'Jalan Kaki' | 'Sepeda' | 'Sepeda Motor' | 'Angkutan Umum' | 'Antar Jemput' | 'Lainnya';
+  transportasiKeSekolah:
+    | 'Jalan Kaki'
+    | 'Sepeda'
+    | 'Sepeda Motor'
+    | 'Angkutan Umum'
+    | 'Antar Jemput'
+    | 'Angkutan umum/bus/pete-pete'
+    | 'Mobil/bus antar jemput'
+    | 'Kereta api'
+    | 'Ojek'
+    | 'Andong/bendi/sado/dokar/delman/becak'
+    | 'Perahu penyeberangan/rakit/getek'
+    | 'Kuda'
+    | 'Mobil Pribadi'
+    | 'Lainnya';
+  /** Minat (tabel kode hobi) & cita-cita (tabel kode profesi). */
+  hobi?: string;
+  citaCita?: string;
 
   // D. Orang Tua & Wali
   ayah: {
@@ -211,6 +231,8 @@ export interface Siswa {
   diterimaDiRombel: string; // e.g. "7A"
   rombelSaatIni: string; // e.g. "7A", "8B", "9C"
   jalurMasuk: JalurMasuk;
+  /** Jenis pendaftaran Dapodik (Siswa Baru / Pindahan / Kembali Bersekolah). */
+  jenisPendaftaran?: 'Siswa Baru' | 'Pindahan' | 'Kembali Bersekolah';
   asalMutasi?: string;
   noSuratPenerimaan?: string;
 
@@ -240,8 +262,57 @@ export interface Siswa {
   lastSyncedWithDapodik?: string;
 }
 
-export interface SekolahProfile {
-  nama: string;
+// ---------------- KOP SURAT CETAKAN ----------------
+// Tersimpan di SekolahProfile.kop (ikut backup/restore & multi-sekolah).
+// Teks kosong = otomatis dari profil (lihat resolveKop di utils/kop.ts).
+
+export type KopGaris = 'ganda' | 'tunggal' | 'tanpa';
+export type KopLogoKanan = 'badge' | 'gambar' | 'sembunyi';
+export type KopUkuranNama = 'normal' | 'besar';
+/** Sumber wilayah otomatis untuk baris 1 kop bila dikosongkan. */
+export type KopOtoritas = 'provinsi' | 'kabupaten' | 'kota';
+/** Jenis huruf judul kop (serif tegas = standar kop dinas). */
+export type KopFontJudul = 'serif' | 'sans';
+
+export interface KopSurat {
+  /** Baris 1 kop (cth. "PEMERINTAH KABUPATEN MANDAILING NATAL"); kosong = otomatis. */
+  baris1?: string;
+  /** Baris 2 kop (cth. "DINAS PENDIDIKAN DAN KEBUDAYAAN"); kosong = otomatis. */
+  baris2?: string;
+  /** Wilayah otomatis baris 1 bila baris1 dikosongkan. */
+  otoritas: KopOtoritas;
+  /** Jenis huruf ketiga judul kop. */
+  fontJudul: KopFontJudul;
+  tampilBaris1: boolean;
+  tampilBaris2: boolean;
+  /** Logo kiri (dataURL hasil unggah); kosong = emblem generik. */
+  logoKiriUrl?: string;
+  tampilLogoKiri: boolean;
+  logoKananMode: KopLogoKanan;
+  /** Logo kanan kustom (dataURL); dipakai bila logoKananMode === 'gambar'. */
+  logoKananUrl?: string;
+  tampilAlamat: boolean;
+  tampilKontak: boolean;
+  tampilWebsite: boolean;
+  garis: KopGaris;
+  ukuranNama: KopUkuranNama;
+}
+
+// ---------------- TEMA TAMPILAN ----------------
+// Aksen biru untuk SMP, maroon untuk SD. Otomatis mengikuti jenjang,
+// dapat dikunci manual. Hanya administrator yang dapat mengubah.
+
+export type TemaMode = 'otomatis' | 'biru' | 'maroon';
+
+/** Mode tampilan layar: terang / gelap / mengikuti sistem. Per perangkat
+ *  (localStorage), bukan per sekolah — preferensi pribadi, semua peran. */
+export type ModeTampilan = 'terang' | 'gelap' | 'otomatis';
+
+export interface TemaKustom {
+  mode: TemaMode;
+}
+
+export interface SekolahProfile {  nama: string;
   npsn: string;
   nss: string;
   jenjang?: JenjangSekolah; // 'SD' | 'SMP'
@@ -265,6 +336,10 @@ export interface SekolahProfile {
   tahunAjaran: string;
   lastSyncedWithDapodik?: string;
   syncSource?: string;
+  /** Pengaturan kop surat cetakan (lembar induk, raport, rekap). */
+  kop?: KopSurat;
+  /** Tema warna tampilan (khusus administrator). */
+  tema?: TemaKustom;
 }
 
 export type UserRole = 'administrator' | 'operator';
@@ -272,16 +347,15 @@ export type UserRole = 'administrator' | 'operator';
 export interface AppUser {
   id: string;
   username: string;
-  /** @deprecated Hanya untuk migrasi akun lama. Password baru selalu disimpan sebagai hash. */
   password?: string;
-  /** Hash SHA-256 + salt, format "sha256$<salt>$<hash>". */
-  passwordHash?: string;
   namaLengkap: string;
   role: UserRole;
   email: string;
   nomorTelepon?: string;
   jabatan?: string;
   rombelAkses?: string[]; // empty array or undefined means all rombels
+  /** Batas tahun ajaran login. Kosong/undefined = semua tahun. Cth. ["2026/2027"]. */
+  tahunAkses?: string[];
   status: 'aktif' | 'nonaktif';
   terakhirLogin?: string;
   createdAt: string;
@@ -353,9 +427,11 @@ export interface DapodikRawSekolah {
   nss?: string;
   bentuk_pendidikan_id_str?: string;
   status_sekolah?: string;
+  status_sekolah_str?: string;
   alamat_jalan?: string;
   rt?: string;
   rw?: string;
+  dusun?: string;
   nama_dusun?: string;
   desa_kelurahan?: string;
   kecamatan?: string;
@@ -370,4 +446,220 @@ export interface DapodikRawSekolah {
   nip_kepala_sekolah?: string;
   semester_id?: string;
   tahun_ajaran?: string;
+}
+
+// ---------------- DATA REFERENSI DAPODIK (full-sync) ----------------
+// Skema Web Service Dapodik bisa berbeda antarversi; semua field opsional
+// dan konverter memakai beberapa alias agar tetap terbaca.
+
+export interface DapodikRawRombel {
+  rombongan_belajar_id: string;
+  nama: string;
+  tingkat_pendidikan_id?: string | number;
+  jenis_rombel?: string;
+  jurusan?: string;
+  jurusan_id_str?: string;
+  jumlah_anggota?: number;
+  wali?: string;
+  nama_wali?: string;
+  nip_wali?: string;
+  semester_id?: string;
+  [key: string]: unknown;
+}
+
+export interface DapodikRawPtk {
+  ptk_id: string;
+  nama: string;
+  nip?: string;
+  nik?: string;
+  nuptk?: string;
+  jenis_ptk_id_str?: string;
+  jenis_kelamin?: 'L' | 'P';
+  tempat_lahir?: string;
+  tanggal_lahir?: string;
+  status_kepegawaian_id_str?: string;
+  mata_pelajaran_ajar?: string;
+  tugas_tambahan?: string;
+  [key: string]: unknown;
+}
+
+export interface DapodikRawPengguna {
+  pengguna_id: string;
+  username: string;
+  nama?: string;
+  peran?: string;
+  peran_id_str?: string;
+  email?: string;
+  aktif?: string | number | boolean;
+  [key: string]: unknown;
+}
+
+// Referensi lokal hasil sinkronisasi (disimpan di IndexedDB)
+
+export interface RombelRef {
+  id: string;
+  dapodikId?: string;
+  nama: string;
+  tingkat?: TingkatKelas;
+  jenisRombel?: string;
+  waliKelas?: string;
+  jumlahAnggota?: number;
+  tahunAjaran?: string;
+  updatedAt: string;
+  source: 'dapodik' | 'manual';
+}
+
+export interface PtkRef {
+  id: string;
+  dapodikId?: string;
+  nama: string;
+  nip?: string;
+  nik?: string;
+  nuptk?: string;
+  jenisKelamin?: 'L' | 'P';
+  tempatLahir?: string;
+  tanggalLahir?: string;
+  jenisPtk?: string;
+  statusKepegawaian?: string;
+  mapelAjar?: string;
+  tugasTambahan?: string;
+  updatedAt: string;
+  source: 'dapodik' | 'manual';
+}
+
+// ---------------- ARSIP TAHUN AJARAN (tutup tahun, terkunci) ----------------
+// Potret roster + ringkasan saat tahun ajaran ditutup. Kunci membuat raport &
+// promosi tahun tersebut ditolak (buka ulang hanya oleh administrator).
+
+export interface RosterArsip {
+  siswaId: string;
+  namaLengkap: string;
+  nisn: string;
+  tingkat: string;
+  rombel: string;
+  /** Status saat penutupan: Aktif / Lulus / Mutasi Keluar / ... */
+  status: string;
+}
+
+export interface RingkasanTutupTahun {
+  totalSiswa: number;
+  perTingkat: Record<string, number>;
+  perRombel: Record<string, number>;
+  lulus: number;
+  naik: number;
+  tinggal: number;
+  mutasi: number;
+}
+
+export interface TutupTahunAjaran {
+  /** Kunci unik, format "2026/2027". */
+  tahunAjaran: string;
+  ditutupPada: string;
+  ditutupOleh?: string;
+  /** Tahun ajaran aktif yang ditetapkan setelah penutupan. */
+  tahunAktifBaru?: string;
+  ringkasan: RingkasanTutupTahun;
+  roster: RosterArsip[];
+}
+
+// ---------------- PEMETAAN KELAS PER TAHUN AJARAN ----------------
+// Daftar rombel resmi tiap tahun ajaran (khusus administrator). Dipakai sebagai
+// acuan target promosi & validasi rombel; terpisah dari RombelRef sinkronisasi.
+
+export interface PetaKelas {
+  id: string;
+  tahunAjaran: string; // "2027/2028"
+  tingkat: TingkatKelas;
+  rombel: string; // "8A"
+  waliKelas?: string;
+  updatedAt: string;
+  source: 'manual' | 'generate';
+  /** Anggota arsip (ID siswa) — dipakai untuk tahun non-aktif hasil Petakan
+   *  Mundur. Tahun aktif tetap membaca rombelSaatIni siswa (live). */
+  anggotaIds?: string[];
+}
+
+// ---------------- MULTI-SEKOLAH (satu laptop, banyak database) ----------------
+// Tiap sekolah punya database IndexedDB sendiri (isolasi penuh ala Dapodik).
+// Registry-nya ringan dan global (localStorage).
+
+export interface SchoolEntry {
+  id: string;
+  nama: string;
+  npsn: string;
+  jenjang: JenjangSekolah;
+  bentukPendidikan?: string;
+  /** Nama database IndexedDB sekolah ini. DB lama = 'BukuInduk_Merdeka_DB'. */
+  dbName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------------- AUDIT LOG (jejak siapa-ubah-apa) ----------------
+// Ditulis otomatis pada aksi penting (login, kelola akun, data siswa,
+// tutup tahun, sinkron, backup). Hanya administrator yang dapat melihat
+// (tab Log Audit) & menghapus. Dibatasi 2000 entri terbaru per database.
+
+export type AuditAksi =
+  | 'login'
+  | 'logout'
+  | 'sesi_pindah'
+  | 'login_gagal'
+  | 'login_terkunci'
+  | 'akun_buat'
+  | 'akun_ubah'
+  | 'akun_hapus'
+  | 'password_ubah'
+  | 'password_reset'
+  | 'impersonate_mulai'
+  | 'impersonate_selesai'
+  | 'siswa_tambah'
+  | 'siswa_ubah'
+  | 'siswa_hapus'
+  | 'mutasi_masuk'
+  | 'mutasi_keluar'
+  | 'tutup_tahun'
+  | 'buka_tahun'
+  | 'sinkron_terapkan'
+  | 'backup_buat'
+  | 'backup_pulihkan'
+  | 'backup_reset'
+  | 'cloud_unggah'
+  | 'cloud_unduh'
+  | 'cloud_sinkron';
+
+export interface AuditLog {
+  id: string;
+  timestamp: string;
+  /** Username pelaku (atau 'sistem'). */
+  aktor: string;
+  peran?: string;
+  aksi: AuditAksi;
+  /** Kelompok entitas: 'akun' | 'siswa' | 'tahun' | 'sinkron' | 'backup' | 'sesi'. */
+  entitas: string;
+  entitasId?: string;
+  ringkasan: string;
+  detail?: string;
+}
+
+// ---------------- CADANGAN OTOMATIS (auto-backup terjadwal) ----------------
+// Snapshot JSON penuh disimpan di IndexedDB (bukan unduhan file) agar tidak
+// diblokir browser; maksimal 5 snapshot terbaru per database.
+
+export interface AutoBackupSetting {
+  aktif: boolean;
+  /** Interval menit: 15 | 30 | 60 | 120 | 240. */
+  intervalMenit: number;
+  terakhirJalan?: string | null;
+  terakhirStatus?: string | null;
+}
+
+export interface AutoBackupSnapshot {
+  id: string;
+  timestamp: string;
+  dibuatOleh: string;
+  ukuranBytes: number;
+  jumlahSiswa: number;
+  /** Isi JSON BackupPayload (string) agar hemat parse saat listing. */
+  payload: string;
 }

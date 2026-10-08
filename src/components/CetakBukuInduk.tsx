@@ -1,21 +1,58 @@
-import React, { useRef, useState } from 'react';
-import { Printer, Download, ArrowLeft, CreditCard, FileText, UserCheck, ShieldCheck, Award, BookOpen, Calendar, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Printer, Download, ArrowLeft, CreditCard, FileText, Award, BookOpen, Calendar, CheckCircle2 } from 'lucide-react';
 import { Siswa, SekolahProfile } from '../types';
+import { getFaseKurikulum, getRaportList, getNilaiList } from '../utils/raportUtils';
+import { tahanMaksSesi } from '../utils/sesi';
+import { KopSuratView } from './KopSuratView';
+import { KartuPelajar, TemplateKartu, TEMPLATE_KARTU } from './KartuPelajar';
+import { unduhIndukExcel, unduhIndukWord } from '../utils/dokumenInduk';
+import { toast } from '../utils/notify';
 
 interface CetakBukuIndukProps {
   siswa: Siswa;
   sekolah: SekolahProfile;
+  /** Sesi tahun ajaran login — transkrip raport dibuka pada tahun sesi. */
+  sessionTahun?: string | null;
   onClose: () => void;
 }
 
 export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
   siswa,
   sekolah,
+  sessionTahun,
   onClose
 }) => {
   const [printMode, setPrintMode] = useState<'buku-induk' | 'raport' | 'kartu-pelajar'>('buku-induk');
   const [selectedSemesterId, setSelectedSemesterId] = useState<string>('all');
+  const [templateKartu, setTemplateKartu] = useState<TemplateKartu>('dinas');
+  const [exportingInduk, setExportingInduk] = useState<null | 'excel' | 'word'>(null);
+
+  const handleExportInduk = async (format: 'excel' | 'word') => {
+    setExportingInduk(format);
+    try {
+      if (format === 'excel') {
+        await unduhIndukExcel(siswa, sekolah);
+      } else {
+        await unduhIndukWord(siswa, sekolah);
+      }
+      toast(`Lembar induk "${siswa.namaLengkap}" diunduh (${format === 'excel' ? '.xlsx' : '.docx'}).`, 'success');
+    } catch (err: unknown) {
+      toast(`Gagal mengekspor: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setExportingInduk(null);
+    }
+  };
   const printRef = useRef<HTMLDivElement>(null);
+
+  // Fondasi sesi: transkrip dibuka pada raport tahun sesi (bila ada).
+  const [sesiDiterapkan, setSesiDiterapkan] = useState(false);
+  useEffect(() => {
+    if (!sesiDiterapkan && (sessionTahun || '').trim()) {
+      const cocok = getRaportList(siswa).find((r) => (r.tahunAjaran || '').trim() === (sessionTahun || '').trim());
+      if (cocok) setSelectedSemesterId(cocok.id);
+      setSesiDiterapkan(true);
+    }
+  }, [sesiDiterapkan, sessionTahun, siswa]);
 
   const handlePrint = () => {
     window.print();
@@ -37,10 +74,20 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
   };
 
   const jenjang = sekolah.jenjang || 'SMP';
+  // Cutoff sesi: baris raport/riwayat di atas sesi aktif tidak dicetak.
+  const sesiEfektif = (sessionTahun || sekolah.tahunAjaran || '').trim();
+  const raportList = tahanMaksSesi(getRaportList(siswa), (r) => r.tahunAjaran, sesiEfektif);
+  const riwayatTampil = tahanMaksSesi(siswa.riwayatTahunAjaran || [], (rw) => rw.tahunAjaran, sesiEfektif);
   const faseLabel = jenjang === 'SD' ? 'Fase A/B/C' : 'Fase D';
+  const tingkatSiswa = (siswa.rombelSaatIni || siswa.diterimaDiTingkat || (jenjang === 'SD' ? '1' : '7')).charAt(0);
+  const faseSiswa = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].includes(tingkatSiswa)
+    ? getFaseKurikulum(tingkatSiswa as '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9')
+    : faseLabel;
+  const asalTitle = jenjang === 'SD' ? 'TK/PAUD/RA' : 'SD/MI';
+  const ijazahLabel = jenjang === 'SD' ? 'No. SKL / Ijazah (jika ada)' : 'No. Ijazah SD';
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs overflow-y-auto flex flex-col items-center justify-start p-2 sm:p-6 print:p-0 print:bg-white print:static">
+    <div className="print-sheet-root fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs overflow-y-auto flex flex-col items-center justify-start p-2 sm:p-6 print:p-0 print:bg-white print:static">
       {/* Top Floating Action Bar (Hidden when printing) */}
       <div className="w-full max-w-4xl bg-white rounded-xl shadow-xl p-3 sm:p-4 mb-4 flex flex-wrap items-center justify-between gap-3 border border-slate-200 print:hidden sticky top-2 z-20">
         <div className="flex items-center gap-2">
@@ -90,14 +137,19 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {printMode === 'raport' && siswa.raportSemester && siswa.raportSemester.length > 0 && (
+          {sessionTahun && (
+            <span className="hidden sm:inline-block text-[11px] font-mono font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+              Sesi {sessionTahun}
+            </span>
+          )}
+          {printMode === 'raport' && raportList.length > 0 && (
             <select
               value={selectedSemesterId}
               onChange={(e) => setSelectedSemesterId(e.target.value)}
               className="text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-medium"
             >
               <option value="all">Semua Semester (Multi-Tahun)</option>
-              {siswa.raportSemester.map((r) => (
+              {raportList.map((r) => (
                 <option key={r.id} value={r.id}>
                   Kelas {r.tingkat} Sem. {r.semester} ({r.tahunAjaran})
                 </option>
@@ -112,54 +164,40 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
             <Printer className="w-4 h-4" />
             Cetak Dokumen (Print / PDF)
           </button>
+          {printMode === 'buku-induk' && (
+            <>
+              <button
+                onClick={() => void handleExportInduk('excel')}
+                disabled={exportingInduk !== null}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-60"
+                title="Unduh lembar induk sebagai Excel (.xlsx)"
+              >
+                <Download className="w-4 h-4" />
+                {exportingInduk === 'excel' ? 'Menyiapkan…' : 'Excel'}
+              </button>
+              <button
+                onClick={() => void handleExportInduk('word')}
+                disabled={exportingInduk !== null}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-indigo-700 hover:bg-indigo-800 rounded-lg shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-60"
+                title="Unduh lembar induk sebagai Word (.docx)"
+              >
+                <Download className="w-4 h-4" />
+                {exportingInduk === 'word' ? 'Menyiapkan…' : 'Word'}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       {/* Main Printable Document */}
       <div
         ref={printRef}
-        className="w-full max-w-4xl bg-white text-slate-900 shadow-2xl rounded-xl sm:rounded-none p-6 sm:p-12 print:p-4 print:shadow-none print:max-w-none print:w-full print:rounded-none border border-slate-200 print:border-none font-sans text-xs"
+        className="print-sheet w-full max-w-4xl bg-white text-slate-900 shadow-2xl rounded-xl sm:rounded-none p-6 sm:p-12 print:p-4 print:shadow-none print:max-w-none print:w-full print:rounded-none border border-slate-200 print:border-none font-sans text-xs"
       >
         {printMode === 'buku-induk' ? (
           <div className="space-y-6">
-            {/* Kop Resmi Sekolah */}
-            <div className="border-b-2 border-slate-900 pb-3 text-center relative">
-              <div className="flex items-center justify-between">
-                <div className="w-16 h-16 flex items-center justify-center shrink-0">
-                  <svg className="w-14 h-14 text-blue-900" viewBox="0 0 100 100" fill="currentColor">
-                    <path d="M50 10 L85 25 L50 40 L15 25 Z" />
-                    <path d="M25 35 V60 C25 75 50 90 50 90 C50 90 75 75 75 60 V35" fill="none" stroke="currentColor" strokeWidth="6" />
-                    <circle cx="50" cy="55" r="14" fill="#d97706" />
-                  </svg>
-                </div>
-
-                <div className="flex-1 px-4 text-center">
-                  <h3 className="text-xs font-semibold tracking-wider uppercase text-slate-700">
-                    PEMERINTAH {sekolah.provinsi ? sekolah.provinsi.toUpperCase() : 'DAERAH'}
-                  </h3>
-                  <h2 className="text-xs font-bold tracking-wide uppercase text-slate-800">
-                    DINAS PENDIDIKAN DAN KEBUDAYAAN {sekolah.kabupatenKota?.toUpperCase()}
-                  </h2>
-                  <h1 className="text-base sm:text-lg font-black tracking-wider uppercase text-blue-950 my-0.5">
-                    {sekolah.nama || 'SMP NEGERI 1 MERDEKA BELAJAR'}
-                  </h1>
-                  <p className="text-[10px] text-slate-600 leading-tight">
-                    {sekolah.alamat}, {sekolah.desaKelurahan}, Kec. {sekolah.kecamatan}, {sekolah.kabupatenKota} {sekolah.kodePos}
-                  </p>
-                  <p className="text-[10px] text-slate-600">
-                    NPSN: <strong>{sekolah.npsn}</strong> | NSS: {sekolah.nss} | Telp: {sekolah.telepon} | Email: {sekolah.email}
-                  </p>
-                </div>
-
-                <div className="w-16 h-16 flex items-center justify-center shrink-0">
-                  <div className="w-12 h-12 rounded-full border-2 border-blue-900 flex items-center justify-center font-bold text-[9px] text-blue-900 text-center leading-tight">
-                    {jenjang}<br />KURIKULUM<br />MERDEKA
-                  </div>
-                </div>
-              </div>
-              <div className="h-0.5 bg-slate-900 mt-2" />
-              <div className="h-px bg-slate-900 mt-0.5" />
-            </div>
+            {/* Kop Resmi Sekolah (diatur di Profil Sekolah → Kop Surat) */}
+            <KopSuratView sekolah={sekolah} />
 
             {/* Judul Lembar Buku Induk */}
             <div className="text-center my-3">
@@ -418,11 +456,11 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
               </div>
             </div>
 
-            {/* Section E & F: Pendidikan Sebelumnya & Penerimaan di SMP */}
+            {/* Section E & F: Pendidikan Sebelumnya & Penerimaan */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="border border-slate-300 rounded overflow-hidden">
                 <div className="bg-slate-800 text-white font-bold px-3 py-1 text-[11px] uppercase">
-                  E. PENDIDIKAN SEBELUMNYA (SD/MI)
+                  E. PENDIDIKAN SEBELUMNYA ({asalTitle})
                 </div>
                 <div className="p-3 space-y-1 text-[11px]">
                   <div className="flex justify-between py-1 border-b border-slate-100">
@@ -430,11 +468,11 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                     <span className="font-semibold text-slate-900">{siswa.asalSdMi || '-'}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-600">NPSN SD Asal</span>
+                    <span className="text-slate-600">NPSN Sekolah Asal</span>
                     <span className="font-mono text-slate-800">{siswa.npsnSdMi || '-'}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-600">No. Ijazah SD</span>
+                    <span className="text-slate-600">{ijazahLabel}</span>
                     <span className="font-mono text-slate-800">{siswa.noIjazahSd || '-'}</span>
                   </div>
                   <div className="flex justify-between py-1">
@@ -446,7 +484,7 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
 
               <div className="border border-slate-300 rounded overflow-hidden">
                 <div className="bg-slate-800 text-white font-bold px-3 py-1 text-[11px] uppercase">
-                  F. PENERIMAAN DI SMP INI
+                  F. PENERIMAAN DI {jenjang} INI
                 </div>
                 <div className="p-3 space-y-1 text-[11px]">
                   <div className="flex justify-between py-1 border-b border-slate-100">
@@ -463,7 +501,7 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                   </div>
                   <div className="flex justify-between py-1">
                     <span className="text-slate-600">Rombel Saat Ini</span>
-                    <span className="font-bold text-slate-900">{siswa.rombelSaatIni} (Fase D)</span>
+                    <span className="font-bold text-slate-900">{siswa.rombelSaatIni} ({faseSiswa})</span>
                   </div>
                 </div>
               </div>
@@ -473,7 +511,7 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
             <div className="border border-slate-300 rounded overflow-hidden page-break-inside-avoid">
               <div className="bg-slate-800 text-white font-bold px-3 py-1.5 text-[11px] uppercase tracking-wide flex items-center justify-between">
                 <span>G. PROJEK PENGUATAN PROFIL PELAJAR PANCASILA (P5) & EKSTRAKURIKULER</span>
-                <span className="text-[10px] text-amber-300 font-normal">Karakter Profil Lulusan</span>
+                <span className="text-[10px] text-amber-300 font-normal">Karakter Profil Pelajar Pancasila</span>
               </div>
               <div className="p-3 space-y-3 text-[11px]">
                 {siswa.p5Projects && siswa.p5Projects.length > 0 ? (
@@ -574,7 +612,7 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                 <span className="font-bold text-slate-800 text-[11px] block mb-1">
                   1. Riwayat Kenaikan Tingkat & Status Akhir Tahun:
                 </span>
-                {siswa.riwayatTahunAjaran && siswa.riwayatTahunAjaran.length > 0 ? (
+                {riwayatTampil && riwayatTampil.length > 0 ? (
                   <table className="w-full border-collapse border border-slate-400 text-[10px] mb-2">
                     <thead className="bg-slate-100">
                       <tr>
@@ -587,7 +625,7 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {siswa.riwayatTahunAjaran.map((rw, idx) => (
+                      {riwayatTampil.map((rw, idx) => (
                         <tr key={idx} className="hover:bg-slate-50">
                           <td className="border border-slate-300 px-2 py-1 font-mono font-medium">{rw.tahunAjaran}</td>
                           <td className="border border-slate-300 px-2 py-1 text-center">Kelas {rw.tingkat}</td>
@@ -615,7 +653,7 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                 <span className="font-bold text-slate-800 text-[11px] block mb-1">
                   2. Ringkasan Capaian Nilai Rapor per Semester:
                 </span>
-                {siswa.raportSemester && siswa.raportSemester.length > 0 ? (
+                {raportList.length > 0 ? (
                   <table className="w-full border-collapse border border-slate-400 text-[10px]">
                     <thead className="bg-slate-100">
                       <tr>
@@ -629,10 +667,11 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {siswa.raportSemester.map((rp, idx) => {
-                        const totalScore = rp.nilaiMataPelajaran.reduce((acc, m) => acc + m.nilaiAkhir, 0);
-                        const avg = rp.nilaiMataPelajaran.length > 0 ? Math.round(totalScore / rp.nilaiMataPelajaran.length) : 0;
-                        const scores = rp.nilaiMataPelajaran.map(m => m.nilaiAkhir);
+                      {raportList.map((rp, idx) => {
+                        const nilaiList = getNilaiList(rp);
+                        const totalScore = nilaiList.reduce((acc, m) => acc + (Number(m.nilaiAkhir) || 0), 0);
+                        const avg = nilaiList.length > 0 ? Math.round(totalScore / nilaiList.length) : 0;
+                        const scores = nilaiList.map(m => Number(m.nilaiAkhir) || 0);
                         const max = scores.length > 0 ? Math.max(...scores) : 0;
                         const min = scores.length > 0 ? Math.min(...scores) : 0;
                         return (
@@ -653,7 +692,7 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                               {min}
                             </td>
                             <td className="border border-slate-300 px-2 py-1 text-center font-mono">
-                              {rp.kehadiran.sakit}/{rp.kehadiran.izin}/{rp.kehadiran.tanpaKeterangan}
+                              {rp.kehadiran.sakit}/{rp.kehadiran.izin}/{rp.kehadiran.alpa}
                             </td>
                             <td className="border border-slate-300 px-2 py-1 text-slate-600 font-medium">
                               Fase {rp.fase}
@@ -672,7 +711,7 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
             </div>
 
             {/* Kolom Pengesahan & Tanda Tangan */}
-            <div className="pt-4 border-t border-slate-300 grid grid-cols-2 gap-8 text-center text-[11px] page-break-inside-avoid">
+            <div className="pt-4 border-t border-slate-300 grid grid-cols-2 gap-8 text-center text-[11px] break-inside-avoid">
               <div>
                 <p className="text-slate-600">Mengetahui,</p>
                 <p className="font-bold text-slate-900">Kepala {sekolah.nama || jenjang}</p>
@@ -697,44 +736,8 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
         ) : printMode === 'raport' ? (
           /* Transkrip Nilai Raport Kurikulum Merdeka (Per-Semester / Multi-Tahun) */
           <div className="space-y-6">
-            {/* Kop Resmi Sekolah */}
-            <div className="border-b-2 border-slate-900 pb-3 text-center relative">
-              <div className="flex items-center justify-between">
-                <div className="w-16 h-16 flex items-center justify-center shrink-0">
-                  <svg className="w-14 h-14 text-blue-900" viewBox="0 0 100 100" fill="currentColor">
-                    <path d="M50 10 L85 25 L50 40 L15 25 Z" />
-                    <path d="M25 35 V60 C25 75 50 90 50 90 C50 90 75 75 75 60 V35" fill="none" stroke="currentColor" strokeWidth="6" />
-                    <circle cx="50" cy="55" r="14" fill="#d97706" />
-                  </svg>
-                </div>
-
-                <div className="flex-1 px-4 text-center">
-                  <h3 className="text-xs font-semibold tracking-wider uppercase text-slate-700">
-                    PEMERINTAH {sekolah.provinsi ? sekolah.provinsi.toUpperCase() : 'DAERAH'}
-                  </h3>
-                  <h2 className="text-xs font-bold tracking-wide uppercase text-slate-800">
-                    DINAS PENDIDIKAN DAN KEBUDAYAAN {sekolah.kabupatenKota?.toUpperCase()}
-                  </h2>
-                  <h1 className="text-base sm:text-lg font-black tracking-wider uppercase text-blue-950 my-0.5">
-                    {sekolah.nama || 'SATUAN PENDIDIKAN'}
-                  </h1>
-                  <p className="text-[10px] text-slate-600 leading-tight">
-                    {sekolah.alamat}, {sekolah.desaKelurahan}, Kec. {sekolah.kecamatan}, {sekolah.kabupatenKota} {sekolah.kodePos}
-                  </p>
-                  <p className="text-[10px] text-slate-600">
-                    NPSN: <strong>{sekolah.npsn}</strong> | NSS: {sekolah.nss} | Telp: {sekolah.telepon}
-                  </p>
-                </div>
-
-                <div className="w-16 h-16 flex items-center justify-center shrink-0">
-                  <div className="w-12 h-12 rounded-full border-2 border-blue-900 flex items-center justify-center font-bold text-[9px] text-blue-900 text-center leading-tight">
-                    {jenjang}<br />KURIKULUM<br />MERDEKA
-                  </div>
-                </div>
-              </div>
-              <div className="h-0.5 bg-slate-900 mt-2" />
-              <div className="h-px bg-slate-900 mt-0.5" />
-            </div>
+            {/* Kop Resmi Sekolah (diatur di Profil Sekolah → Kop Surat) */}
+            <KopSuratView sekolah={sekolah} />
 
             {/* Judul Transkrip Nilai Raport */}
             <div className="text-center my-3">
@@ -767,16 +770,17 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
             </div>
 
             {/* Semester Nilai Render Loop */}
-            {(!siswa.raportSemester || siswa.raportSemester.length === 0) ? (
+            {(raportList.length === 0) ? (
               <div className="p-8 text-center text-slate-400 italic bg-slate-50 border border-dashed border-slate-300 rounded-xl">
                 Belum ada catatan nilai raport untuk siswa ini. Tambahkan nilai melalui menu 'Nilai Raport'.
               </div>
             ) : (
-              siswa.raportSemester
+              raportList
                 .filter((r) => selectedSemesterId === 'all' || r.id === selectedSemesterId)
                 .map((sem, sIdx) => {
-                  const total = sem.nilaiMataPelajaran.reduce((acc, m) => acc + m.nilaiAkhir, 0);
-                  const avg = sem.nilaiMataPelajaran.length > 0 ? Math.round(total / sem.nilaiMataPelajaran.length) : 0;
+                  const nilaiList = getNilaiList(sem);
+                  const total = nilaiList.reduce((acc, m) => acc + (Number(m.nilaiAkhir) || 0), 0);
+                  const avg = nilaiList.length > 0 ? Math.round(total / nilaiList.length) : 0;
                   return (
                     <div key={sem.id || sIdx} className="space-y-3 pt-4 border-t border-slate-200 page-break-inside-avoid">
                       {/* Sub-Header Semester */}
@@ -800,10 +804,10 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                           </tr>
                         </thead>
                         <tbody>
-                          {sem.nilaiMataPelajaran.map((m, mIdx) => (
+                          {nilaiList.map((m, mIdx) => (
                             <tr key={m.id || mIdx} className="hover:bg-slate-50">
                               <td className="border border-slate-300 px-2 py-1 text-center">{mIdx + 1}</td>
-                              <td className="border border-slate-300 px-2 py-1 font-semibold">{m.namaMapel}</td>
+                              <td className="border border-slate-300 px-2 py-1 font-semibold">{m.mataPelajaran || m.namaMapel}</td>
                               <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-900 font-mono text-[11px]">
                                 {m.nilaiAkhir}
                               </td>
@@ -825,13 +829,13 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                           <div className="grid grid-cols-3 text-center gap-1 font-mono">
                             <div className="bg-white p-1 rounded border">Sakit: <strong>{sem.kehadiran.sakit}</strong> hari</div>
                             <div className="bg-white p-1 rounded border">Izin: <strong>{sem.kehadiran.izin}</strong> hari</div>
-                            <div className="bg-white p-1 rounded border">Tanpa Ket: <strong>{sem.kehadiran.tanpaKeterangan}</strong> hari</div>
+                            <div className="bg-white p-1 rounded border">Tanpa Ket: <strong>{sem.kehadiran.alpa}</strong> hari</div>
                           </div>
                         </div>
 
                         <div className="border border-slate-300 p-2 rounded bg-slate-50">
                           <span className="font-bold text-slate-800 block mb-1">Catatan Wali Kelas:</span>
-                          <p className="italic text-slate-700">{sem.catatanWaliKelas || 'Tingkatkan terus prestasi belajarmu dan pertahankan karakter Profil Lulusan.'}</p>
+                          <p className="italic text-slate-700">{sem.catatanWaliKelas || 'Tingkatkan terus prestasi belajarmu dan pertahankan karakter Profil Pelajar Pancasila.'}</p>
                           {sem.keteranganKenaikan && (
                             <p className="mt-1 font-bold text-blue-950">
                               Keputusan: <span className="underline">{sem.keteranganKenaikan}</span>
@@ -841,7 +845,7 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                       </div>
 
                       {/* Tanda Tangan Semester */}
-                      <div className="pt-2 grid grid-cols-3 text-center text-[10px] text-slate-700">
+                      <div className="pt-2 grid grid-cols-3 text-center text-[10px] text-slate-700 break-inside-avoid">
                         <div>
                           <p>Orang Tua / Wali,</p>
                           <div className="h-12" />
@@ -867,99 +871,35 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
             )}
           </div>
         ) : (
-          /* Kartu Tanda Pelajar (Depan & Belakang) */
+          /* Kartu Tanda Pelajar (Depan & Belakang, 3 template) */
           <div className="max-w-md mx-auto space-y-6">
-            <div className="text-center mb-2 print:hidden">
+            <div className="text-center mb-2 print:hidden space-y-2">
               <h3 className="font-bold text-base text-slate-900">
                 Pratinjau Kartu Pelajar {jenjang}
               </h3>
               <p className="text-xs text-slate-500">Standar ID Card Pelajar Kurikulum Merdeka</p>
-            </div>
-
-            {/* Sisi Depan Kartu Pelajar */}
-            <div className="w-[85.6mm] h-[53.98mm] mx-auto bg-gradient-to-br from-blue-900 via-indigo-900 to-slate-900 text-white rounded-xl shadow-xl overflow-hidden p-3 border border-blue-400/40 relative flex flex-col justify-between">
-              {/* Card Header */}
-              <div className="flex items-center gap-2 border-b border-blue-400/30 pb-1.5">
-                <div className="w-8 h-8 rounded-full bg-white p-1 shrink-0 flex items-center justify-center shadow-xs">
-                  <ShieldCheck className="w-5 h-5 text-blue-900" />
-                </div>
-                <div className="leading-none">
-                  <h4 className="text-[10px] font-extrabold uppercase tracking-wide text-amber-300">
-                    KARTU TANDA PELAJAR
-                  </h4>
-                  <p className="text-[9px] font-bold text-white uppercase truncate">
-                    {sekolah.nama || `SATUAN PENDIDIKAN ${jenjang}`}
-                  </p>
-                  <p className="text-[7px] text-blue-200">
-                    NPSN: {sekolah.npsn} | Kab. {sekolah.kabupatenKota}
-                  </p>
-                </div>
-              </div>
-
-              {/* Card Body */}
-              <div className="flex gap-2.5 items-center my-auto">
-                <div className="w-16 h-20 bg-white/20 rounded border border-white/40 overflow-hidden flex items-center justify-center shrink-0">
-                  {siswa.fotoUrl ? (
-                    <img src={siswa.fotoUrl} alt={siswa.namaLengkap} className="w-full h-full object-cover" />
-                  ) : (
-                    <UserCheck className="w-8 h-8 text-white/60" />
-                  )}
-                </div>
-
-                <div className="text-[9px] leading-tight space-y-0.5">
-                  <p className="font-extrabold text-[10px] text-amber-200 uppercase truncate max-w-[150px]">
-                    {siswa.namaLengkap}
-                  </p>
-                  <p className="text-white">
-                    NISN: <span className="font-mono font-bold">{siswa.nisn || '-'}</span>
-                  </p>
-                  <p className="text-white">
-                    NIPD: <span className="font-mono">{siswa.nipd || '-'}</span>
-                  </p>
-                  <p className="text-white">
-                    Kelas: <strong>{siswa.rombelSaatIni}</strong> ({faseLabel})
-                  </p>
-                  <p className="text-white truncate max-w-[150px]">
-                    TTL: {siswa.tempatLahir}, {formatDateIndo(siswa.tanggalLahir)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Card Footer with Mock Barcode */}
-              <div className="flex items-center justify-between border-t border-blue-400/30 pt-1 text-[8px] text-blue-200">
-                <div className="font-mono tracking-widest text-[9px] bg-white text-black px-1.5 py-0.5 rounded">
-                  ||| | | |||| | ||| | {siswa.nisn || '0091234567'}
-                </div>
-                <span className="text-[7px]">Berlaku Selama Menjadi Siswa</span>
+              <div className="flex items-center justify-center gap-2">
+                <label className="text-[11px] font-bold text-slate-600" htmlFor="template-kartu">Template:</label>
+                <select
+                  id="template-kartu"
+                  value={templateKartu}
+                  onChange={(e) => setTemplateKartu(e.target.value as TemplateKartu)}
+                  className="ui-input !w-auto !py-1.5"
+                >
+                  {(Object.keys(TEMPLATE_KARTU) as TemplateKartu[]).map((t) => (
+                    <option key={t} value={t}>{TEMPLATE_KARTU[t].judul} — {TEMPLATE_KARTU[t].desc}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
-            {/* Sisi Belakang Kartu Pelajar */}
-            <div className="w-[85.6mm] h-[53.98mm] mx-auto bg-slate-900 text-white rounded-xl shadow-xl overflow-hidden p-3 border border-slate-700 flex flex-col justify-between text-[8px]">
-              <div>
-                <h5 className="font-bold text-center text-amber-300 uppercase text-[9px] border-b border-slate-700 pb-1">
-                  KETENTUAN PEMEGANG KARTU
-                </h5>
-                <ol className="list-decimal list-inside space-y-1 text-slate-300 mt-1.5 leading-snug">
-                  <li>Kartu ini adalah identitas sah peserta didik {sekolah.nama}.</li>
-                  <li>Dapat digunakan untuk layanan perpustakaan dan kegiatan sekolah.</li>
-                  <li>Apabila kartu ini hilang/rusak, segera lapor ke bagian Tata Usaha.</li>
-                  <li>Bagi yang menemukan kartu ini, harap mengembalikan ke alamat sekolah.</li>
-                </ol>
-              </div>
-
-              <div className="flex items-end justify-between border-t border-slate-800 pt-1 text-[7px] text-slate-400">
-                <div>
-                  <p>{sekolah.alamat}</p>
-                  <p>Telp: {sekolah.telepon}</p>
-                </div>
-                <div className="text-center">
-                  <p>Kepala Sekolah</p>
-                  <p className="font-bold text-white mt-3 underline">{sekolah.kepalaSekolah}</p>
-                  <p>NIP. {sekolah.nipKepalaSekolah}</p>
-                </div>
-              </div>
-            </div>
+            <KartuPelajar
+              siswa={siswa}
+              sekolah={sekolah}
+              jenjang={jenjang}
+              faseLabel={faseLabel}
+              template={templateKartu}
+            />
           </div>
         )}
       </div>

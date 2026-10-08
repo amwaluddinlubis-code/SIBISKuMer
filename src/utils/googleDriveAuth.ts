@@ -1,12 +1,8 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
+import { firebaseAuth as auth } from './firebaseApp';
 
 // Scopes required for Google Drive Backup & Restore
 export const GOOGLE_DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive.file'];
-
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-export const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();
 GOOGLE_DRIVE_SCOPES.forEach((scope) => {

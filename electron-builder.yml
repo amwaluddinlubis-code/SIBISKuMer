@@ -1,0 +1,24 @@
+# ---------------- electron-builder: Buku Induk Siswa (Windows .exe) ----------------
+# Cara pakai: npm run dist:win   →   release/*.exe (installer NSIS + portable)
+appId: id.sch.bukuinduk.merdeka
+productName: Buku Induk Siswa Merdeka
+directories:
+  output: release
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: Buku Induk Siswa Merdeka
+  artifactName: BukuInduk-Setup-${version}.exe
+portable:
+  artifactName: BukuInduk-Portable.exe

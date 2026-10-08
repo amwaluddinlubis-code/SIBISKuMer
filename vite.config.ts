@@ -14,9 +14,9 @@ export default defineConfig(() => {
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
         manifest: {
           id: '/',
-          name: 'Buku Induk Siswa SMP Kurikulum Merdeka',
-          short_name: 'BukuIndukSMP',
-          description: 'Aplikasi Buku Induk Siswa SMP Kurikulum Merdeka dengan fitur offline dan sinkronisasi Dapodik lokal.',
+          name: 'Buku Induk Siswa Kurikulum Merdeka (SD & SMP)',
+          short_name: 'BukuInduk',
+          description: 'Aplikasi Buku Induk Siswa SD & SMP Kurikulum Merdeka dengan fitur offline dan sinkronisasi Dapodik lokal.',
           theme_color: '#1e3a8a',
           background_color: '#f8fafc',
           display: 'standalone',

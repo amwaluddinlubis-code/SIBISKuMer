@@ -21,13 +21,23 @@ import {
   ArrowLeftRight,
   ExternalLink
 } from 'lucide-react';
-import { AppUser, UserRole } from '../types';
+import { AppUser, UserRole, JenjangSekolah } from '../types';
 import { getAllUsers, saveUser, deleteUser } from '../utils/db';
-import { hashPassword } from '../utils/crypto';
+import { hashPassword } from '../utils/password';
+import { getDefaultRombelOptions } from '../utils/raportUtils';
+import { normalizeTahunAkses, isValidTahun } from '../utils/tahunAjaran';
+import { toast, confirmDialog } from '../utils/notify';
+import { validateAppUserInput } from '../utils/validation';
+import { startTopProgress, doneTopProgress } from '../utils/progress';
+import { catatAudit } from '../utils/audit';
+import { bukaKunciLogin } from '../utils/security';
+import { catatHapusCloud } from '../utils/tombstone';
 
 interface UserManagementViewProps {
   users?: AppUser[];
   currentUser: AppUser;
+  jenjang?: JenjangSekolah;
+  tahunOptions?: string[];
   onSaveUser?: (user: AppUser) => Promise<void>;
   onDeleteUser?: (userId: string) => Promise<void>;
   onImpersonate: (operatorUser: AppUser) => void;
@@ -36,10 +46,13 @@ interface UserManagementViewProps {
 export const UserManagementView: React.FC<UserManagementViewProps> = ({
   users: initialUsers,
   currentUser,
+  jenjang: jenjangProp = 'SMP',
+  tahunOptions,
   onSaveUser,
   onDeleteUser,
   onImpersonate
 }) => {
+  const jenjang = (jenjangProp || 'SMP') as JenjangSekolah;
   const [internalUsers, setInternalUsers] = useState<AppUser[]>(initialUsers || []);
 
   useEffect(() => {
@@ -79,14 +92,21 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     email: '',
     nomorTelepon: '',
     jabatan: '',
-    rombelAkses: ['7A', '7B', '8A', '8B', '9A', '9B'],
+    rombelAkses: getDefaultRombelOptions(jenjang),
+    tahunAkses: [],
     status: 'aktif'
   });
+  const [tahunBaru, setTahunBaru] = useState('');
 
-  const availableRombels = ['7A', '7B', '8A', '8B', '9A', '9B'];
+  const availableRombels = getDefaultRombelOptions(jenjang);
+  const availableTahun = (tahunOptions && tahunOptions.length > 0
+    ? tahunOptions
+    : ['2026/2027']
+  ).filter(isValidTahun);
 
   const handleOpenAdd = () => {
     setEditingUser(null);
+    setTahunBaru('');
     setFormData({
       username: '',
       password: '',
@@ -95,7 +115,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       email: '',
       nomorTelepon: '',
       jabatan: 'Operator Buku Induk',
-      rombelAkses: ['7A', '7B', '8A', '8B', '9A', '9B'],
+      rombelAkses: [...availableRombels],
+      tahunAkses: [],
       status: 'aktif'
     });
     setIsModalOpen(true);
@@ -103,38 +124,43 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
   const handleOpenEdit = (u: AppUser) => {
     setEditingUser(u);
+    setTahunBaru('');
     setFormData({
       ...u,
-      // Jangan tampilkan password lama (tersimpan sebagai hash); kosongkan = tidak diubah
-      password: ''
+      // Kosongkan = pertahankan kata sandi lama. Hash tersimpan tidak
+      // pernah ditampilkan/diedit langsung (anti double-hash).
+      password: '',
+      tahunAkses: [...(u.tahunAkses || [])]
     });
     setIsModalOpen(true);
   };
 
   const handleSaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.username || !formData.namaLengkap) {
-      alert('Mohon isi username dan nama lengkap.');
+    const issues = validateAppUserInput(
+      {
+        username: formData.username,
+        namaLengkap: formData.namaLengkap,
+        password: formData.password,
+        role: formData.role,
+      },
+      (users || []).map((x) => x?.username || ''),
+      { isEdit: !!editingUser, excludeUsername: editingUser?.username }
+    );
+    if (issues.length > 0) {
+      toast(issues[0], issues[0].startsWith('Mohon') ? 'warning' : 'error');
       return;
     }
 
     const now = new Date().toISOString();
 
+    startTopProgress();
+    try {
     if (editingUser) {
-      // Update — password baru di-hash; kosong = pertahankan yang lama
-      let passwordHash = editingUser.passwordHash;
-      const newPlain = (formData.password || '').trim();
-      if (newPlain) {
-        if (newPlain.length < 6) {
-          alert('Kata sandi minimal 6 karakter.');
-          return;
-        }
-        passwordHash = await hashPassword(newPlain);
-      }
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { password: _legacy, ...editingRest } = editingUser;
+      // Update — hash hanya bila kata sandi baru diisi, selain itu pertahankan.
+      const pwInput = (formData.password || '').trim();
       const updated: AppUser = {
-        ...editingRest,
+        ...editingUser,
         username: formData.username.trim().toLowerCase(),
         namaLengkap: formData.namaLengkap.trim(),
         role: formData.role || 'operator',
@@ -142,8 +168,9 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         nomorTelepon: formData.nomorTelepon || '',
         jabatan: formData.jabatan || '',
         rombelAkses: formData.rombelAkses || [],
+        tahunAkses: normalizeTahunAkses(formData.tahunAkses),
         status: formData.status || 'aktif',
-        passwordHash,
+        password: pwInput ? await hashPassword(pwInput) : editingUser.password,
         updatedAt: now
       };
       if (onSaveUser) {
@@ -152,31 +179,31 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         await saveUser(updated);
       }
       await refreshUsers();
+      catatAudit('akun_ubah', {
+        entitas: 'akun',
+        entitasId: updated.id,
+        ringkasan: `Ubah akun @${updated.username}${pwInput ? ' (+ password baru)' : ''}`,
+      });
     } else {
       // Create
       // Check duplicate username
       const dup = (users || []).find((x) => x && x.username && x.username.toLowerCase() === formData.username?.trim().toLowerCase());
       if (dup) {
-        alert(`Username "${formData.username}" sudah digunakan oleh pengguna lain.`);
-        return;
-      }
-
-      const plainPw = (formData.password || '').trim();
-      if (!plainPw || plainPw.length < 6) {
-        alert('Mohon isi kata sandi minimal 6 karakter untuk akun baru.');
+        toast(`Username "${formData.username}" sudah digunakan oleh pengguna lain.`, 'error');
         return;
       }
 
       const newUser: AppUser = {
         id: `usr-${Date.now()}`,
         username: (formData.username || '').trim().toLowerCase(),
-        passwordHash: await hashPassword(plainPw),
+        password: await hashPassword((formData.password || 'operator123').trim()),
         namaLengkap: (formData.namaLengkap || '').trim(),
         role: formData.role || 'operator',
         email: formData.email || '',
         nomorTelepon: formData.nomorTelepon || '',
         jabatan: formData.jabatan || 'Operator Data Pokok',
         rombelAkses: formData.rombelAkses || [],
+        tahunAkses: normalizeTahunAkses(formData.tahunAkses),
         status: formData.status || 'aktif',
         createdAt: now,
         updatedAt: now
@@ -187,43 +214,71 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         await saveUser(newUser);
       }
       await refreshUsers();
+      catatAudit('akun_buat', {
+        entitas: 'akun',
+        entitasId: newUser.id,
+        ringkasan: `Buat akun @${newUser.username} (${newUser.role})`,
+      });
     }
 
     setIsModalOpen(false);
+    toast(editingUser ? 'Perubahan akun berhasil disimpan.' : 'Akun operator baru berhasil dibuat.', 'success');
+    } catch (err: unknown) {
+      toast(`Gagal menyimpan akun: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      doneTopProgress();
+    }
   };
 
   const handleDeleteClick = async (u: AppUser) => {
     if (u.username.toLowerCase() === 'administrator') {
-      alert('Akun Administrator Utama tidak boleh dihapus demi keamanan sistem.');
+      toast('Akun Administrator Utama tidak boleh dihapus demi keamanan sistem.', 'error');
       return;
     }
     if (u.id === currentUser.id) {
-      alert('Anda tidak dapat menghapus akun Anda sendiri saat sedang aktif.');
+      toast('Anda tidak dapat menghapus akun Anda sendiri saat sedang aktif.', 'error');
       return;
     }
-    if (window.confirm(`Yakin ingin menghapus akun operator "${u.namaLengkap}" (@${u.username})? Tindakan ini tidak dapat dibatalkan.`)) {
-      if (onDeleteUser) {
-        await onDeleteUser(u.id);
-      } else {
-        await deleteUser(u.id);
+    if (await confirmDialog(`Yakin ingin menghapus akun operator "${u.namaLengkap}" (@${u.username})? Tindakan ini tidak dapat dibatalkan.`, { confirmLabel: 'Ya, Hapus' })) {
+      startTopProgress();
+      try {
+        if (onDeleteUser) {
+          await onDeleteUser(u.id);
+        } else {
+          await deleteUser(u.id);
+        }
+        await refreshUsers();
+        catatHapusCloud('pengguna', u.id);
+        catatAudit('akun_hapus', {
+          entitas: 'akun',
+          entitasId: u.id,
+          ringkasan: `Hapus akun @${u.username}`,
+        });
+        toast(`Akun @${u.username} berhasil dihapus.`, 'success');
+      } catch (err: unknown) {
+        toast(`Gagal menghapus akun: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      } finally {
+        doneTopProgress();
       }
-      await refreshUsers();
     }
   };
 
   const handleResetPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!resetPasswordModalUser || !newPasswordInput.trim()) return;
+    if (!resetPasswordModalUser || !newPasswordInput.trim()) {
+      toast('Kata sandi baru wajib diisi.', 'warning');
+      return;
+    }
     if (newPasswordInput.trim().length < 6) {
-      alert('Kata sandi minimal 6 karakter.');
+      toast('Kata sandi baru minimal 6 karakter.', 'error');
       return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password: _legacy, ...restUser } = resetPasswordModalUser;
+    startTopProgress();
+    try {
     const updated: AppUser = {
-      ...restUser,
-      passwordHash: await hashPassword(newPasswordInput.trim()),
+      ...resetPasswordModalUser,
+      password: await hashPassword(newPasswordInput.trim()),
       updatedAt: new Date().toISOString()
     };
     if (onSaveUser) {
@@ -232,9 +287,20 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       await saveUser(updated);
     }
     await refreshUsers();
-    alert(`Kata sandi untuk @${resetPasswordModalUser.username} berhasil diperbarui.`);
+    bukaKunciLogin(resetPasswordModalUser.username);
+    catatAudit('password_reset', {
+      entitas: 'akun',
+      entitasId: updated.id,
+      ringkasan: `Reset password @${resetPasswordModalUser.username} (+ kunci login dibuka)`,
+    });
+    toast(`Kata sandi untuk @${resetPasswordModalUser.username} berhasil diperbarui.`, 'success');
     setResetPasswordModalUser(null);
     setNewPasswordInput('');
+    } catch (err: unknown) {
+      toast(`Gagal memperbarui kata sandi: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      doneTopProgress();
+    }
   };
 
   const handleToggleRombel = (rombel: string) => {
@@ -253,6 +319,26 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     } else {
       setFormData({ ...formData, rombelAkses: [...availableRombels] });
     }
+  };
+
+  const handleToggleTahun = (tahun: string) => {
+    const current = normalizeTahunAkses(formData.tahunAkses);
+    if (current.includes(tahun)) {
+      setFormData({ ...formData, tahunAkses: current.filter((t) => t !== tahun) });
+    } else {
+      setFormData({ ...formData, tahunAkses: normalizeTahunAkses([...current, tahun]) });
+    }
+  };
+
+  const handleTambahTahun = () => {
+    const t = (tahunBaru || '').trim();
+    if (!t) return;
+    if (!isValidTahun(t)) {
+      toast('Format tahun harus TAHUN/TAHUN, cth. 2027/2028.', 'error');
+      return;
+    }
+    setFormData({ ...formData, tahunAkses: normalizeTahunAkses([...(formData.tahunAkses || []), t]) });
+    setTahunBaru('');
   };
 
   const filteredUsers = users.filter((u) => {
@@ -402,6 +488,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 <th className="py-3 px-4">Peran & Jabatan</th>
                 <th className="py-3 px-4">Kontak</th>
                 <th className="py-3 px-4">Rombel Akses</th>
+                <th className="py-3 px-4">Tahun Akses</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4">Terakhir Login</th>
                 <th className="py-3 px-4 text-right">Aksi & Impersonasi</th>
@@ -410,7 +497,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             <tbody className="divide-y divide-slate-200 text-xs">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500">
+                  <td colSpan={8} className="py-12 text-center text-slate-500">
                     Tidak ditemukan data pengguna yang cocok dengan kriteria pencarian.
                   </td>
                 </tr>
@@ -490,7 +577,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                       <td className="py-3 px-4">
                         {isAdmin ? (
                           <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[11px] font-medium">
-                            Semua Rombel (Fase D)
+                            Semua Rombel ({jenjang === 'SD' ? 'Fase A–C' : 'Fase D'})
                           </span>
                         ) : u.rombelAkses && u.rombelAkses.length > 0 ? (
                           <div className="flex flex-wrap gap-1 max-w-[140px]">
@@ -502,6 +589,25 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                           </div>
                         ) : (
                           <span className="text-slate-400 text-[11px]">Semua Rombel</span>
+                        )}
+                      </td>
+
+                      {/* Tahun Akses */}
+                      <td className="py-3 px-4">
+                        {isAdmin ? (
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[11px] font-medium">
+                            Semua TA
+                          </span>
+                        ) : u.tahunAkses && u.tahunAkses.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 max-w-[140px]">
+                            {u.tahunAkses.map((t) => (
+                              <span key={t} className="px-1.5 py-0.2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[10px] font-bold font-mono">
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 text-[11px]">Semua TA</span>
                         )}
                       </td>
 
@@ -602,7 +708,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
           Matriks Hak Akses & Pembagian Use Case (Peran Administrator vs Operator)
         </h3>
         <p className="text-xs text-slate-500 mb-4">
-          Standar operasional pengelolaan Buku Induk Siswa Kurikulum Merdeka pada tingkat Satuan Pendidikan SMP:
+          Standar operasional pengelolaan Buku Induk Siswa Kurikulum Merdeka pada tingkat Satuan Pendidikan {jenjang}:
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
@@ -617,10 +723,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             <ul className="space-y-2 text-slate-700 list-disc list-inside">
               <li><strong>CRUD Akun Operator</strong>: Membuat, memperbarui, mengatur ulang password, dan menghapus akun operator kesiswaan.</li>
               <li><strong>Menu Impersonate Operator</strong>: Menyamar langsung ke dalam sesi operator untuk inspeksi batasan tugas dan verifikasi entri data.</li>
-              <li><strong>Konfigurasi Web Service Dapodik</strong>: Mengatur IP host, port 5774, dan Token resmi Kemendikdasmen.</li>
+              <li><strong>Konfigurasi Web Service Dapodik</strong>: Mengatur IP host, port 5774, dan Token resmi Kemdikbudristek.</li>
               <li><strong>Sinkronisasi Identitas Satuan Pendidikan</strong>: Menyetujui dan memperbarui profil resmi sekolah dari Dapodik.</li>
               <li><strong>Cadangan & Pemulihan Sistem</strong>: Mengunduh arsip JSON lengkap dan mengembalikan basis data offline.</li>
-              <li><strong>Akses Penuh Seluruh Rombel</strong>: Pengawasan tanpa batasan kelas pada Fase D (Kelas 7, 8, dan 9).</li>
+              <li><strong>Akses Penuh Seluruh Rombel</strong>: Pengawasan tanpa batasan kelas pada {jenjang === 'SD' ? 'Fase A–C (Kelas 1–6)' : 'Fase D (Kelas 7, 8, dan 9)'}.</li>
             </ul>
           </div>
 
@@ -634,7 +740,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             </div>
             <ul className="space-y-2 text-slate-700 list-disc list-inside">
               <li><strong>Pencatatan Buku Induk Siswa</strong>: Menambah dan memperbarui biodata lengkap siswa (Bagian A-I, data ortu/wali, kesehatan, beasiswa).</li>
-              <li><strong>Pencatatan Projek Kokurikuler</strong>: Mengisi dimensi Profil Lulusan dan tema projek kokurikuler.</li>
+              <li><strong>Pencatatan Projek P5</strong>: Mengisi dimensi dan tema Projek Penguatan Profil Pelajar Pancasila.</li>
               <li><strong>Cetak Dokumen Resmi</strong>: Mencetak Lembar Buku Induk Kurikulum Merdeka dan Kartu Tanda Pelajar (KTP Siswa).</li>
               <li><strong>Rekapitulasi Kesiswaan</strong>: Melihat statistik gender, agama, jalur masuk, dan status kelulusan/mutasi.</li>
               <li><strong>Sinkronisasi Siswa dari Dapodik</strong>: Menjalankan penarikan data peserta didik baru dari Dapodik lokal.</li>
@@ -686,9 +792,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   <input
                     type="password"
                     required={!editingUser}
+                    minLength={6}
+                    aria-required={!editingUser ? 'true' : undefined}
                     value={formData.password || ''}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    placeholder={editingUser ? 'Tetap gunakan kata sandi lama' : 'Contoh: operator123'}
+                    placeholder={editingUser ? 'Tetap gunakan kata sandi lama' : 'Contoh: operator123 (min. 6 karakter)'}
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -783,7 +891,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-semibold text-slate-700">
-                    Penugasan Rombel (Fase D SMP)
+                    Penugasan Rombel ({jenjang === 'SD' ? 'Fase A–C SD' : 'Fase D SMP'})
                   </label>
                   <button
                     type="button"
@@ -816,6 +924,64 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">
                   * Jika semua dipilih atau dikosongkan, operator memiliki akses umum ke semua rombel.
+                </p>
+              </div>
+
+              {/* Akses Tahun Ajaran */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-slate-700">
+                    Akses Tahun Ajaran (login per TA)
+                  </label>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    {(formData.tahunAkses || []).length === 0 ? 'Semua TA' : `${(formData.tahunAkses || []).length} TA`}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {availableTahun.map((t) => {
+                    const checked = (formData.tahunAkses || []).includes(t);
+                    return (
+                      <button
+                        type="button"
+                        key={t}
+                        onClick={() => handleToggleTahun(t)}
+                        className={`py-1.5 px-2.5 rounded-lg text-xs font-mono font-bold border transition ${
+                          checked
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={tahunBaru}
+                    onChange={(e) => setTahunBaru(e.target.value)}
+                    placeholder="Tambah TA, cth. 2027/2028"
+                    className="flex-1 px-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-xl font-mono focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleTambahTahun}
+                    className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-xl hover:bg-indigo-100 transition"
+                  >
+                    Tambah
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, tahunAkses: [] })}
+                    className="px-3 py-1.5 text-xs font-semibold text-slate-500 hover:underline"
+                    title="Kosongkan = semua tahun ajaran"
+                  >
+                    Semua TA
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  * Kosongkan untuk akses semua tahun. Saat login, operator hanya bisa memilih TA yang dicentang di sini.
                 </p>
               </div>
 

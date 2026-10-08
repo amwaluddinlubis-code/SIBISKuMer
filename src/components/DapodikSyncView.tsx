@@ -1,32 +1,49 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  RefreshCw, 
-  Server, 
-  CheckCircle2, 
-  AlertTriangle, 
-  HelpCircle, 
-  ArrowRight, 
-  FileSpreadsheet, 
-  UserPlus, 
-  Clock, 
-  Wifi, 
+import {
+  RefreshCw,
+  Server,
+  CheckCircle2,
+  AlertTriangle,
+  HelpCircle,
+  ArrowRight,
+  FileSpreadsheet,
+  UserPlus,
+  Clock,
+  Wifi,
   ShieldCheck,
   Check,
   Download,
   School,
-  Sparkles
+  Sparkles,
+  Users,
+  KeyRound,
+  Lock
 } from 'lucide-react';
-import { DapodikConfig, DapodikSyncLog, Siswa, DapodikRawPesertaDidik, DapodikRawSekolah, SekolahProfile } from '../types';
-import { 
-  testDapodikConnection, 
-  fetchDapodikWebservice, 
+import { DapodikConfig, DapodikSyncLog, Siswa, DapodikRawPesertaDidik, DapodikRawSekolah, DapodikRawRombel, DapodikRawPtk, DapodikRawPengguna, SekolahProfile, JenjangSekolah } from '../types';
+import {
+  testDapodikConnection,
+  fetchDapodikWebservice,
   fetchDapodikSekolah,
+  fetchDapodikRombel,
+  fetchDapodikPtk,
+  fetchDapodikPengguna,
   convertDapodikToSekolahProfile,
-  compareDapodikWithExisting, 
+  compareDapodikWithExisting,
+  compareRombelWithExisting,
   convertDapodikToSiswa,
-  DapodikComparisonResult 
+  deriveRombelRefsFromPesertaDidik,
+  convertDapodikToRombelRef,
+  convertDapodikToPtkRef,
+  convertPenggunaToAppUser,
+  mapTingkatKelas,
+  DapodikComparisonResult,
+  RombelComparison
 } from '../utils/dapodikSync';
-import { saveDapodikConfig, addSyncLog, saveSiswa, saveSekolahProfile } from '../utils/db';
+import { saveDapodikConfig, addSyncLog, saveSiswa, saveSekolahProfile, saveRombelRefs, savePtkRefs, saveUser, getAllUsers, getAllRombelRefs, getAllPtkRefs } from '../utils/db';
+import { toast } from '../utils/notify';
+import { catatAudit } from '../utils/audit';
+import { validateDapodikConfig } from '../utils/validation';
+import { SyncProgressBar, SyncStep, SyncResult } from './SyncProgressBar';
 
 interface DapodikSyncViewProps {
   config: DapodikConfig;
@@ -35,6 +52,8 @@ interface DapodikSyncViewProps {
   onConfigChange: (newCfg: DapodikConfig) => void;
   existingSiswa: Siswa[];
   syncLogs: DapodikSyncLog[];
+  /** Sesi tahun ajaran login — sinkron selalu menulis ke tahun aktif database. */
+  sessionTahun?: string | null;
   onRefreshData: () => void;
 }
 
@@ -45,6 +64,7 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
   onConfigChange,
   existingSiswa,
   syncLogs,
+  sessionTahun,
   onRefreshData
 }) => {
   const [cfg, setCfg] = useState<DapodikConfig>(config);
@@ -58,8 +78,42 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
   const [schoolSyncMessage, setSchoolSyncMessage] = useState<string | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<'baru' | 'berbeda' | 'sama'>('baru');
   const [selectedBaruIds, setSelectedBaruIds] = useState<string[]>([]);
+  const jenjang: JenjangSekolah = sekolah.jenjang || (sekolah.bentukPendidikan?.toUpperCase().includes('SD') ? 'SD' : 'SMP');
   const [selectedBerbedaIds, setSelectedBerbedaIds] = useState<string[]>([]);
   const [processStatus, setProcessStatus] = useState<string | null>(null);
+
+  // ----- Progress bar + notifikasi hasil sinkronisasi -----
+  const [syncSteps, setSyncSteps] = useState<SyncStep[]>([]);
+  const [syncPercent, setSyncPercent] = useState(0);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
+  const [syncTitle, setSyncTitle] = useState('Sinkronisasi Dapodik');
+  const [lastWasSimulation, setLastWasSimulation] = useState(false);
+
+  const setStep = (id: string, patch: Partial<SyncStep>) =>
+    setSyncSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+
+  /** Kunci stabil per baris Dapodik (peserta_didik_id bisa kosong pada respons tertentu). */
+  const getDapodikKey = (s: DapodikRawPesertaDidik, idx?: number): string =>
+    (s.peserta_didik_id && String(s.peserta_didik_id).trim()) ||
+    (s.nisn && `nisn-${String(s.nisn).trim()}`) ||
+    (s.nama && `nama-${s.nama.trim().toUpperCase()}`) ||
+    `baris-${idx ?? 0}`;
+
+  // Full-sync reference data (Rombel, PTK, Pengguna)
+  const [dapodikRombel, setDapodikRombel] = useState<DapodikRawRombel[]>([]);
+  const [dapodikPtk, setDapodikPtk] = useState<DapodikRawPtk[]>([]);
+  const [dapodikPengguna, setDapodikPengguna] = useState<DapodikRawPengguna[]>([]);
+  const [rombelComparison, setRombelComparison] = useState<RombelComparison | null>(null);
+  const [rombelDerived, setRombelDerived] = useState(false);
+  const [selectedPenggunaIds, setSelectedPenggunaIds] = useState<string[]>([]);
+  const [createdAccounts, setCreatedAccounts] = useState<{ username: string; password: string; nama: string }[]>([]);
+  // Status baca per endpoint (ditampilkan agar kegagalan tidak diam-diam)
+  const [refStatus, setRefStatus] = useState<{ rombel: string | null; ptk: string | null; pengguna: string | null; sekolah: string | null }>({
+    rombel: null,
+    ptk: null,
+    pengguna: null,
+    sekolah: null
+  });
 
   const [showGuide, setShowGuide] = useState(false);
 
@@ -69,12 +123,30 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
 
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    await saveDapodikConfig(cfg);
-    onConfigChange(cfg);
-    alert('Pengaturan Web Service Dapodik berhasil disimpan!');
+    const issues = validateDapodikConfig(cfg);
+    if (issues.length > 0) {
+      toast(issues[0], 'error');
+      return;
+    }
+    try {
+      await saveDapodikConfig(cfg);
+      onConfigChange(cfg);
+      toast('Pengaturan Web Service Dapodik berhasil disimpan!', 'success');
+    } catch (err: unknown) {
+      toast(`Gagal menyimpan pengaturan Dapodik: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
   };
 
   const handleTestConnection = async (isSimulation = false) => {
+    if (!isSimulation) {
+      const issues = validateDapodikConfig(cfg);
+      if (issues.length > 0) {
+        const msg = issues[0];
+        setConnResult({ success: false, message: msg });
+        toast(msg, 'error');
+        return;
+      }
+    }
     setTestingConn(true);
     setConnResult(null);
     try {
@@ -95,17 +167,82 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
   };
 
   const handleFetchData = async (isSimulation = false) => {
+    if (!isSimulation) {
+      if (!cfg.npsn || !cfg.npsn.trim()) {
+        toast('Isi NPSN sekolah terlebih dahulu sebelum menarik data Dapodik.', 'error');
+        return;
+      }
+      if (!cfg.token || !cfg.token.trim()) {
+        toast('Token Web Service kosong. Salin token dari Dapodik → Pengaturan → Web Service, atau gunakan mode simulasi.', 'error');
+        return;
+      }
+    }
+    setLastWasSimulation(isSimulation);
     setLoadingSync(true);
-    setProcessStatus(isSimulation ? 'Mengambil data simulasi Web Service & Identitas Sekolah...' : 'Menghubungi Web Service Dapodik lokal (getSekolah & getPesertaDidik)...');
+    setSyncResult(null);
+    setSyncTitle(isSimulation ? 'Mengambil Data Simulasi Dapodik' : 'Menarik Data dari Dapodik Lokal');
+    const initialSteps: SyncStep[] = [
+      { id: 'siswa', label: 'Peserta Didik', status: 'pending', detail: 'Menunggu…' },
+      { id: 'sekolah', label: 'Profil Sekolah', status: 'pending', detail: 'Menunggu…' },
+      { id: 'rombel', label: 'Rombongan Belajar', status: 'pending', detail: 'Menunggu…' },
+      { id: 'ptk', label: 'PTK / GTK', status: 'pending', detail: 'Menunggu…' },
+      { id: 'pengguna', label: 'Pengguna', status: 'pending', detail: 'Menunggu…' },
+    ];
+    setSyncSteps(initialSteps);
+    setSyncPercent(2);
+    setProcessStatus(isSimulation ? 'Mengambil data simulasi Web Service & Identitas Sekolah...' : 'Menghubungi Web Service Dapodik lokal (getSekolah, getPesertaDidik, getRombonganBelajar, getGtk, getPengguna)...');
     try {
-      // 1. Fetch school info concurrently
-      const [resStudents, resSchool] = await Promise.allSettled([
-        fetchDapodikWebservice(cfg, isSimulation),
-        fetchDapodikSekolah(cfg, isSimulation)
-      ]);
+      // 1. Fetch BERURUTAN satu per satu (Dapodik desktop kewalahan request berbarengan)
+      const toSettled = async <T,>(fn: () => Promise<T>): Promise<PromiseSettledResult<T>> => {
+        try {
+          return { status: 'fulfilled', value: await fn() };
+        } catch (reason) {
+          return { status: 'rejected', reason };
+        }
+      };
+      const gap = async () => {
+        if (!isSimulation) await new Promise((r) => setTimeout(r, 350));
+      };
+      const runStep = async <T,>(
+        id: string,
+        label: string,
+        fn: () => Promise<T>,
+        pctAfter: number
+      ): Promise<PromiseSettledResult<T>> => {
+        setStep(id, { status: 'active', detail: `Menghubungi ${label}…` });
+        const res = await toSettled(fn);
+        if (res.status === 'fulfilled') {
+          const v = res.value as unknown as { success?: boolean; data?: unknown[]; error?: string };
+          if (v && v.success === false) {
+            setStep(id, { status: 'error', detail: v.error || 'Ditolak Dapodik' });
+          } else {
+            const n = Array.isArray(v?.data) ? (v.data as unknown[]).length : undefined;
+            setStep(id, {
+              status: 'success',
+              detail: typeof n === 'number' ? `${n} baris terbaca` : 'OK',
+            });
+          }
+        } else {
+          const msg = res.reason instanceof Error ? res.reason.message : String(res.reason);
+          setStep(id, { status: 'error', detail: msg.slice(0, 120) });
+        }
+        setSyncPercent(pctAfter);
+        return res;
+      };
+
+      const resStudents = await runStep('siswa', 'getPesertaDidik', () => fetchDapodikWebservice(cfg, isSimulation), 25);
+      await gap();
+      const resSchool = await runStep('sekolah', 'getSekolah', () => fetchDapodikSekolah(cfg, isSimulation), 45);
+      await gap();
+      const resRombel = await runStep('rombel', 'getRombonganBelajar', () => fetchDapodikRombel(cfg, isSimulation), 65);
+      await gap();
+      const resPtk = await runStep('ptk', 'getGtk/getPTK', () => fetchDapodikPtk(cfg, isSimulation), 82);
+      await gap();
+      const resPengguna = await runStep('pengguna', 'getPengguna', () => fetchDapodikPengguna(cfg, isSimulation), 95);
 
       if (resSchool.status === 'fulfilled' && resSchool.value.success && resSchool.value.data) {
         setDapodikSekolah(resSchool.value.data);
+        console.info('[dapodik] getSekolah raw:', resSchool.value.data);
       }
 
       if (resStudents.status !== 'fulfilled' || !resStudents.value.success || !resStudents.value.data) {
@@ -116,9 +253,43 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
       const comp = compareDapodikWithExisting(resStudents.value.data, existingSiswa);
       setComparison(comp);
 
-      // Auto-select all new students by default
-      setSelectedBaruIds(comp.baru.map((s) => s.peserta_didik_id));
-      setSelectedBerbedaIds(comp.berbeda.map((b) => b.dapodik.peserta_didik_id));
+      // Auto-select all new students by default (kunci stabil anti-tabrakan ID kosong)
+      setSelectedBaruIds(comp.baru.map((s, i) => getDapodikKey(s, i)));
+      setSelectedBerbedaIds(comp.berbeda.map((b, i) => getDapodikKey(b.dapodik, i)));
+
+      // 2. Reference data (best-effort: tidak menggagalkan sinkron utama)
+      const rombelList = resRombel.status === 'fulfilled' && resRombel.value.success ? resRombel.value.data : [];
+      const ptkList = resPtk.status === 'fulfilled' && resPtk.value.success ? resPtk.value.data : [];
+      const penggunaList = resPengguna.status === 'fulfilled' && resPengguna.value.success ? resPengguna.value.data : [];
+      // 2b. Fallback rombel: turunkan dari data siswa bila getRombonganBelajar ditolak
+      let finalRombel = rombelList;
+      let derived = false;
+      if (finalRombel.length === 0 && resStudents.status === 'fulfilled' && resStudents.value.success && resStudents.value.data.length > 0) {
+        finalRombel = deriveRombelRefsFromPesertaDidik(resStudents.value.data, jenjang);
+        derived = finalRombel.length > 0;
+      }
+      setDapodikRombel(finalRombel);
+      setRombelDerived(derived);
+      setDapodikPtk(ptkList);
+      setDapodikPengguna(penggunaList);
+      setRombelComparison(compareRombelWithExisting(finalRombel, existingSiswa));
+      setSelectedPenggunaIds(penggunaList.map((p) => p.pengguna_id || p.username));
+      setCreatedAccounts([]);
+      const statusOf = (
+        res: PromiseSettledResult<{ success: boolean; data: unknown[]; error?: string }>,
+        label: string
+      ): string | null => {
+        if (res.status === 'rejected') return `${label}: gagal (promise rejected)`;
+        if (!res.value.success) return `${label}: ${res.value.error || 'gagal tanpa pesan'}`;
+        if (res.value.data.length === 0) return `${label}: terbaca 0 baris (respons kosong dari Dapodik)`;
+        return null;
+      };
+      setRefStatus({
+        rombel: statusOf(resRombel, 'Rombel'),
+        ptk: statusOf(resPtk, 'PTK'),
+        pengguna: statusOf(resPengguna, 'Pengguna'),
+        sekolah: resSchool.status === 'fulfilled' && resSchool.value.success ? null : 'Identitas sekolah: gagal dibaca dari Dapodik'
+      });
 
       if (comp.baru.length > 0) {
         setActiveSubTab('baru');
@@ -128,9 +299,48 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
         setActiveSubTab('sama');
       }
 
-      setProcessStatus(`Berhasil membaca profil sekolah dan ${resStudents.value.data.length} peserta didik dari Dapodik.`);
+      const okMsg = `Berhasil membaca profil sekolah, ${resStudents.value.data.length} peserta didik, ${finalRombel.length} rombel, ${ptkList.length} PTK, dan ${penggunaList.length} pengguna dari Dapodik.`;
+      setProcessStatus(okMsg);
+      setSyncPercent(100);
+      const partialFails = syncSteps.length > 0 ? undefined : undefined;
+      // Tandai tahap turunan rombel bila fallback dipakai
+      if (derived) {
+        setStep('rombel', { status: 'success', detail: `${finalRombel.length} rombel (turunan data siswa)` });
+      }
+      setSyncSteps((prev) => prev.map((s) => (s.status === 'active' ? { ...s, status: 'success' as const } : s)));
+      const failedSteps = ['sekolah', 'rombel', 'ptk', 'pengguna'].filter((id) => {
+        if (id === 'sekolah') return !(resSchool.status === 'fulfilled' && resSchool.value.success);
+        if (id === 'rombel') return finalRombel.length === 0;
+        if (id === 'ptk') return !(resPtk.status === 'fulfilled' && resPtk.value.success);
+        return !(resPengguna.status === 'fulfilled' && resPengguna.value.success);
+      });
+      void partialFails;
+      if (failedSteps.length > 0) {
+        setSyncResult({
+          kind: 'warning',
+          title: 'Data terbaca dengan peringatan',
+          message: `${okMsg} Beberapa endpoint gagal/0 baris: ${failedSteps.join(', ')}. Data siswa tetap bisa diproses; periksa token & Web Service Dapodik.`,
+        });
+        toast('Data Dapodik terbaca dengan peringatan. Periksa panel progres.', 'warning');
+      } else {
+        setSyncResult({
+          kind: 'success',
+          title: 'Penarikan Data Berhasil',
+          message: `${okMsg} Baru: ${comp.baru.length}, berubah: ${comp.berbeda.length}, cocok: ${comp.sama.length}. Lanjutkan dengan "Terapkan Sinkronisasi".`,
+        });
+        toast('Penarikan data Dapodik berhasil!', 'success');
+      }
     } catch (err: any) {
-      alert(`Gagal mengambil data dari Dapodik: ${err.message}`);
+      const msg = err.message || 'Gagal mengambil data dari Dapodik';
+      toast(`Gagal mengambil data dari Dapodik: ${msg}`, 'error');
+      setSyncSteps((prev) => prev.map((s) => (s.status === 'active' ? { ...s, status: 'error' as const, detail: msg.slice(0, 120) } : s.status === 'pending' ? { ...s, status: 'skipped' as const, detail: 'Dilewati karena gagal' } : s)));
+      setSyncPercent(100);
+      setSyncResult({
+        kind: 'error',
+        title: 'Penarikan Data Gagal',
+        message: msg,
+        details: ['Pastikan aplikasi Dapodik berjalan di host:port yang dikonfigurasi.', 'Pastikan token Web Service benar, atau gunakan "Uji Coba dengan Data Sampel Dapodik".'],
+      });
       setProcessStatus(null);
     } finally {
       setLoadingSync(false);
@@ -142,66 +352,233 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
     const updated = convertDapodikToSekolahProfile(dapodikSekolah, sekolah);
     await saveSekolahProfile(updated);
     onUpdateSekolah(updated);
-    setSchoolSyncMessage(`Identitas Sekolah berhasil disinkronkan dari Dapodik: ${updated.nama} (NPSN: ${updated.npsn}). Kepala Sekolah: ${updated.kepalaSekolah}.`);
+    const msg = `Identitas Sekolah berhasil disinkronkan dari Dapodik: ${updated.nama} (NPSN: ${updated.npsn}). Kepala Sekolah: ${updated.kepalaSekolah}.`;
+    setSchoolSyncMessage(msg);
+    toast('Identitas sekolah berhasil disinkronkan!', 'success');
     setTimeout(() => setSchoolSyncMessage(null), 5000);
   };
 
   const handleApplySync = async () => {
     if (!comparison) return;
 
+    // Input hanya pada sesi aktif: Dapodik memuat data hari ini (tahun aktif
+    // profil). Terapkan diblokir bila sesi berada di bawahnya.
+    const sesi = (sessionTahun || '').trim();
+    const aktifProfil = (sekolah.tahunAjaran || '').trim();
+    if (sesi && aktifProfil && sesi < aktifProfil) {
+      toast(`Sinkron diblokir: sesi aktif (TA ${sesi}) di bawah tahun aktif database (TA ${aktifProfil}). Pindah sesi ke ${aktifProfil} dulu — data Dapodik adalah data hari ini.`, 'error');
+      return;
+    }
+
     setLoadingSync(true);
+    setSyncResult(null);
+    setSyncTitle('Menerapkan Sinkronisasi ke Buku Induk');
+    setSyncPercent(2);
+    setSyncSteps([
+      { id: 'sekolah', label: 'Profil Sekolah', status: 'pending', detail: 'Menunggu…' },
+      { id: 'referensi', label: 'Rombel & PTK', status: 'pending', detail: 'Menunggu…' },
+      { id: 'akun', label: 'Akun Operator', status: 'pending', detail: 'Menunggu…' },
+      { id: 'baru', label: 'Siswa Baru', status: 'pending', detail: 'Menunggu…' },
+      { id: 'ubah', label: 'Siswa Diperbarui', status: 'pending', detail: 'Menunggu…' },
+    ]);
     setProcessStatus('Memperbarui data Buku Induk Siswa & Identitas Sekolah...');
     let ditambahkan = 0;
     let diperbarui = 0;
+    let gagal = 0;
+    const gagalPesan: string[] = [];
 
     try {
       // 1. Process School Profile update if checked and available
+      setStep('sekolah', { status: 'active', detail: 'Menyimpan identitas sekolah…' });
       if (syncSekolahChecked && dapodikSekolah) {
         const updatedSekolah = convertDapodikToSekolahProfile(dapodikSekolah, sekolah);
         await saveSekolahProfile(updatedSekolah);
         onUpdateSekolah(updatedSekolah);
+        setStep('sekolah', { status: 'success', detail: `Terbarui: ${updatedSekolah.nama}` });
+      } else {
+        setStep('sekolah', { status: 'skipped', detail: 'Dilewati (tidak dicentang/tidak ada data)' });
       }
+      setSyncPercent(15);
 
-      // 2. Process New Students
-      for (const raw of comparison.baru) {
-        if (selectedBaruIds.includes(raw.peserta_didik_id)) {
-          const newSiswa = convertDapodikToSiswa(raw);
-          await saveSiswa(newSiswa);
-          ditambahkan++;
+      // 2b. Simpan referensi Rombel & PTK resmi Dapodik
+      setStep('referensi', { status: 'active', detail: 'Menyimpan referensi…' });
+      let rombelTersimpan = 0;
+      let ptkTersimpan = 0;
+      const simpanGagal: string[] = [];
+      if (dapodikRombel.length > 0) {
+        const refs = dapodikRombel.map((r) => convertDapodikToRombelRef(r, sekolah.tahunAjaran));
+        await saveRombelRefs(refs);
+        // Verifikasi tulis-baca: jangan laporkan sukses palsu bila
+        // penyimpanan lokal menolak data (modul GTK akan tetap kosong).
+        const stored = await getAllRombelRefs();
+        if (stored.length === 0) {
+          simpanGagal.push(`Rombel (${refs.length} baris gagal tersimpan ke penyimpanan lokal)`);
+        } else {
+          rombelTersimpan = refs.length;
         }
       }
+      if (dapodikPtk.length > 0) {
+        const refs = dapodikPtk.map((p) => convertDapodikToPtkRef(p));
+        await savePtkRefs(refs);
+        const stored = await getAllPtkRefs();
+        if (stored.length === 0) {
+          simpanGagal.push(`PTK/GTK (${refs.length} baris gagal tersimpan ke penyimpanan lokal)`);
+        } else {
+          ptkTersimpan = refs.length;
+        }
+      }
+      if (simpanGagal.length > 0) {
+        const msg = `Gagal menyimpan referensi: ${simpanGagal.join('; ')}. Data tidak akan muncul di modul GTK. Coba muat ulang halaman lalu sinkron ulang.`;
+        setStep('referensi', { status: 'error', detail: msg.slice(0, 160) });
+        gagalPesan.push(msg);
+        toast(msg, 'error');
+      } else {
+        setStep('referensi', { status: 'success', detail: `${rombelTersimpan} rombel, ${ptkTersimpan} PTK` });
+      }
+      setSyncPercent(30);
+
+      // 2c. Buat akun operator dari Pengguna Dapodik yang dipilih
+      setStep('akun', { status: 'active', detail: 'Memproses akun…' });
+      const akunBaru: { username: string; password: string; nama: string }[] = [];
+      let akunDilewati = 0;
+      if (selectedPenggunaIds.length > 0) {
+        const existingUsers = await getAllUsers();
+        for (const raw of dapodikPengguna) {
+          if (!selectedPenggunaIds.includes(raw.pengguna_id)) continue;
+          const hasil = await convertPenggunaToAppUser(raw, existingUsers);
+          if (hasil.skipped) {
+            akunDilewati++;
+            continue;
+          }
+          await saveUser(hasil.user);
+          existingUsers.push(hasil.user);
+          akunBaru.push({ username: hasil.user.username, password: hasil.plainPassword, nama: hasil.user.namaLengkap });
+        }
+        setCreatedAccounts(akunBaru);
+      }
+      setStep('akun', { status: 'success', detail: `${akunBaru.length} dibuat${akunDilewati > 0 ? `, ${akunDilewati} dilewati` : ''}` });
+      setSyncPercent(40);
+
+      // 2. Process New Students (tahan gagal sebagian: satu baris gagal tidak membatalkan lainnya)
+      const targetBaru = comparison.baru.filter((raw, idx) => selectedBaruIds.includes(getDapodikKey(raw, idx)));
+      const targetUbah = comparison.berbeda.filter((item, idx) => selectedBerbedaIds.includes(getDapodikKey(item.dapodik, idx)));
+      const totalTarget = targetBaru.length + targetUbah.length;
+      const bumpApplyProgress = (doneCount: number) => {
+        // Rentang 40% -> 95% untuk pemrosesan siswa
+        if (totalTarget === 0) {
+          setSyncPercent(95);
+          return;
+        }
+        setSyncPercent(40 + Math.round((doneCount / totalTarget) * 55));
+      };
+      let processed = 0;
+      setStep('baru', { status: targetBaru.length > 0 ? 'active' : 'skipped', detail: targetBaru.length > 0 ? `0/${targetBaru.length} diproses…` : 'Tidak ada yang dipilih' });
+      for (let idx = 0; idx < comparison.baru.length; idx++) {
+        const raw = comparison.baru[idx];
+        if (selectedBaruIds.includes(getDapodikKey(raw, idx))) {
+          try {
+            const newSiswa = convertDapodikToSiswa(raw, undefined, jenjang, sekolah.tahunAjaran);
+            await saveSiswa(newSiswa);
+            ditambahkan++;
+          } catch (err: unknown) {
+            gagal++;
+            gagalPesan.push(`${raw.nama || 'Tanpa nama'}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          processed++;
+          bumpApplyProgress(processed);
+          setStep('baru', { detail: `${ditambahkan}/${targetBaru.length} tersimpan…` });
+        }
+      }
+      setStep('baru', { status: gagal > 0 ? 'success' : 'success', detail: `${ditambahkan}/${targetBaru.length} tersimpan` });
 
       // 3. Process Changed Students
-      for (const item of comparison.berbeda) {
-        if (selectedBerbedaIds.includes(item.dapodik.peserta_didik_id)) {
-          const updated = convertDapodikToSiswa(item.dapodik, item.existing);
-          await saveSiswa(updated);
-          diperbarui++;
+      setStep('ubah', { status: targetUbah.length > 0 ? 'active' : 'skipped', detail: targetUbah.length > 0 ? `0/${targetUbah.length} diproses…` : 'Tidak ada yang dipilih' });
+      for (let idx = 0; idx < comparison.berbeda.length; idx++) {
+        const item = comparison.berbeda[idx];
+        if (selectedBerbedaIds.includes(getDapodikKey(item.dapodik, idx))) {
+          try {
+            const updated = convertDapodikToSiswa(item.dapodik, item.existing, jenjang, sekolah.tahunAjaran);
+            await saveSiswa(updated);
+            diperbarui++;
+          } catch (err: unknown) {
+            gagal++;
+            gagalPesan.push(`${item.existing.namaLengkap}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+          processed++;
+          bumpApplyProgress(processed);
+          setStep('ubah', { detail: `${diperbarui}/${targetUbah.length} diperbarui…` });
         }
       }
+      setStep('ubah', { status: 'success', detail: `${diperbarui}/${targetUbah.length} diperbarui` });
+      setSyncPercent(97);
 
       const log: DapodikSyncLog = {
         id: `log-${Date.now()}`,
         timestamp: new Date().toISOString(),
-        status: 'success',
+        status: gagal > 0 ? 'warning' : 'success',
         totalDapodik: comparison.totalDapodik,
         ditambahkan,
         diperbarui,
-        dilewati: comparison.totalDapodik - (ditambahkan + diperbarui),
-        pesan: `Sinkronisasi Dapodik berhasil. Ditambahkan: ${ditambahkan}, Diperbarui: ${diperbarui}${syncSekolahChecked && dapodikSekolah ? ', Identitas Sekolah diperbarui' : ''}.`
+        dilewati: Math.max(0, comparison.totalDapodik - (ditambahkan + diperbarui)),
+        pesan: `Sinkronisasi Dapodik ${gagal > 0 ? 'selesai dengan peringatan' : 'berhasil'}. Ditambahkan: ${ditambahkan}, Diperbarui: ${diperbarui}${gagal > 0 ? `, Gagal: ${gagal}` : ''}${syncSekolahChecked && dapodikSekolah ? ', Identitas Sekolah diperbarui' : ''}, Rombel tersimpan: ${rombelTersimpan}, PTK tersimpan: ${ptkTersimpan}, Akun operator dibuat: ${akunBaru.length}${akunDilewati > 0 ? ` (${akunDilewati} dilewati)` : ''}.`
       };
 
       await addSyncLog(log);
+      catatAudit('sinkron_terapkan', {
+        entitas: 'sinkron',
+        ringkasan: `Sinkron Dapodik: +${ditambahkan} baru, ~${diperbarui} diperbarui, ${akunBaru.length} akun baru`,
+        detail: log.pesan.slice(0, 200),
+      });
       onRefreshData();
 
       setComparison(null);
       setDapodikSekolah(null);
-      setProcessStatus(`Selesai! Berhasil mengimpor ${ditambahkan} siswa baru, memperbarui ${diperbarui} data siswa, serta menyelaraskan identitas sekolah.`);
+      setDapodikRombel([]);
+      setRombelDerived(false);
+      setDapodikPtk([]);
+      setDapodikPengguna([]);
+      setRombelComparison(null);
+      setSelectedPenggunaIds([]);
+      const doneMsg = `Selesai! Siswa baru: ${ditambahkan}, diperbarui: ${diperbarui}${gagal > 0 ? `, gagal: ${gagal}` : ''}, rombel: ${rombelTersimpan}, PTK: ${ptkTersimpan}, akun operator baru: ${akunBaru.length}.`;
+      setProcessStatus(doneMsg);
+      setSyncPercent(100);
+      const adaGagalSimpan = simpanGagal.length > 0;
+      if (gagal > 0 || adaGagalSimpan) {
+        setSyncResult({
+          kind: 'warning',
+          title: 'Sinkronisasi Selesai dengan Peringatan',
+          message: `${doneMsg} ${akunDilewati > 0 ? `${akunDilewati} akun dilewati (username sudah ada).` : ''}${adaGagalSimpan ? ' PERHATIAN: referensi yang gagal tersimpan tidak akan muncul di modul GTK/Rombel.' : ''}`,
+          details: gagalPesan.slice(0, 5),
+        });
+        toast(`Sinkronisasi selesai dengan peringatan${gagal > 0 ? ` (${gagal} gagal)` : ''}.`, 'warning');
+      } else {
+        setSyncResult({
+          kind: 'success',
+          title: 'Sinkronisasi Berhasil',
+          message: `${doneMsg} Seluruh data terpilih tersimpan ke Buku Induk.`,
+        });
+        toast('Sinkronisasi Dapodik berhasil tersimpan!', 'success');
+      }
     } catch (err: any) {
-      alert(`Kesalahan saat menyimpan sinkronisasi: ${err.message}`);
+      const msg = err.message || 'Kesalahan saat menyimpan sinkronisasi';
+      setSyncSteps((prev) => prev.map((s) => (s.status === 'active' ? { ...s, status: 'error' as const, detail: msg.slice(0, 120) } : s)));
+      setSyncPercent(100);
+      setSyncResult({
+        kind: 'error',
+        title: 'Penyimpanan Sinkronisasi Gagal',
+        message: msg,
+        details: gagalPesan.slice(0, 5),
+      });
+      toast(`Kesalahan saat menyimpan sinkronisasi: ${msg}`, 'error');
     } finally {
       setLoadingSync(false);
     }
+  };
+
+  const handleToggleSelectPengguna = (id: string) => {
+    setSelectedPenggunaIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   };
 
   const handleToggleSelectBaru = (id: string) => {
@@ -215,7 +592,7 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
     if (selectedBaruIds.length === comparison.baru.length) {
       setSelectedBaruIds([]);
     } else {
-      setSelectedBaruIds(comparison.baru.map((b) => b.peserta_didik_id));
+      setSelectedBaruIds(comparison.baru.map((b, i) => getDapodikKey(b, i)));
     }
   };
 
@@ -226,14 +603,23 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
         <div className="relative z-10 max-w-3xl">
           <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-blue-800/80 text-blue-200 text-xs font-semibold mb-2">
             <Server className="w-3.5 h-3.5 text-amber-300" />
-            Integrasi Resmi Dapodik Kemendikdasmen RI
+            Integrasi Resmi Dapodik Kemdikbudristek RI
           </div>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
             Sinkronisasi Web Service Dapodik Lokal
           </h2>
           <p className="text-sm text-blue-100 mt-1 leading-relaxed">
-            Tarik data peserta didik SMP secara langsung dari database aplikasi Dapodik yang terpasang di komputer/laptop operator tanpa perlu input ulang.
+            Tarik seluruh data pokok {jenjang} — peserta didik, rombongan belajar, PTK, pengguna, dan profil sekolah — langsung dari database aplikasi Dapodik di komputer/laptop operator tanpa perlu input ulang.
           </p>
+          {sessionTahun && (sessionTahun.trim() !== (sekolah.tahunAjaran || '').trim()) && (
+            <p className="mt-3 inline-flex items-start gap-2 text-[11px] font-semibold text-amber-100 bg-amber-500/15 border border-amber-300/40 rounded-xl px-3 py-2">
+              <AlertTriangle className="w-4 h-4 mt-px shrink-0 text-amber-300" />
+              <span>
+                Sesi login Anda TA {sessionTahun}, tetapi sinkronisasi selalu menulis ke tahun aktif database ({sekolah.tahunAjaran}).
+                Hasil tarikan Dapodik masuk ke tahun aktif, bukan ke sesi.
+              </span>
+            </p>
+          )}
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               onClick={() => setShowGuide(!showGuide)}
@@ -257,7 +643,7 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
             <li>Buka aplikasi <strong>Dapodik</strong> di komputer Anda (<code className="bg-amber-100 px-1 py-0.5 rounded font-mono">http://localhost:5774</code>).</li>
             <li>Masuk dengan akun operator sekolah Anda.</li>
             <li>Buka menu <strong>Pengaturan</strong> &rarr; pilih <strong>Web Service</strong>.</li>
-            <li>Klik tombol <strong>Tambah</strong>, masukkan nama aplikasi misalnya: <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">Buku Induk Siswa SMP</code>.</li>
+            <li>Klik tombol <strong>Tambah</strong>, masukkan nama aplikasi misalnya: <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">Buku Induk Siswa {jenjang}</code>.</li>
             <li>Tentukan IP Pengguna (bisa diisi <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">127.0.0.1</code> atau <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">*</code> agar bisa diakses di jaringan lokal).</li>
             <li>Salin <strong>Token Web Service</strong> yang terbit ke kolom token di bawah ini, lalu klik Simpan dan Tes Koneksi.</li>
           </ol>
@@ -282,7 +668,7 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="sm:col-span-2">
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Host / Alamat IP Dapodik
+                  Host / Alamat IP Dapodik *
                 </label>
                 <input
                   type="text"
@@ -299,7 +685,7 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Port Web Service
+                  Port Web Service *
                 </label>
                 <input
                   type="number"
@@ -314,7 +700,7 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  NPSN Sekolah
+                  NPSN Sekolah *
                 </label>
                 <input
                   type="text"
@@ -335,19 +721,23 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
                   onChange={(e) => setCfg({ ...cfg, semesterId: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
                 >
-                  <option value="20241">2024/2025 Ganjil (20241)</option>
-                  <option value="20242">2024/2025 Genap (20242)</option>
-                  <option value="20251">2025/2026 Ganjil (20251)</option>
+                  <option value="20261">2026/2027 Ganjil (20261) — aktif</option>
+                  <option value="20262">2026/2027 Genap (20262)</option>
+                  {!['20261', '20262'].includes(cfg.semesterId) && cfg.semesterId && (
+                    <option value={cfg.semesterId}>Tersimpan: {cfg.semesterId} (ganti ke 20261)</option>
+                  )}
                 </select>
               </div>
             </div>
 
             <div>
               <label className="block font-semibold text-slate-700 mb-1">
-                Token Web Service Dapodik (Bearer Key)
+                Token Web Service Dapodik (Bearer Key) *
               </label>
               <input
                 type="text"
+                required
+                aria-required="true"
                 value={cfg.token}
                 onChange={(e) => setCfg({ ...cfg, token: e.target.value })}
                 placeholder="Salin token dari menu Pengaturan Web Service di aplikasi Dapodik"
@@ -459,7 +849,42 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
         </div>
       </div>
 
+      {/* Progress bar + notifikasi hasil sinkronisasi */}
+      {(loadingSync || syncSteps.length > 0 || syncResult) && syncSteps.length > 0 && (
+        <SyncProgressBar
+          title={syncTitle}
+          subtitle={
+            loadingSync
+              ? 'Mohon tunggu, jangan tutup halaman ini…'
+              : syncResult
+                ? processStatus || undefined
+                : processStatus || undefined
+          }
+          percent={syncPercent}
+          steps={syncSteps}
+          result={syncResult}
+          onDismissResult={() => {
+            setSyncResult(null);
+            if (!loadingSync) {
+              setSyncSteps([]);
+              setSyncPercent(0);
+            }
+          }}
+          onRetry={syncResult?.kind === 'error' ? () => handleFetchData(lastWasSimulation) : undefined}
+        />
+      )}
+
+      {/* Fallback teks status (kompatibilitas lama) */}
+      {processStatus && syncSteps.length === 0 && !syncResult && (
+        <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">{processStatus}</p>
+      )}
+
       {/* School Identity Notification / Card from Dapodik Sync */}
+      {refStatus.sekolah && !dapodikSekolah && (
+        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          ⚠ {refStatus.sekolah} — data siswa tetap diproses. Salin pesan ini dan buka Console browser (F12) untuk detail teknis.
+        </p>
+      )}
       {dapodikSekolah && (
         <div className="bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-950 text-white rounded-2xl border border-blue-400/30 p-5 shadow-md space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-blue-800/60 pb-3">
@@ -477,6 +902,13 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
                 <p className="text-[11px] text-blue-200">
                   Data profil sekolah yang terbaca dari Web Service Dapodik lokal (getSekolah)
                 </p>
+                {!(dapodikSekolah.nama || dapodikSekolah.npsn) && (
+                  <p className="mt-1 text-[11px] text-amber-200 bg-amber-500/20 border border-amber-300/40 rounded-lg px-2.5 py-1.5">
+                    Respons getSekolah tidak dikenali (kolom kosong). Buka Console browser (F12), salin objek
+                    <code className="font-mono"> [dapodik] getSekolah raw </code>
+                    dan kirim ke pengembang untuk penyesuaian mapping.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -503,7 +935,7 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
             <div className="bg-white/5 border border-white/10 rounded-xl p-3">
               <span className="text-[10px] text-blue-300 block font-semibold uppercase tracking-wider">Nama Sekolah (Dapodik)</span>
               <p className="font-bold text-white text-sm mt-0.5">{dapodikSekolah.nama}</p>
-              <span className="text-[10px] text-slate-300">Bentuk: {dapodikSekolah.bentuk_pendidikan_str || 'SMP'} ({dapodikSekolah.status_sekolah_str || 'Negeri'})</span>
+              <span className="text-[10px] text-slate-300">Bentuk: {dapodikSekolah.bentuk_pendidikan_id_str || jenjang} ({dapodikSekolah.status_sekolah_str || dapodikSekolah.status_sekolah || 'Negeri'})</span>
             </div>
 
             <div className="bg-white/5 border border-white/10 rounded-xl p-3">
@@ -539,6 +971,232 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
         </div>
       )}
 
+      {/* Akun operator yang baru dibuat (tampilkan sekali, ada password awal) */}
+      {createdAccounts.length > 0 && (
+        <div className="bg-emerald-50 rounded-xl border border-emerald-300 shadow-xs p-5 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-extrabold text-sm text-emerald-900 flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-emerald-700" />
+              Akun Operator Baru dari Dapodik ({createdAccounts.length})
+            </h3>
+            <button
+              onClick={() => setCreatedAccounts([])}
+              className="text-[11px] font-semibold text-emerald-700 hover:underline cursor-pointer"
+            >
+              Sembunyikan (catat dulu passwordnya!)
+            </button>
+          </div>
+          <p className="text-[11px] text-emerald-800">
+            Bagikan username + password awal ini ke petugas, lalu minta mereka mengganti lewat menu pengguna → Ganti Kata Sandi.
+          </p>
+          <div className="overflow-x-auto border border-emerald-200 rounded-lg bg-white">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-emerald-100/60 text-emerald-900 uppercase font-semibold text-[10px] border-b border-emerald-200">
+                <tr>
+                  <th className="p-2.5">Nama</th>
+                  <th className="p-2.5">Username</th>
+                  <th className="p-2.5">Password Awal</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-emerald-100">
+                {createdAccounts.map((a) => (
+                  <tr key={a.username}>
+                    <td className="p-2.5 font-semibold text-slate-800">{a.nama}</td>
+                    <td className="p-2.5 font-mono text-slate-800">{a.username}</td>
+                    <td className="p-2.5 font-mono font-bold text-emerald-800">{a.password}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Data Referensi Dapodik: Rombel, PTK, Pengguna */}
+      {(dapodikRombel.length > 0 || dapodikPtk.length > 0 || dapodikPengguna.length > 0) && (
+        <div className="bg-white rounded-xl border border-indigo-200 shadow-xs p-5 space-y-5">
+          <div>
+            <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
+              <Server className="w-5 h-5 text-indigo-700" />
+              Data Referensi Dapodik
+            </h3>
+            <p className="text-xs text-slate-500">
+              {dapodikRombel.length} rombongan belajar • {dapodikPtk.length} PTK • {dapodikPengguna.length} pengguna.
+              Rombel & PTK otomatis tersimpan saat <strong>"Terapkan Sinkronisasi"</strong> diklik.
+            </p>
+            {rombelDerived && (
+              <p className="mt-2 text-[11px] text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                Daftar rombel diturunkan otomatis dari data peserta didik karena getRombonganBelajar ditolak Dapodik.
+              </p>
+            )}
+            {(refStatus.rombel || refStatus.ptk || refStatus.pengguna) && (
+              <div className="mt-2 space-y-1.5">
+                {[refStatus.rombel, refStatus.ptk, refStatus.pengguna].filter((m): m is string => !!m).map((msg) => (
+                  <p key={msg} className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    ⚠ {msg} — salin pesan ini dan buka Console browser (F12) untuk detail teknis.
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Rombel */}
+          {dapodikRombel.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="font-bold text-xs uppercase tracking-wide text-slate-900 flex items-center gap-1.5">
+                <School className="w-4 h-4 text-indigo-700" />
+                Rombongan Belajar (getRombonganBelajar)
+              </h4>
+              {rombelComparison && (rombelComparison.hanyaDapodik.length > 0 || rombelComparison.hanyaLokal.length > 0) && (
+                <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  {rombelComparison.hanyaDapodik.length > 0 && (
+                    <span>Baru di Dapodik: <strong>{rombelComparison.hanyaDapodik.map((r) => r.nama).join(', ')}</strong>. </span>
+                  )}
+                  {rombelComparison.hanyaLokal.length > 0 && (
+                    <span>Hanya ada di lokal (tidak di Dapodik): <strong>{rombelComparison.hanyaLokal.join(', ')}</strong>.</span>
+                  )}
+                </p>
+              )}
+              <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-[10px] border-b border-slate-200">
+                    <tr>
+                      <th className="p-2.5">Rombel</th>
+                      <th className="p-2.5 text-center">Tingkat</th>
+                      <th className="p-2.5">Wali Kelas (Dapodik)</th>
+                      <th className="p-2.5 text-center">Anggota</th>
+                      <th className="p-2.5 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {dapodikRombel.map((r, idx) => {
+                      const isBaru = rombelComparison?.hanyaDapodik.some((x) => x.rombongan_belajar_id === r.rombongan_belajar_id);
+                      return (
+                        <tr key={`${r.rombongan_belajar_id || 'rombel'}-${idx}`} className="hover:bg-slate-50">
+                          <td className="p-2.5 font-bold text-slate-900">{r.nama}</td>
+                          <td className="p-2.5 text-center text-slate-700">
+                            Kelas {mapTingkatKelas(r.tingkat_pendidikan_id, r.nama, jenjang)}
+                          </td>
+                          <td className="p-2.5 text-slate-700">{(r.nama_wali || r.wali || '-') as string}</td>
+                          <td className="p-2.5 text-center font-semibold text-slate-800">{Number(r.jumlah_anggota) || 0}</td>
+                          <td className="p-2.5 text-center">
+                            {isBaru ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">Baru</span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">Cocok</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* PTK */}
+          {dapodikPtk.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="font-bold text-xs uppercase tracking-wide text-slate-900 flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-indigo-700" />
+                Pendidik & Tenaga Kependidikan (getPTK)
+              </h4>
+              <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-[10px] border-b border-slate-200">
+                    <tr>
+                      <th className="p-2.5">Nama</th>
+                      <th className="p-2.5">NIP</th>
+                      <th className="p-2.5">Jenis PTK</th>
+                      <th className="p-2.5">Mengajar</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {dapodikPtk.map((p, idx) => (
+                      <tr key={`${p.ptk_id || 'ptk'}-${idx}`} className="hover:bg-slate-50">
+                        <td className="p-2.5 font-bold text-slate-900">{p.nama}</td>
+                        <td className="p-2.5 font-mono text-slate-700">{p.nip || '-'}</td>
+                        <td className="p-2.5 text-slate-700">{(p.jenis_ptk_id_str || '-') as string}</td>
+                        <td className="p-2.5 text-slate-700">{(p.mata_pelajaran_ajar || '-') as string}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Pengguna -> akun operator */}
+          {dapodikPengguna.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="font-bold text-xs uppercase tracking-wide text-slate-900 flex items-center gap-1.5">
+                <UserPlus className="w-4 h-4 text-indigo-700" />
+                Pengguna Dapodik → Akun Operator (getPengguna)
+              </h4>
+              <p className="text-[11px] text-slate-500">
+                Centang pengguna yang ingin dijadikan akun operator aplikasi. Username yang sudah ada akan dilewati otomatis.
+              </p>
+              <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-[10px] border-b border-slate-200">
+                    <tr>
+                      <th className="p-2.5 w-8">
+                        <input
+                          type="checkbox"
+                          checked={selectedPenggunaIds.length === dapodikPengguna.length && dapodikPengguna.length > 0}
+                          onChange={() => setSelectedPenggunaIds(
+                            selectedPenggunaIds.length === dapodikPengguna.length ? [] : dapodikPengguna.map((p) => p.pengguna_id)
+                          )}
+                          className="w-4 h-4 rounded text-blue-600"
+                        />
+                      </th>
+                      <th className="p-2.5">Username</th>
+                      <th className="p-2.5">Nama</th>
+                      <th className="p-2.5">Peran (Dapodik)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {dapodikPengguna.map((p, idx) => (
+                      <tr key={`${p.pengguna_id || 'pengguna'}-${idx}`} className="hover:bg-slate-50">
+                        <td className="p-2.5">
+                          <input
+                            type="checkbox"
+                            checked={selectedPenggunaIds.includes(p.pengguna_id)}
+                            onChange={() => handleToggleSelectPengguna(p.pengguna_id)}
+                            className="w-4 h-4 rounded text-blue-600"
+                          />
+                        </td>
+                        <td className="p-2.5 font-mono font-semibold text-slate-800">{p.username}</td>
+                        <td className="p-2.5 text-slate-700">{p.nama || '-'}</td>
+                        <td className="p-2.5 text-slate-700">{(p.peran || p.peran_id_str || '-') as string}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Comparison View Table (Appears when fetched) */}
+      {comparison && !loadingSync && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-amber-900 leading-relaxed">
+            <strong>Belum tersimpan!</strong> {comparison.baru.length} siswa baru, {comparison.berbeda.length} berubah,{' '}
+            {dapodikRombel.length} rombel, {dapodikPtk.length} PTK/GTK menunggu diterapkan. Data baru muncul di
+            Master Siswa & modul GTK <strong>setelah</strong> Anda menekan tombol di bawah.
+          </p>
+          <button
+            onClick={() => document.getElementById('terapkan-sinkron')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-sm transition shrink-0 cursor-pointer"
+          >
+            Ke Tombol Terapkan ↓
+          </button>
+        </div>
+      )}
+
       {/* Comparison View Table (Appears when fetched) */}
       {comparison && (
         <div className="bg-white rounded-xl border border-blue-200 shadow-md p-5 space-y-4">
@@ -553,12 +1211,17 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
             </div>
 
             <button
+              id="terapkan-sinkron"
               onClick={handleApplySync}
-              disabled={loadingSync || (selectedBaruIds.length === 0 && selectedBerbedaIds.length === 0 && !syncSekolahChecked)}
+              disabled={loadingSync || (selectedBaruIds.length === 0 && selectedBerbedaIds.length === 0 && !syncSekolahChecked && selectedPenggunaIds.length === 0 && dapodikRombel.length === 0 && dapodikPtk.length === 0)}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition active:scale-95 disabled:opacity-50 text-xs cursor-pointer"
             >
               <Check className="w-4 h-4" />
-              Terapkan Sinkronisasi ({selectedBaruIds.length + selectedBerbedaIds.length} Siswa{syncSekolahChecked && dapodikSekolah ? ' + Sekolah' : ''})
+              Terapkan: {selectedBaruIds.length + selectedBerbedaIds.length} Siswa
+              {syncSekolahChecked && dapodikSekolah ? ' + Sekolah' : ''}
+              {dapodikRombel.length > 0 ? ` + ${dapodikRombel.length} Rombel` : ''}
+              {dapodikPtk.length > 0 ? ` + ${dapodikPtk.length} PTK` : ''}
+              {selectedPenggunaIds.length > 0 ? ` + ${selectedPenggunaIds.length} Akun` : ''}
             </button>
           </div>
 
@@ -649,18 +1312,20 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {comparison.baru.map((b) => (
+                      {comparison.baru.map((b, idx) => {
+                        const rowKey = getDapodikKey(b, idx);
+                        return (
                         <tr
-                          key={b.peserta_didik_id}
+                          key={`${rowKey}-${idx}`}
                           className={`hover:bg-blue-50/50 transition cursor-pointer ${
-                            selectedBaruIds.includes(b.peserta_didik_id) ? 'bg-blue-50/30' : ''
+                            selectedBaruIds.includes(rowKey) ? 'bg-blue-50/30' : ''
                           }`}
-                          onClick={() => handleToggleSelectBaru(b.peserta_didik_id)}
+                          onClick={() => handleToggleSelectBaru(rowKey)}
                         >
                           <td className="p-3">
                             <input
                               type="checkbox"
-                              checked={selectedBaruIds.includes(b.peserta_didik_id)}
+                              checked={selectedBaruIds.includes(rowKey)}
                               onChange={() => {}}
                               className="rounded border-slate-300 text-blue-600"
                             />
@@ -684,7 +1349,8 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
                           </td>
                           <td className="p-3 text-slate-600">{b.sekolah_asal || '-'}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -701,25 +1367,33 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {comparison.berbeda.map((item) => (
+                  {comparison.berbeda.map((item, idx) => {
+                    const rowKey = getDapodikKey(item.dapodik, idx);
+                    return (
                     <div
-                      key={item.dapodik.peserta_didik_id}
+                      key={`${rowKey}-${idx}`}
                       className="p-3 border border-amber-200 bg-amber-50/40 rounded-lg text-xs space-y-2"
                     >
                       <div className="flex items-center justify-between">
                         <div>
                           <span className="font-bold text-slate-900 text-sm">{item.existing.namaLengkap}</span>
                           <span className="text-slate-500 ml-2 font-mono">NISN: {item.existing.nisn}</span>
+                          {item.arsip && (
+                            <span className="ml-2 inline-flex items-center gap-1 px-2 py-px rounded-full bg-slate-200 text-slate-700 text-[10px] font-extrabold uppercase">
+                              <Lock className="w-3 h-3" />
+                              Arsip ({item.existing.statusSiswa})
+                            </span>
+                          )}
                         </div>
                         <label className="flex items-center gap-2 cursor-pointer font-semibold text-amber-900">
                           <input
                             type="checkbox"
-                            checked={selectedBerbedaIds.includes(item.dapodik.peserta_didik_id)}
+                            checked={selectedBerbedaIds.includes(rowKey)}
                             onChange={() => {
                               setSelectedBerbedaIds((prev) =>
-                                prev.includes(item.dapodik.peserta_didik_id)
-                                  ? prev.filter((id) => id !== item.dapodik.peserta_didik_id)
-                                  : [...prev, item.dapodik.peserta_didik_id]
+                                prev.includes(rowKey)
+                                  ? prev.filter((id) => id !== rowKey)
+                                  : [...prev, rowKey]
                               );
                             }}
                             className="rounded border-amber-400 text-amber-700"
@@ -735,9 +1409,16 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
                             <li key={pIdx}>{p}</li>
                           ))}
                         </ul>
+                        {item.arsip && (
+                          <p className="mt-1.5 text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded px-2 py-1">
+                            Record berstatus arsip — pembaruan hanya menyentuh identitas, tidak mengubah
+                            status maupun menimpa rombel dengan tebakan.
+                          </p>
+                        )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

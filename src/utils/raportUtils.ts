@@ -1,4 +1,4 @@
-import { JenjangSekolah, TingkatKelas, FaseKurikulum, NilaiMataPelajaran } from '../types';
+import { JenjangSekolah, TingkatKelas, FaseKurikulum, NilaiMataPelajaran, RaportSemester, Siswa } from '../types';
 
 export interface MapelTemplate {
   nama: string;
@@ -191,6 +191,37 @@ export function getFaseKurikulum(tingkat: TingkatKelas): FaseKurikulum {
   return 'Fase D';
 }
 
+/** Baca tingkat dari nama rombel. Mendukung "7A", "Kelas 5", "Kelas V",
+ *  "KELAS V-A", "VII", "VIII", "IX" (umum di Dapodik SD). */
+export function getTingkatDariRombel(namaRombel?: string): TingkatKelas | null {
+  if (!namaRombel) return null;
+  const r = namaRombel.trim();
+  if (!r) return null;
+  const first = r.charAt(0);
+  if (['1', '2', '3', '4', '5', '6', '7', '8', '9'].includes(first)) {
+    return first as TingkatKelas;
+  }
+  // Angka 1-9 yang berdiri sendiri di tengah nama ("Kelas 8", "Rombel 3 B")
+  const digit = r.match(/\b([1-9])\b/);
+  if (digit) return digit[1] as TingkatKelas;
+  // Angka Romawi sebagai kata utuh — urutan penting (VIII sebelum VII, IV/IX sebelum V/I)
+  const romawi: [RegExp, TingkatKelas][] = [
+    [/\bVIII\b/i, '8'],
+    [/\bVII\b/i, '7'],
+    [/\bIX\b/i, '9'],
+    [/\bIV\b/i, '4'],
+    [/\bVI\b/i, '6'],
+    [/\bIII\b/i, '3'],
+    [/\bII\b/i, '2'],
+    [/\bV\b/i, '5'],
+    [/\bI\b/i, '1'],
+  ];
+  for (const [re, t] of romawi) {
+    if (re.test(r)) return t;
+  }
+  return null;
+}
+
 export function getTingkatOptions(jenjang: JenjangSekolah = 'SMP'): TingkatKelas[] {
   if (jenjang === 'SD') {
     return ['1', '2', '3', '4', '5', '6'];
@@ -286,12 +317,13 @@ export function generateDeskripsiOtomatis(
 
 export function buildInitialNilaiMapel(jenjang: JenjangSekolah = 'SMP', tingkat: TingkatKelas = '7'): NilaiMataPelajaran[] {
   const templates = getDefaultMataPelajaran(jenjang, tingkat);
+  const stamp = Date.now();
   return templates.map((t, idx) => {
     const nilai = 85;
     const predikat = calculatePredikat(nilai);
     const { capaianTertinggi, capaianPerluPeningkatan } = generateDeskripsiOtomatis(t.nama, nilai, jenjang, tingkat);
     return {
-      id: `mapel-${idx + 1}-${Date.now()}`,
+      id: `mapel-${idx + 1}-${stamp}-${idx}`,
       mataPelajaran: t.nama,
       kategori: t.kategori,
       nilaiAkhir: nilai,
@@ -300,4 +332,45 @@ export function buildInitialNilaiMapel(jenjang: JenjangSekolah = 'SMP', tingkat:
       capaianPerluPeningkatan
     };
   });
+}
+
+/** Daftar nilai dalam satu raport — mendukung field lama `nilaiMataPelajaran`
+ *  maupun field baku `nilaiMapel`. Tidak pernah melempar bila salah satunya kosong. */
+export function getNilaiList(raport: RaportSemester | null | undefined): NilaiMataPelajaran[] {
+  if (!raport) return [];
+  if (Array.isArray(raport.nilaiMapel) && raport.nilaiMapel.length > 0) return raport.nilaiMapel;
+  if (Array.isArray(raport.nilaiMataPelajaran) && raport.nilaiMataPelajaran.length > 0) return raport.nilaiMataPelajaran;
+  return Array.isArray(raport.nilaiMapel) ? raport.nilaiMapel : [];
+}
+
+/** Daftar raport milik siswa — mendukung field lama `raportSemester`
+ *  maupun field baku `nilaiRaport`. Mengembalikan gabungan unik berdasar id. */
+export function getRaportList(siswa: Siswa | null | undefined): RaportSemester[] {
+  if (!siswa) return [];
+  const a = Array.isArray(siswa.nilaiRaport) ? siswa.nilaiRaport : [];
+  const b = Array.isArray(siswa.raportSemester) ? siswa.raportSemester : [];
+  if (a.length === 0) return b;
+  if (b.length === 0) return a;
+  const seen = new Set<string>();
+  const merged: RaportSemester[] = [];
+  for (const r of [...a, ...b]) {
+    const key = r?.id || `${r?.tahunAjaran}-${r?.semester}`;
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    merged.push(r);
+  }
+  return merged;
+}
+
+/** Normalisasi raport agar kedua alias selalu terisi sama (mencegah crash
+ *  pembaca yang hanya memakai salah satu field). */
+export function normalizeRaport(raport: RaportSemester): RaportSemester {
+  const nilai = getNilaiList(raport);
+  return { ...raport, nilaiMapel: [...nilai], nilaiMataPelajaran: [...nilai] };
+}
+
+/** Normalisasi seluruh raport milik siswa (dipakai sebelum simpan/tampil). */
+export function normalizeSiswaRaport(siswa: Siswa): Siswa {
+  const list = getRaportList(siswa).map(normalizeRaport);
+  return { ...siswa, nilaiRaport: list, raportSemester: list };
 }

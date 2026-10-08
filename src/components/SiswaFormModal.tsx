@@ -1,12 +1,79 @@
-import React, { useState } from 'react';
-import { X, Save, User, Heart, Home, Users, School, Sparkles, BookOpen, AlertCircle, Plus, Trash2, Award, Calendar, GraduationCap } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Save, User, Heart, Home, Users, School, Sparkles, BookOpen, AlertCircle, Plus, Trash2, Award, Calendar, GraduationCap, Check, ChevronLeft, ChevronRight, Eraser, Lock } from 'lucide-react';
 import { Siswa, JenisKelamin, Agama, TingkatKelas, JalurMasuk, StatusSiswa, PredikatP5, JenjangSekolah, RiwayatTahunAjaran, StatusKenaikanKelas } from '../types';
+import { validateIdentitasSiswa, FieldIssue } from '../utils/validation';
+import { getRaportList, getNilaiList } from '../utils/raportUtils';
+import { toast } from '../utils/notify';
+import { KodeSelect } from './KodeSelect';
+import {
+  AGAMA_OPTIONS,
+  TINGGAL_OPTIONS,
+  TRANSPORTASI_OPTIONS,
+  PENDIDIKAN_OPTIONS,
+  PEKERJAAN_OPTIONS,
+  PENGHASILAN_OPTIONS,
+  JENIS_PENDAFTARAN_OPTIONS,
+  HOBI_OPTIONS,
+  CITACITA_OPTIONS,
+  AGAMA_LEGACY,
+  TRANSPORTASI_LEGACY,
+  PENGHASILAN_LEGACY,
+  PEKERJAAN_LEGACY,
+  normalisasiNilai,
+} from '../data/referensi';
+
+/** Samakan nilai lama (teks bebas/duplikat ejaan) ke tabel kode saat form dibuka. */
+function normalisasiReferensiSiswa(s: Siswa): Siswa {
+  const ortu = (o: Siswa['ayah']): Siswa['ayah'] => ({
+    ...o,
+    pendidikan: normalisasiNilai(PENDIDIKAN_OPTIONS, o.pendidikan),
+    pekerjaan: normalisasiNilai(PEKERJAAN_OPTIONS, o.pekerjaan, PEKERJAAN_LEGACY),
+    penghasilan: normalisasiNilai(PENGHASILAN_OPTIONS, o.penghasilan, PENGHASILAN_LEGACY),
+  });
+  return {
+    ...s,
+    agama: normalisasiNilai(AGAMA_OPTIONS, s.agama, AGAMA_LEGACY) as Siswa['agama'],
+    tinggalDengan: normalisasiNilai(TINGGAL_OPTIONS, s.tinggalDengan) as Siswa['tinggalDengan'],
+    transportasiKeSekolah: normalisasiNilai(
+      TRANSPORTASI_OPTIONS, s.transportasiKeSekolah, TRANSPORTASI_LEGACY
+    ) as Siswa['transportasiKeSekolah'],
+    ayah: ortu(s.ayah),
+    ibu: ortu(s.ibu),
+    jenisPendaftaran: (s.jenisPendaftaran as Siswa['jenisPendaftaran']) || 'Siswa Baru',
+    hobi: s.hobi || '',
+    citaCita: s.citaCita || '',
+  };
+}
+
+type SectionId = 'identitas' | 'fisik-domisili' | 'ortu' | 'sekolah' | 'merdeka' | 'semester' | 'raport-riwayat';
+
+interface WizardStep {
+  id: SectionId;
+  label: string;
+  desc: string;
+  icon: typeof User;
+}
+
+const DRAFT_KEY = 'bukuinduk_draft_siswa_v1';
+
+function loadDraft(): Partial<Siswa> | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && parsed.namaLengkap !== undefined) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 interface SiswaFormModalProps {
   initialData?: Siswa | null;
   jenjang?: JenjangSekolah;
-  /** Daftar siswa lain untuk validasi duplikat NISN. */
   existingSiswa?: Siswa[];
+  /** Tahun ajaran berjalan (default baris riwayat/P5 baru). */
+  tahunAjaran?: string;
   onSave: (siswa: Siswa) => Promise<void>;
   onClose: () => void;
 }
@@ -15,17 +82,52 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
   initialData,
   jenjang = 'SMP',
   existingSiswa = [],
+  tahunAjaran,
   onSave,
   onClose
 }) => {
   const isEdit = !!initialData;
-  const [activeSection, setActiveSection] = useState<'identitas' | 'fisik-domisili' | 'ortu' | 'sekolah' | 'merdeka' | 'semester' | 'raport-riwayat'>('identitas');
+  // ----- Kunci field tetap Dapodik (Tahap 2J) -----
+  // Sumber data wajib Dapodik: 10 identitas pokok menjadi readonly saat Edit.
+  // Bila nilai lama masih kosong (data legacy), izinkan isi satu kali;
+  // setelah terisi, pengubahan hanya via Sinkron Dapodik.
+  const kunciNilai = (v: unknown) => isEdit && String(v ?? '').trim() !== '';
+  const clsKunci = (locked: boolean) =>
+    locked ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : '';
+  const [activeSection, setActiveSection] = useState<SectionId>('identitas');
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [visited, setVisited] = useState<SectionId[]>(['identitas']);
+  const [draftRestored, setDraftRestored] = useState(false);
+
+  const STEPS: WizardStep[] = [
+    { id: 'identitas', label: 'Identitas', desc: 'Nama, NISN & NIPD', icon: User },
+    { id: 'fisik-domisili', label: 'Fisik & Domisili', desc: 'Kesehatan & alamat', icon: Heart },
+    { id: 'ortu', label: 'Orang Tua', desc: 'Ayah, ibu & wali', icon: Users },
+    { id: 'sekolah', label: jenjang === 'SD' ? 'TK & Masuk SD' : 'SD & Masuk SMP', desc: 'Asal & penerimaan', icon: School },
+    { id: 'merdeka', label: 'P5 & Prestasi', desc: 'Projek, ekskul & lomba', icon: Sparkles },
+    { id: 'semester', label: 'Keaktifan', desc: 'Rombel & status', icon: BookOpen },
+    { id: 'raport-riwayat', label: 'Riwayat TA', desc: 'Tahun ajaran lalu', icon: Award },
+  ];
+  const stepIndex = Math.max(0, STEPS.findIndex((s) => s.id === activeSection));
+  const isLastStep = stepIndex === STEPS.length - 1;
+
+  const goStep = (id: SectionId) => {
+    setActiveSection(id);
+    setVisited((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  };
 
   // Form State initialized from initialData or new template
   const [formData, setFormData] = useState<Siswa>(() => {
-    if (initialData) return { ...initialData };
+    if (initialData) return normalisasiReferensiSiswa({ ...initialData });
+    // Tahun berjalan untuk baris default (P5/riwayat) — dari profil sekolah.
+    const taBerjalan = /^\d{4}\/\d{4}$/.test((tahunAjaran || '').trim()) ? tahunAjaran!.trim() : '2026/2027';
+    const tahunMulai = taBerjalan.slice(0, 4);
     const now = new Date().toISOString();
+    const isSD = jenjang === 'SD';
+    const defTingkat: TingkatKelas = isSD ? '1' : '7';
+    const defRombel = isSD ? '1A' : '7A';
+    const defFase = isSD ? 'Fase A' : 'Fase D';
     return {
       id: `sis-${Date.now()}`,
       namaLengkap: '',
@@ -69,9 +171,9 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
         nama: '',
         nik: '',
         tahunLahir: '1975',
-        pendidikan: 'SMA / Sederajat',
+        pendidikan: 'SMA / sederajat',
         pekerjaan: 'Wiraswasta',
-        penghasilan: 'Rp 2.000.000 - Rp 5.000.000',
+        penghasilan: 'Rp. 2,000,000 - Rp. 4,999,999',
         noTelepon: '',
         status: 'Masih Hidup'
       },
@@ -79,8 +181,8 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
         nama: '',
         nik: '',
         tahunLahir: '1978',
-        pendidikan: 'SMA / Sederajat',
-        pekerjaan: 'Ibu Rumah Tangga',
+        pendidikan: 'SMA / sederajat',
+        pekerjaan: 'Lainnya',
         penghasilan: 'Tidak Berpenghasilan',
         noTelepon: '',
         status: 'Masih Hidup'
@@ -88,22 +190,25 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
       asalSdMi: '',
       npsnSdMi: '',
       noIjazahSd: '',
-      tahunLulusSd: '2024',
+      tahunLulusSd: tahunMulai,
       lamaBelajarSd: 6,
-      tanggalDiterima: '2024-07-15',
-      diterimaDiTingkat: '7',
-      diterimaDiRombel: '7A',
-      rombelSaatIni: '7A',
+      tanggalDiterima: `${tahunMulai}-07-15`,
+      diterimaDiTingkat: defTingkat,
+      diterimaDiRombel: defRombel,
+      rombelSaatIni: defRombel,
       jalurMasuk: 'Zonasi',
+      jenisPendaftaran: 'Siswa Baru',
+      hobi: '',
+      citaCita: '',
       p5Projects: [
         {
           id: `p5-init-${Date.now()}`,
           tema: 'Gaya Hidup Berkelanjutan',
           judulProjek: 'Pengurangan Jejak Karbon dan Kebersihan Lingkungan Sekolah',
-          fase: 'Fase D',
-          tingkat: '7',
+          fase: defFase,
+          tingkat: defTingkat,
           semester: '1',
-          tahunAjaran: '2024/2025',
+          tahunAjaran: taBerjalan,
           dimensi: {
             berimanBertakwa: 'Berkembang Sesuai Harapan',
             berkebinekaanGlobal: 'Berkembang Sesuai Harapan',
@@ -118,10 +223,10 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
       ekstrakurikuler: [
         {
           id: `ek-init-${Date.now()}`,
-          nama: 'Pramuka Penggalang (Wajib)',
+          nama: isSD ? 'Pramuka Siaga (Wajib)' : 'Pramuka Penggalang (Wajib)',
           keterangan: 'Mengikuti latihan rutin pramuka',
           predikat: 'Baik',
-          tingkat: '7'
+          tingkat: defTingkat
         }
       ],
       prestasi: [],
@@ -129,8 +234,8 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
         {
           id: `rs-init-${Date.now()}`,
           semester: '1',
-          tingkat: '7',
-          tahunAjaran: '2024/2025',
+          tingkat: defTingkat,
+          tahunAjaran: taBerjalan,
           sakit: 0,
           izin: 0,
           alpa: 0,
@@ -146,26 +251,26 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.namaLengkap.trim()) {
-      alert('Nama lengkap siswa wajib diisi!');
-      setActiveSection('identitas');
-      return;
-    }
-    if (!formData.nisn.trim()) {
-      alert('NISN siswa wajib diisi!');
-      setActiveSection('identitas');
-      return;
-    }
-    // Cegah duplikat NISN (kunci identitas resmi siswa)
-    const nisnBersih = formData.nisn.trim();
-    const duplikat = (existingSiswa || []).find(
-      (s) => s.nisn?.trim() === nisnBersih && s.id !== formData.id
+    const issues: FieldIssue[] = validateIdentitasSiswa(
+      {
+        id: formData.id,
+        namaLengkap: formData.namaLengkap,
+        nisn: formData.nisn,
+        nik: formData.nik,
+        nipd: formData.nipd,
+        noKk: formData.noKk,
+      },
+      existingSiswa
     );
-    if (duplikat) {
-      alert(`NISN ${nisnBersih} sudah digunakan oleh "${duplikat.namaLengkap}". Setiap siswa wajib memiliki NISN yang unik.`);
+    if (issues.length > 0) {
+      const mapped: Record<string, string> = {};
+      for (const i of issues) mapped[i.field] = i.message;
+      setFieldErrors(mapped);
       setActiveSection('identitas');
+      toast(issues[0].message, 'error');
       return;
     }
+    setFieldErrors({});
 
     setSaving(true);
     try {
@@ -174,15 +279,84 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
         namaLengkap: formData.namaLengkap.trim().toUpperCase(),
         updatedAt: new Date().toISOString()
       });
+      try {
+        localStorage.removeItem(DRAFT_KEY);
+      } catch { /* abaikan */ }
+      toast(`Data "${formData.namaLengkap.trim()}" berhasil disimpan.`, 'success');
       onClose();
     } catch (err: any) {
-      alert(`Gagal menyimpan data siswa: ${err.message}`);
+      toast(`Gagal menyimpan data siswa: ${err.message}`, 'error');
     } finally {
       setSaving(false);
     }
   };
 
+  // Muat draft tersimpan (pendaftaran baru saja) + simpan otomatis tiap perubahan
+  useEffect(() => {
+    if (!initialData) {
+      const d = loadDraft();
+      if (d) {
+        setFormData((prev) => ({ ...prev, ...d, id: prev.id }));
+        setDraftRestored(true);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (isEdit) return;
+    const t = window.setTimeout(() => {
+      try {
+        const { fotoUrl: _foto, ...rest } = formData;
+        void _foto;
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(rest));
+      } catch { /* kuota penuh / storage tidak tersedia — abaikan */ }
+    }, 800);
+    return () => window.clearTimeout(t);
+  }, [formData, isEdit]);
+
+  const discardDraft = () => {
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch { /* abaikan */ }
+    setDraftRestored(false);
+    toast('Draft tersimpan dibuang. Pendaftaran baru berikutnya mulai kosong.', 'info');
+  };
+
+  /** Lanjut ke langkah berikut; identitas wajib valid sebelum lanjut. */
+  const handleNext = () => {
+    if (activeSection === 'identitas') {
+      const issues = validateIdentitasSiswa(
+        {
+          id: formData.id,
+          namaLengkap: formData.namaLengkap,
+          nisn: formData.nisn,
+          nik: formData.nik,
+          nipd: formData.nipd,
+          noKk: formData.noKk,
+        },
+        existingSiswa
+      );
+      if (issues.length > 0) {
+        const mapped: Record<string, string> = {};
+        for (const i of issues) mapped[i.field] = i.message;
+        setFieldErrors(mapped);
+        toast(issues[0].message, 'error');
+        return;
+      }
+      setFieldErrors({});
+    }
+    const next = STEPS[Math.min(stepIndex + 1, STEPS.length - 1)];
+    if (next) goStep(next.id);
+  };
+
+  const handleBack = () => {
+    const prev = STEPS[Math.max(stepIndex - 1, 0)];
+    if (prev) goStep(prev.id);
+  };
+
   const handleAddPrestasi = () => {
+    const taBerjalan = /^\d{4}\/\d{4}$/.test((tahunAjaran || '').trim()) ? tahunAjaran!.trim() : '2026/2027';
     setFormData({
       ...formData,
       prestasi: [
@@ -193,7 +367,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
           bidang: 'Akademik',
           tingkat: 'Sekolah',
           peringkat: 'Juara 1',
-          tahun: '2024',
+          tahun: taBerjalan.slice(0, 4),
           penyelenggara: ''
         }
       ]
@@ -208,9 +382,10 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
 
   const handleAddRiwayatTA = () => {
     const existing = formData.riwayatTahunAjaran || [];
+    const taBerjalan = /^\d{4}\/\d{4}$/.test((tahunAjaran || '').trim()) ? tahunAjaran!.trim() : '2026/2027';
     const newEntry: RiwayatTahunAjaran = {
       id: `rta-${Date.now()}`,
-      tahunAjaran: '2023/2024',
+      tahunAjaran: taBerjalan,
       tingkat: jenjang === 'SD' ? '1' : '7',
       rombel: formData.rombelSaatIni || (jenjang === 'SD' ? '1A' : '7A'),
       statusKenaikan: 'Naik Kelas',
@@ -230,62 +405,118 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden text-xs">
+    <div className="fixed inset-0 z-50 bg-navy-950/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[94vh] flex flex-col overflow-hidden text-xs anim-scale-in">
         {/* Header Modal */}
-        <div className="bg-slate-900 text-white p-4 flex items-center justify-between shrink-0">
-          <div>
-            <h3 className="font-bold text-sm sm:text-base">
-              {isEdit ? `Edit Lembar Buku Induk: ${initialData?.namaLengkap}` : `Pendaftaran Siswa Baru (Buku Induk ${jenjang})`}
-            </h3>
-            <p className="text-[11px] text-slate-300">
-              Formulir Standar Kurikulum Merdeka ({jenjang === 'SD' ? 'Fase A/B/C SD' : 'Fase D SMP'})
-            </p>
+        <div className="relative overflow-hidden bg-gradient-to-r from-navy-800 via-navy-900 to-[#0b1e4b] text-white px-5 py-4 shrink-0">
+          <div className="absolute top-0 inset-x-0 h-0.5 bg-gradient-to-r from-gold-500 via-gold-300 to-gold-500" />
+          <div className="absolute -right-10 -top-14 w-48 h-48 rounded-full bg-blue-500/20 blur-3xl" />
+          <div className="relative flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-11 h-11 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
+                <GraduationCap className="w-5 h-5 text-gold-300" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-extrabold text-sm sm:text-base tracking-tight truncate">
+                  {isEdit ? `Edit: ${initialData?.namaLengkap}` : `Siswa Baru — Buku Induk ${jenjang}`}
+                </h3>
+                <p className="text-[11px] text-slate-300">
+                  Langkah {stepIndex + 1} dari {STEPS.length}: <strong className="text-gold-300">{STEPS[stepIndex]?.label}</strong>
+                  {' '}• {jenjang === 'SD' ? 'Fase A/B/C' : 'Fase D'} Kurikulum Merdeka
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {!isEdit && (
+                <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-[10px] font-bold text-slate-200" title="Perubahan tersimpan otomatis di perangkat ini">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  {draftRestored ? 'Draft dipulihkan' : 'Draft otomatis'}
+                </span>
+              )}
+              {!isEdit && draftRestored && (
+                <button
+                  type="button"
+                  onClick={discardDraft}
+                  title="Buang draft tersimpan"
+                  className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                >
+                  <Eraser className="w-4 h-4" />
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                aria-label="Tutup formulir"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {/* Bilah kemajuan */}
+          <div className="relative mt-3 h-1.5 rounded-full bg-white/15 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-gold-500 to-gold-300 transition-all duration-300"
+              style={{ width: `${((stepIndex + 1) / STEPS.length) * 100}%` }}
+            />
+          </div>
         </div>
 
-        {/* Section Navigation Tabs */}
-        <div className="bg-slate-100 border-b border-slate-200 px-4 flex gap-1 overflow-x-auto shrink-0 scrollbar-none py-1.5">
-          {[
-            { id: 'identitas', label: '1. Identitas Siswa', icon: User },
-            { id: 'fisik-domisili', label: '2. Jasmani & Domisili', icon: Heart },
-            { id: 'ortu', label: '3. Orang Tua / Wali', icon: Users },
-            { id: 'sekolah', label: jenjang === 'SD' ? '4. TK Asal & Masuk SD' : '4. SD Asal & Masuk SMP', icon: School },
-            { id: 'merdeka', label: '5. P5, Ekskul & Prestasi', icon: Sparkles },
-            { id: 'semester', label: '6. Status Keaktifan', icon: BookOpen },
-            { id: 'raport-riwayat', label: '7. Nilai Rapor & Riwayat TA', icon: Award }
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeSection === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveSection(tab.id as any)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg font-semibold whitespace-nowrap transition text-xs cursor-pointer ${
-                  isActive
-                    ? 'bg-blue-700 text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {tab.label}
-              </button>
-            );
-          })}
+        {/* Navigasi langkah wizard */}
+        <div className="bg-slate-50/80 border-b border-slate-200 px-3 sm:px-4 py-2.5 shrink-0 overflow-x-auto">
+          <ol className="flex items-center gap-1.5 min-w-max">
+            {STEPS.map((step, idx) => {
+              const Icon = step.icon;
+              const done = idx < stepIndex || (visited.includes(step.id) && idx !== stepIndex);
+              const current = idx === stepIndex;
+              return (
+                <li key={step.id} className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => goStep(step.id)}
+                    title={`${step.label} — ${step.desc}`}
+                    className={`flex items-center gap-2 pl-1.5 pr-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition cursor-pointer ${
+                      current
+                        ? 'bg-navy-900 text-white shadow-md'
+                        : done
+                          ? 'text-emerald-800 hover:bg-emerald-50'
+                          : 'text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-extrabold shrink-0 ${
+                      current
+                        ? 'bg-gold-400 text-navy-950'
+                        : done
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-slate-200 text-slate-500'
+                    }`}>
+                      {done && !current ? <Check className="w-3.5 h-3.5" /> : idx + 1}
+                    </span>
+                    <span className="text-left leading-tight">
+                      <span className="block text-xs">{step.label}</span>
+                      <span className={`hidden lg:block text-[10px] font-semibold ${current ? 'text-slate-300' : 'text-slate-400'}`}>
+                        {step.desc}
+                      </span>
+                    </span>
+                    <Icon className={`w-3.5 h-3.5 hidden sm:block ${current ? 'text-gold-300' : ''}`} />
+                  </button>
+                  {idx < STEPS.length - 1 && <span className="w-3 h-px bg-slate-300 shrink-0" />}
+                </li>
+              );
+            })}
+          </ol>
         </div>
 
         {/* Form Body Scrollable */}
-        <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4 flex-1">
+        <form onSubmit={handleSubmit} key={activeSection} className="p-5 overflow-y-auto space-y-4 flex-1 anim-fade-up">
           {/* SECTION 1: IDENTITAS */}
           {activeSection === 'identitas' && (
             <div className="space-y-4">
+              {isEdit && (
+                <p className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-[11px] font-semibold text-amber-800">
+                  <Lock className="w-3.5 h-3.5 shrink-0" />
+                  Field identitas pokok (NISN, NIPD, NIK, KK, Akta, TTL, Jenis Kelamin) terkunci Dapodik — perubahan hanya via menu Sinkron Dapodik.
+                </p>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
@@ -297,8 +528,11 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                     value={formData.namaLengkap}
                     onChange={(e) => setFormData({ ...formData, namaLengkap: e.target.value })}
                     placeholder="Contoh: MUHAMMAD RIZKY PRATAMA"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg uppercase focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg uppercase focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    />
+                    {fieldErrors.namaLengkap && (
+                      <p className="mt-1 text-[11px] font-medium text-rose-600">{fieldErrors.namaLengkap}</p>
+                    )}
                 </div>
 
                 <div>
@@ -322,8 +556,10 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                   </label>
                   <select
                     value={formData.jenisKelamin}
+                    disabled={isEdit}
+                    title={isEdit ? 'Terkunci Dapodik' : undefined}
                     onChange={(e) => setFormData({ ...formData, jenisKelamin: e.target.value as JenisKelamin })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    className={`w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none ${clsKunci(isEdit)}`}
                   >
                     <option value="L">Laki-laki (L)</option>
                     <option value="P">Perempuan (P)</option>
@@ -332,91 +568,100 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
-                    NISN (10 Digit) *
+                    NISN (10 Digit) * <span title="Terkunci Dapodik">🔒</span>
                   </label>
                   <input
                     type="text"
                     required
                     maxLength={10}
                     value={formData.nisn}
+                    readOnly={kunciNilai(initialData?.nisn)}
+                    title={kunciNilai(initialData?.nisn) ? 'Terkunci Dapodik — ubah via Sinkron Dapodik' : undefined}
                     onChange={(e) => setFormData({ ...formData, nisn: e.target.value })}
                     placeholder="Contoh: 0091234567"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
+                      className={`w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none ${clsKunci(kunciNilai(initialData?.nisn))}`}
+                    />
+                    {fieldErrors.nisn && (
+                      <p className="mt-1 text-[11px] font-medium text-rose-600">{fieldErrors.nisn}</p>
+                    )}
                 </div>
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
-                    No. Induk / NIPD
+                    No. Induk / NIPD <span title="Terkunci Dapodik">🔒</span>
                   </label>
                   <input
                     type="text"
                     value={formData.nipd}
+                    readOnly={kunciNilai(initialData?.nipd)}
+                    title={kunciNilai(initialData?.nipd) ? 'Terkunci Dapodik — ubah via Sinkron Dapodik' : undefined}
                     onChange={(e) => setFormData({ ...formData, nipd: e.target.value })}
                     placeholder="Contoh: 242507001"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  />
+                      className={`w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none ${clsKunci(kunciNilai(initialData?.nipd))}`}
+                    />
+                    {fieldErrors.nipd && (
+                      <p className="mt-1 text-[11px] font-medium text-rose-600">{fieldErrors.nipd}</p>
+                    )}
                 </div>
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
                     Agama & Kepercayaan
                   </label>
-                  <select
+                  <KodeSelect
                     value={formData.agama}
-                    onChange={(e) => setFormData({ ...formData, agama: e.target.value as Agama })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                  >
-                    <option value="Islam">Islam</option>
-                    <option value="Kristen">Kristen</option>
-                    <option value="Katholik">Katholik</option>
-                    <option value="Hindu">Hindu</option>
-                    <option value="Buddha">Buddha</option>
-                    <option value="Khonghucu">Khonghucu</option>
-                    <option value="Kepercayaan">Kepercayaan</option>
-                  </select>
+                    options={AGAMA_OPTIONS}
+                    ariaLabel="Agama dan kepercayaan"
+                    onChange={(v) => setFormData({ ...formData, agama: v as Agama })}
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
-                    NIK / No. KTP Siswa
+                    NIK / No. KTP Siswa <span title="Terkunci Dapodik">🔒</span>
                   </label>
                   <input
                     type="text"
                     maxLength={16}
                     value={formData.nik}
+                    readOnly={kunciNilai(initialData?.nik)}
+                    title={kunciNilai(initialData?.nik) ? 'Terkunci Dapodik — ubah via Sinkron Dapodik' : undefined}
                     onChange={(e) => setFormData({ ...formData, nik: e.target.value })}
                     placeholder="16 digit NIK"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    className={`w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none ${clsKunci(kunciNilai(initialData?.nik))}`}
                   />
                 </div>
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
-                    No. Kartu Keluarga (KK)
+                    No. Kartu Keluarga (KK) <span title="Terkunci Dapodik">🔒</span>
                   </label>
                   <input
                     type="text"
                     maxLength={16}
                     value={formData.noKk}
+                    readOnly={kunciNilai(initialData?.noKk)}
+                    title={kunciNilai(initialData?.noKk) ? 'Terkunci Dapodik — ubah via Sinkron Dapodik' : undefined}
                     onChange={(e) => setFormData({ ...formData, noKk: e.target.value })}
                     placeholder="16 digit No. KK"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    className={`w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none ${clsKunci(kunciNilai(initialData?.noKk))}`}
                   />
                 </div>
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
-                    No. Registrasi Akta Lahir
+                    No. Registrasi Akta Lahir <span title="Terkunci Dapodik">🔒</span>
                   </label>
                   <input
                     type="text"
                     value={formData.noAktaLahir}
+                    readOnly={kunciNilai(initialData?.noAktaLahir)}
+                    title={kunciNilai(initialData?.noAktaLahir) ? 'Terkunci Dapodik — ubah via Sinkron Dapodik' : undefined}
                     onChange={(e) => setFormData({ ...formData, noAktaLahir: e.target.value })}
                     placeholder="Contoh: 3201-LT-15042009-0012"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    className={`w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none ${clsKunci(kunciNilai(initialData?.noAktaLahir))}`}
                   />
                 </div>
               </div>
@@ -424,26 +669,30 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
-                    Tempat Lahir
+                    Tempat Lahir <span title="Terkunci Dapodik">🔒</span>
                   </label>
                   <input
                     type="text"
                     value={formData.tempatLahir}
+                    readOnly={kunciNilai(initialData?.tempatLahir)}
+                    title={kunciNilai(initialData?.tempatLahir) ? 'Terkunci Dapodik — ubah via Sinkron Dapodik' : undefined}
                     onChange={(e) => setFormData({ ...formData, tempatLahir: e.target.value })}
                     placeholder="Contoh: Bandung"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    className={`w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none ${clsKunci(kunciNilai(initialData?.tempatLahir))}`}
                   />
                 </div>
 
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
-                    Tanggal Lahir
+                    Tanggal Lahir <span title="Terkunci Dapodik">🔒</span>
                   </label>
                   <input
                     type="date"
                     value={formData.tanggalLahir}
+                    disabled={kunciNilai(initialData?.tanggalLahir)}
+                    title={kunciNilai(initialData?.tanggalLahir) ? 'Terkunci Dapodik — ubah via Sinkron Dapodik' : undefined}
                     onChange={(e) => setFormData({ ...formData, tanggalLahir: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                    className={`w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none ${clsKunci(kunciNilai(initialData?.tanggalLahir))}`}
                   />
                 </div>
 
@@ -649,31 +898,21 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                     </div>
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Tinggal Bersama</label>
-                      <select
+                      <KodeSelect
                         value={formData.tinggalDengan}
-                        onChange={(e) => setFormData({ ...formData, tinggalDengan: e.target.value as any })}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
-                      >
-                        <option value="Orang Tua">Orang Tua</option>
-                        <option value="Wali">Wali</option>
-                        <option value="Kost">Kost</option>
-                        <option value="Asrama">Asrama</option>
-                        <option value="Panti Asuhan">Panti Asuhan</option>
-                      </select>
+                        options={TINGGAL_OPTIONS}
+                        ariaLabel="Jenis tinggal"
+                        onChange={(v) => setFormData({ ...formData, tinggalDengan: v as Siswa['tinggalDengan'] })}
+                      />
                     </div>
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Transportasi ke Sekolah</label>
-                      <select
+                      <KodeSelect
                         value={formData.transportasiKeSekolah}
-                        onChange={(e) => setFormData({ ...formData, transportasiKeSekolah: e.target.value as any })}
-                        className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
-                      >
-                        <option value="Jalan Kaki">Jalan Kaki</option>
-                        <option value="Sepeda">Sepeda</option>
-                        <option value="Sepeda Motor">Sepeda Motor</option>
-                        <option value="Angkutan Umum">Angkutan Umum</option>
-                        <option value="Antar Jemput">Antar Jemput</option>
-                      </select>
+                        options={TRANSPORTASI_OPTIONS}
+                        ariaLabel="Moda transportasi ke sekolah"
+                        onChange={(v) => setFormData({ ...formData, transportasiKeSekolah: v as Siswa['transportasiKeSekolah'] })}
+                      />
                     </div>
                   </div>
                 </div>
@@ -701,28 +940,30 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">NIK Ayah</label>
+                    <label className="block font-semibold text-slate-700 mb-1">NIK Ayah <span title="Terkunci Dapodik">🔒</span></label>
                     <input
                       type="text"
                       maxLength={16}
                       value={formData.ayah.nik}
+                      readOnly={kunciNilai(initialData?.ayah?.nik)}
+                      title={kunciNilai(initialData?.ayah?.nik) ? 'Terkunci Dapodik — ubah via Sinkron Dapodik' : undefined}
                       onChange={(e) => setFormData({
                         ...formData,
                         ayah: { ...formData.ayah, nik: e.target.value }
                       })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono"
+                      className={`w-full px-3 py-2 border border-slate-300 rounded-lg font-mono ${clsKunci(kunciNilai(initialData?.ayah?.nik))}`}
                     />
                   </div>
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">Pekerjaan Ayah</label>
-                    <input
-                      type="text"
+                    <KodeSelect
                       value={formData.ayah.pekerjaan}
-                      onChange={(e) => setFormData({
+                      options={PEKERJAAN_OPTIONS}
+                      ariaLabel="Pekerjaan ayah"
+                      onChange={(v) => setFormData({
                         ...formData,
-                        ayah: { ...formData.ayah, pekerjaan: e.target.value }
+                        ayah: { ...formData.ayah, pekerjaan: v }
                       })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                     />
                   </div>
                 </div>
@@ -730,28 +971,26 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">Pendidikan Terakhir</label>
-                    <input
-                      type="text"
+                    <KodeSelect
                       value={formData.ayah.pendidikan}
-                      onChange={(e) => setFormData({
+                      options={PENDIDIKAN_OPTIONS}
+                      ariaLabel="Pendidikan terakhir ayah"
+                      onChange={(v) => setFormData({
                         ...formData,
-                        ayah: { ...formData.ayah, pendidikan: e.target.value }
+                        ayah: { ...formData.ayah, pendidikan: v }
                       })}
-                      placeholder="Contoh: S1 / SMA"
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                     />
                   </div>
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">Penghasilan Bulanan</label>
-                    <input
-                      type="text"
+                    <KodeSelect
                       value={formData.ayah.penghasilan}
-                      onChange={(e) => setFormData({
+                      options={PENGHASILAN_OPTIONS}
+                      ariaLabel="Penghasilan bulanan ayah"
+                      onChange={(v) => setFormData({
                         ...formData,
-                        ayah: { ...formData.ayah, penghasilan: e.target.value }
+                        ayah: { ...formData.ayah, penghasilan: v }
                       })}
-                      placeholder="Rp 2.000.000 - Rp 5.000.000"
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                     />
                   </div>
                   <div>
@@ -787,28 +1026,30 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">NIK Ibu</label>
+                    <label className="block font-semibold text-slate-700 mb-1">NIK Ibu <span title="Terkunci Dapodik">🔒</span></label>
                     <input
                       type="text"
                       maxLength={16}
                       value={formData.ibu.nik}
+                      readOnly={kunciNilai(initialData?.ibu?.nik)}
+                      title={kunciNilai(initialData?.ibu?.nik) ? 'Terkunci Dapodik — ubah via Sinkron Dapodik' : undefined}
                       onChange={(e) => setFormData({
                         ...formData,
                         ibu: { ...formData.ibu, nik: e.target.value }
                       })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono"
+                      className={`w-full px-3 py-2 border border-slate-300 rounded-lg font-mono ${clsKunci(kunciNilai(initialData?.ibu?.nik))}`}
                     />
                   </div>
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">Pekerjaan Ibu</label>
-                    <input
-                      type="text"
+                    <KodeSelect
                       value={formData.ibu.pekerjaan}
-                      onChange={(e) => setFormData({
+                      options={PEKERJAAN_OPTIONS}
+                      ariaLabel="Pekerjaan ibu"
+                      onChange={(v) => setFormData({
                         ...formData,
-                        ibu: { ...formData.ibu, pekerjaan: e.target.value }
+                        ibu: { ...formData.ibu, pekerjaan: v }
                       })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                     />
                   </div>
                 </div>
@@ -816,26 +1057,26 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">Pendidikan Terakhir</label>
-                    <input
-                      type="text"
+                    <KodeSelect
                       value={formData.ibu.pendidikan}
-                      onChange={(e) => setFormData({
+                      options={PENDIDIKAN_OPTIONS}
+                      ariaLabel="Pendidikan terakhir ibu"
+                      onChange={(v) => setFormData({
                         ...formData,
-                        ibu: { ...formData.ibu, pendidikan: e.target.value }
+                        ibu: { ...formData.ibu, pendidikan: v }
                       })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                     />
                   </div>
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">Penghasilan Bulanan</label>
-                    <input
-                      type="text"
+                    <KodeSelect
                       value={formData.ibu.penghasilan}
-                      onChange={(e) => setFormData({
+                      options={PENGHASILAN_OPTIONS}
+                      ariaLabel="Penghasilan bulanan ibu"
+                      onChange={(v) => setFormData({
                         ...formData,
-                        ibu: { ...formData.ibu, penghasilan: e.target.value }
+                        ibu: { ...formData.ibu, penghasilan: v }
                       })}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                     />
                   </div>
                   <div>
@@ -990,6 +1231,15 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                       <option value="Mutasi/Pindahan">Mutasi / Pindahan Sekolah</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Jenis Pendaftaran</label>
+                    <KodeSelect
+                      value={formData.jenisPendaftaran || 'Siswa Baru'}
+                      options={JENIS_PENDAFTARAN_OPTIONS}
+                      ariaLabel="Jenis pendaftaran"
+                      onChange={(v) => setFormData({ ...formData, jenisPendaftaran: v as Siswa['jenisPendaftaran'] })}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -998,11 +1248,34 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
           {/* SECTION 5: MERDEKA P5, EKSKUL & PRESTASI */}
           {activeSection === 'merdeka' && (
             <div className="space-y-4">
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <h4 className="font-bold text-slate-900 text-sm mb-3">Minat, Hobi & Cita-cita</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Hobi</label>
+                    <KodeSelect
+                      value={formData.hobi || ''}
+                      options={HOBI_OPTIONS}
+                      ariaLabel="Hobi siswa"
+                      onChange={(v) => setFormData({ ...formData, hobi: v })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Cita-cita</label>
+                    <KodeSelect
+                      value={formData.citaCita || ''}
+                      options={CITACITA_OPTIONS}
+                      ariaLabel="Cita-cita siswa"
+                      onChange={(v) => setFormData({ ...formData, citaCita: v })}
+                    />
+                  </div>
+                </div>
+              </div>
               <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-200">
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="font-bold text-amber-950 text-sm flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-amber-600" />
-                    Projek Penguatan Profil Lulusan
+                    Projek Penguatan Profil Pelajar Pancasila (P5)
                   </h4>
                 </div>
 
@@ -1211,7 +1484,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                                 copy[idx].tahunAjaran = e.target.value;
                                 setFormData({ ...formData, riwayatTahunAjaran: copy });
                               }}
-                              placeholder="2023/2024"
+                              placeholder="2026/2027"
                               className="w-full px-2 py-1 border border-slate-300 rounded font-mono"
                             />
                           </div>
@@ -1256,7 +1529,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                                 copy[idx].rombel = e.target.value;
                                 setFormData({ ...formData, riwayatTahunAjaran: copy });
                               }}
-                              placeholder="7A"
+                              placeholder={jenjang === 'SD' ? '1A' : '7A'}
                               className="w-full px-2 py-1 border border-slate-300 rounded font-bold text-blue-900"
                             />
                           </div>
@@ -1342,7 +1615,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                   </div>
                 </div>
 
-                {(!formData.raportSemester || formData.raportSemester.length === 0) ? (
+                {getRaportList(formData as Siswa).length === 0 ? (
                   <div className="p-4 text-center text-slate-400 bg-white border border-dashed border-slate-300 rounded-lg text-xs">
                     Belum ada nilai raport semester yang dimasukkan. Anda dapat menginput nilai lengkap di tab menu <strong>Nilai Raport</strong>.
                   </div>
@@ -1360,9 +1633,10 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                         </tr>
                       </thead>
                       <tbody>
-                        {formData.raportSemester.map((rp, idx) => {
-                          const total = rp.nilaiMataPelajaran.reduce((acc, m) => acc + m.nilaiAkhir, 0);
-                          const avg = rp.nilaiMataPelajaran.length > 0 ? Math.round(total / rp.nilaiMataPelajaran.length) : 0;
+                        {getRaportList(formData as Siswa).map((rp, idx) => {
+                          const nilaiList = getNilaiList(rp);
+                          const total = nilaiList.reduce((acc, m) => acc + (Number(m.nilaiAkhir) || 0), 0);
+                          const avg = nilaiList.length > 0 ? Math.round(total / nilaiList.length) : 0;
                           return (
                             <tr key={rp.id || idx} className="hover:bg-slate-50">
                               <td className="border border-slate-300 px-3 py-2 font-semibold text-slate-900">
@@ -1375,13 +1649,13 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                                 Fase {rp.fase}
                               </td>
                               <td className="border border-slate-300 px-3 py-2 text-center">
-                                {rp.nilaiMataPelajaran.length} Mapel
+                                {nilaiList.length} Mapel
                               </td>
                               <td className="border border-slate-300 px-3 py-2 text-center font-mono font-bold text-emerald-700">
                                 {avg}
                               </td>
                               <td className="border border-slate-300 px-3 py-2 text-center font-mono text-slate-600">
-                                {rp.kehadiran.sakit}/{rp.kehadiran.izin}/{rp.kehadiran.tanpaKeterangan}
+                                {rp.kehadiran.sakit}/{rp.kehadiran.izin}/{rp.kehadiran.alpa}
                               </td>
                             </tr>
                           );
@@ -1394,24 +1668,53 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
             </div>
           )}
 
-          {/* Submit Footer */}
-          <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold transition"
-            >
-              Batal
-            </button>
+          {/* Footer wizard */}
+          <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-2 sticky bottom-0 bg-white pb-1">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="ui-btn ui-btn-ghost"
+              >
+                Batal
+              </button>
+              <span className="hidden sm:inline text-[11px] font-bold text-slate-400 tabular-nums">
+                {stepIndex + 1} / {STEPS.length}
+              </span>
+            </div>
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl shadow-md transition active:scale-95 disabled:opacity-50"
-            >
-              <Save className="w-4 h-4" />
-              {saving ? 'Menyimpan...' : 'Simpan ke Buku Induk'}
-            </button>
+            <div className="flex items-center gap-2">
+              {stepIndex > 0 && (
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  className="ui-btn ui-btn-outline"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Kembali
+                </button>
+              )}
+
+              {!isLastStep ? (
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  className="ui-btn ui-btn-primary"
+                >
+                  Lanjut: {STEPS[stepIndex + 1]?.label}
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="ui-btn ui-btn-primary"
+                >
+                  <Save className="w-4 h-4" />
+                  {saving ? 'Menyimpan...' : 'Simpan ke Buku Induk'}
+                </button>
+              )}
+            </div>
           </div>
         </form>
       </div>
