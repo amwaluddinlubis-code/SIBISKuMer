@@ -168,7 +168,7 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
                 </span>
               </div>
               <p className="text-xs text-blue-200 mt-1 max-w-2xl leading-relaxed">
-                Identitas resmi satuan pendidikan (Nama Sekolah, NPSN, NSS, Alamat Lengkap, Kepala Sekolah & NIP, serta Tahun Ajaran) dapat ditarik langsung dari aplikasi Dapodik lokal sehingga data selalu konsisten dengan database pusat Kemdikbudristek.
+                Identitas resmi satuan pendidikan (Nama Sekolah, NPSN, NSS, Alamat Lengkap, Kepala Sekolah & NIP, serta Tahun Ajaran) dapat ditarik langsung dari aplikasi Dapodik lokal sehingga data selalu konsisten dengan database pusat Kemendikdasmen.
               </p>
               {profile.lastSyncedWithDapodik && (
                 <p className="text-[11px] text-blue-300 mt-1 flex items-center gap-1.5 font-mono">

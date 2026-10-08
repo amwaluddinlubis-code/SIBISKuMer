@@ -1,5 +1,6 @@
 import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RaportSemester, TingkatKelas, RiwayatSemester } from '../types';
 import { defaultSekolahProfile, defaultDapodikConfig, initialSiswaList, initialUsersList } from '../data/initialData';
+import { ensurePasswordHash } from './crypto';
 
 const DB_NAME = 'BukuIndukSMP_Merdeka_DB';
 const DB_VERSION = 2;
@@ -78,7 +79,7 @@ export async function initStorage(): Promise<void> {
       localStorage.setItem(LS_KEYS.SEKOLAH, JSON.stringify(defaultSekolahProfile));
       localStorage.setItem(LS_KEYS.CONFIG, JSON.stringify(defaultDapodikConfig));
       localStorage.setItem(LS_KEYS.LOGS, JSON.stringify([]));
-      localStorage.setItem(LS_KEYS.USERS, JSON.stringify(initialUsersList));
+      localStorage.setItem(LS_KEYS.USERS, JSON.stringify(await Promise.all(initialUsersList.map(ensurePasswordHash))));
     }
   }
 }
@@ -111,7 +112,8 @@ async function seedDefaultData(db: IDBDatabase): Promise<void> {
 
   const userStore = tx.objectStore(STORES.USERS);
   for (const u of initialUsersList) {
-    userStore.put(u);
+    // Password seed langsung di-hash; tidak pernah tersimpan plaintext
+    userStore.put(await ensurePasswordHash(u));
   }
 
   const logStore = tx.objectStore(STORES.LOGS);
@@ -126,7 +128,7 @@ async function seedDefaultData(db: IDBDatabase): Promise<void> {
     pesan: 'Inisialisasi Database Buku Induk Siswa SMP Kurikulum Merdeka (Data Awal Sukses Dimuat).'
   });
 
-  localStorage.setItem(LS_KEYS.USERS, JSON.stringify(initialUsersList));
+  localStorage.setItem(LS_KEYS.USERS, JSON.stringify(await Promise.all(initialUsersList.map(ensurePasswordHash))));
 
   return new Promise((resolve) => {
     tx.oncomplete = () => resolve();
@@ -501,9 +503,16 @@ export function getCurrentUserSession(): AppUser | null {
   }
 }
 
+/** Buang field sensitif (hash password) sebelum disimpan sebagai sesi. */
+function sanitizeSessionUser(user: AppUser): AppUser {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { passwordHash: _h, password: _p, ...rest } = user;
+  return rest as AppUser;
+}
+
 export function setCurrentUserSession(user: AppUser | null): void {
   if (user) {
-    localStorage.setItem(LS_KEYS.CURRENT_USER, JSON.stringify(user));
+    localStorage.setItem(LS_KEYS.CURRENT_USER, JSON.stringify(sanitizeSessionUser(user)));
   } else {
     localStorage.removeItem(LS_KEYS.CURRENT_USER);
   }
@@ -520,7 +529,7 @@ export function getImpersonateSession(): AppUser | null {
 
 export function setImpersonateSession(adminUser: AppUser | null, targetOperator?: AppUser): void {
   if (adminUser) {
-    localStorage.setItem(LS_KEYS.IMPERSONATE, JSON.stringify(adminUser));
+    localStorage.setItem(LS_KEYS.IMPERSONATE, JSON.stringify(sanitizeSessionUser(adminUser)));
     if (targetOperator) {
       setCurrentUserSession(targetOperator);
     }

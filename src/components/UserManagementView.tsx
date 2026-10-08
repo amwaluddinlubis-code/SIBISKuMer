@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { AppUser, UserRole } from '../types';
 import { getAllUsers, saveUser, deleteUser } from '../utils/db';
+import { hashPassword } from '../utils/crypto';
 
 interface UserManagementViewProps {
   users?: AppUser[];
@@ -104,7 +105,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     setEditingUser(u);
     setFormData({
       ...u,
-      password: u.password || ''
+      // Jangan tampilkan password lama (tersimpan sebagai hash); kosongkan = tidak diubah
+      password: ''
     });
     setIsModalOpen(true);
   };
@@ -119,9 +121,20 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
     const now = new Date().toISOString();
 
     if (editingUser) {
-      // Update
+      // Update — password baru di-hash; kosong = pertahankan yang lama
+      let passwordHash = editingUser.passwordHash;
+      const newPlain = (formData.password || '').trim();
+      if (newPlain) {
+        if (newPlain.length < 6) {
+          alert('Kata sandi minimal 6 karakter.');
+          return;
+        }
+        passwordHash = await hashPassword(newPlain);
+      }
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { password: _legacy, ...editingRest } = editingUser;
       const updated: AppUser = {
-        ...editingUser,
+        ...editingRest,
         username: formData.username.trim().toLowerCase(),
         namaLengkap: formData.namaLengkap.trim(),
         role: formData.role || 'operator',
@@ -130,7 +143,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         jabatan: formData.jabatan || '',
         rombelAkses: formData.rombelAkses || [],
         status: formData.status || 'aktif',
-        password: formData.password ? formData.password.trim() : editingUser.password,
+        passwordHash,
         updatedAt: now
       };
       if (onSaveUser) {
@@ -148,10 +161,16 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         return;
       }
 
+      const plainPw = (formData.password || '').trim();
+      if (!plainPw || plainPw.length < 6) {
+        alert('Mohon isi kata sandi minimal 6 karakter untuk akun baru.');
+        return;
+      }
+
       const newUser: AppUser = {
         id: `usr-${Date.now()}`,
         username: (formData.username || '').trim().toLowerCase(),
-        password: (formData.password || 'operator123').trim(),
+        passwordHash: await hashPassword(plainPw),
         namaLengkap: (formData.namaLengkap || '').trim(),
         role: formData.role || 'operator',
         email: formData.email || '',
@@ -195,10 +214,16 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   const handleResetPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetPasswordModalUser || !newPasswordInput.trim()) return;
+    if (newPasswordInput.trim().length < 6) {
+      alert('Kata sandi minimal 6 karakter.');
+      return;
+    }
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password: _legacy, ...restUser } = resetPasswordModalUser;
     const updated: AppUser = {
-      ...resetPasswordModalUser,
-      password: newPasswordInput.trim(),
+      ...restUser,
+      passwordHash: await hashPassword(newPasswordInput.trim()),
       updatedAt: new Date().toISOString()
     };
     if (onSaveUser) {
@@ -592,7 +617,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             <ul className="space-y-2 text-slate-700 list-disc list-inside">
               <li><strong>CRUD Akun Operator</strong>: Membuat, memperbarui, mengatur ulang password, dan menghapus akun operator kesiswaan.</li>
               <li><strong>Menu Impersonate Operator</strong>: Menyamar langsung ke dalam sesi operator untuk inspeksi batasan tugas dan verifikasi entri data.</li>
-              <li><strong>Konfigurasi Web Service Dapodik</strong>: Mengatur IP host, port 5774, dan Token resmi Kemdikbudristek.</li>
+              <li><strong>Konfigurasi Web Service Dapodik</strong>: Mengatur IP host, port 5774, dan Token resmi Kemendikdasmen.</li>
               <li><strong>Sinkronisasi Identitas Satuan Pendidikan</strong>: Menyetujui dan memperbarui profil resmi sekolah dari Dapodik.</li>
               <li><strong>Cadangan & Pemulihan Sistem</strong>: Mengunduh arsip JSON lengkap dan mengembalikan basis data offline.</li>
               <li><strong>Akses Penuh Seluruh Rombel</strong>: Pengawasan tanpa batasan kelas pada Fase D (Kelas 7, 8, dan 9).</li>
@@ -609,7 +634,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             </div>
             <ul className="space-y-2 text-slate-700 list-disc list-inside">
               <li><strong>Pencatatan Buku Induk Siswa</strong>: Menambah dan memperbarui biodata lengkap siswa (Bagian A-I, data ortu/wali, kesehatan, beasiswa).</li>
-              <li><strong>Pencatatan Projek P5</strong>: Mengisi dimensi dan tema Projek Penguatan Profil Pelajar Pancasila.</li>
+              <li><strong>Pencatatan Projek Kokurikuler</strong>: Mengisi dimensi Profil Lulusan dan tema projek kokurikuler.</li>
               <li><strong>Cetak Dokumen Resmi</strong>: Mencetak Lembar Buku Induk Kurikulum Merdeka dan Kartu Tanda Pelajar (KTP Siswa).</li>
               <li><strong>Rekapitulasi Kesiswaan</strong>: Melihat statistik gender, agama, jalur masuk, dan status kelulusan/mutasi.</li>
               <li><strong>Sinkronisasi Siswa dari Dapodik</strong>: Menjalankan penarikan data peserta didik baru dari Dapodik lokal.</li>
