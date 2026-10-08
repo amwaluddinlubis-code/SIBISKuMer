@@ -187,7 +187,7 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
           }
         ],
         kehadiran: { sakit: 0, izin: 0, alpa: 0 },
-        catatanWaliKelas: 'Tingkatkan motivasi belajar dan terus aktif mengembangkan karakter Profil Pelajar Pancasila.',
+        catatanWaliKelas: 'Tingkatkan motivasi belajar dan terus aktif mengembangkan karakter Profil Lulusan.',
         statusKenaikan: selectedSemester === '2' ? 'Naik Kelas' : 'Belum Ditentukan'
       });
     }
