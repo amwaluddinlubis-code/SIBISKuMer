@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, Suspense, lazy } from 'react';
+import { ThemeProvider } from './context/ThemeContext';
+import GlobalSearch from './components/GlobalSearch';
 import {
   getAllSiswa,
   getSekolahProfile,
@@ -1153,6 +1155,7 @@ export default function App() {
   };
 
   return (
+    <ThemeProvider>
     <div className="min-h-screen text-slate-900 font-sans antialiased">
       <TopProgressBar />
       {/* Sidebar Navigation + Fixed Top Navbar */}
@@ -1247,6 +1250,11 @@ export default function App() {
                 sessionTahun={sessionTahun}
                 tahunAktif={sekolah.tahunAjaran}
                 onOpenSync={() => handleNavigateTab('dapodik')}
+                onLihat={(tujuan) => {
+                  if (tujuan === 'siswa') handleNavigateTab('siswa');
+                  else if (tujuan === 'nilai') handleNavigateTab('raport');
+                  else if (tujuan === 'backup') handleNavigateTab('backup');
+                }}
               />
             )}
 
@@ -1701,6 +1709,9 @@ export default function App() {
       <ToastHost />
       <ConfirmDialogHost />
 
+      {/* Pencarian global cepat (Ctrl+K) → buka detail siswa */}
+      <GlobalSearch onPilihSiswa={(s) => setDetailSiswa(s)} />
+
       {/* Multi-sekolah manager (admin) */}
       {isAdmin && (
         <SchoolManagerModal
@@ -1719,5 +1730,6 @@ export default function App() {
       )}
       </Suspense>
     </div>
+    </ThemeProvider>
   );
 }
