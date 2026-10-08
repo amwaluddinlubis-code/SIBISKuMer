@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Printer, Download, ArrowLeft, CreditCard, FileText, Award, BookOpen, Calendar, CheckCircle2 } from 'lucide-react';
+import { Printer, Download, ArrowLeft, CreditCard, FileText, Award, BookOpen, Calendar, CheckCircle2, Eye, X } from 'lucide-react';
 import { Siswa, SekolahProfile } from '../types';
 import { getFaseKurikulum, getRaportList, getNilaiList, hitungRataRataNilai } from '../utils/raportUtils';
 import { tahanMaksSesi } from '../utils/sesi';
@@ -26,6 +26,7 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
   const [selectedSemesterId, setSelectedSemesterId] = useState<string>('all');
   const [templateKartu, setTemplateKartu] = useState<TemplateKartu>('dinas');
   const [exportingInduk, setExportingInduk] = useState<null | 'excel' | 'word'>(null);
+  const [tampilPratinjau, setTampilPratinjau] = useState(false);
 
   const handleExportInduk = async (format: 'excel' | 'word') => {
     setExportingInduk(format);
@@ -58,6 +59,19 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
     window.print();
   };
 
+  /** Cetak dari pratinjau: tutup overlay dulu agar lembar cetak tidak terduplikasi saat print. */
+  const handleCetakDariPratinjau = () => {
+    setTampilPratinjau(false);
+    window.setTimeout(() => window.print(), 200);
+  };
+
+  const judulPratinjau =
+    printMode === 'buku-induk'
+      ? 'Lembar Buku Induk Siswa'
+      : printMode === 'raport'
+        ? 'Transkrip Rapor'
+        : 'Kartu Pelajar';
+
   const formatDateIndo = (dateStr?: string) => {
     if (!dateStr) return '-';
     try {
@@ -86,114 +100,9 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
   const asalTitle = jenjang === 'SD' ? 'TK/PAUD/RA' : 'SD/MI';
   const ijazahLabel = jenjang === 'SD' ? 'No. SKL / Ijazah (jika ada)' : 'No. Ijazah SD';
 
-  return (
-    <div className="print-sheet-root fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs overflow-y-auto flex flex-col items-center justify-start p-2 sm:p-6 print:p-0 print:bg-white print:static">
-      {/* Top Floating Action Bar (Hidden when printing) */}
-      <div className="w-full max-w-4xl bg-white rounded-xl shadow-xl p-3 sm:p-4 mb-4 flex flex-wrap items-center justify-between gap-3 border border-slate-200 print:hidden sticky top-2 z-20">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onClose}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Kembali
-          </button>
-          <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block" />
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
-            <button
-              onClick={() => setPrintMode('buku-induk')}
-              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
-                printMode === 'buku-induk'
-                  ? 'bg-blue-700 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              Lembar Buku Induk
-            </button>
-            <button
-              onClick={() => setPrintMode('raport')}
-              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
-                printMode === 'raport'
-                  ? 'bg-blue-700 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Award className="w-3.5 h-3.5" />
-              Transkrip Nilai Raport
-            </button>
-            <button
-              onClick={() => setPrintMode('kartu-pelajar')}
-              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
-                printMode === 'kartu-pelajar'
-                  ? 'bg-blue-700 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <CreditCard className="w-3.5 h-3.5" />
-              Kartu Pelajar
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {sessionTahun && (
-            <span className="hidden sm:inline-block text-[11px] font-mono font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-              Sesi {sessionTahun}
-            </span>
-          )}
-          {printMode === 'raport' && raportList.length > 0 && (
-            <select
-              value={selectedSemesterId}
-              onChange={(e) => setSelectedSemesterId(e.target.value)}
-              className="text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-medium"
-            >
-              <option value="all">Semua Semester (Multi-Tahun)</option>
-              {raportList.map((r) => (
-                <option key={r.id} value={r.id}>
-                  Kelas {r.tingkat} Sem. {r.semester} ({r.tahunAjaran})
-                </option>
-              ))}
-            </select>
-          )}
-
-          <button
-            onClick={handlePrint}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow-sm transition active:scale-95 cursor-pointer"
-          >
-            <Printer className="w-4 h-4" />
-            Cetak Dokumen (Print / PDF)
-          </button>
-          {printMode === 'buku-induk' && (
-            <>
-              <button
-                onClick={() => void handleExportInduk('excel')}
-                disabled={exportingInduk !== null}
-                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-60"
-                title="Unduh lembar induk sebagai Excel (.xlsx)"
-              >
-                <Download className="w-4 h-4" />
-                {exportingInduk === 'excel' ? 'Menyiapkan…' : 'Excel'}
-              </button>
-              <button
-                onClick={() => void handleExportInduk('word')}
-                disabled={exportingInduk !== null}
-                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-indigo-700 hover:bg-indigo-800 rounded-lg shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-60"
-                title="Unduh lembar induk sebagai Word (.docx)"
-              >
-                <Download className="w-4 h-4" />
-                {exportingInduk === 'word' ? 'Menyiapkan…' : 'Word'}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Main Printable Document */}
-      <div
-        ref={printRef}
-        className="print-sheet w-full max-w-4xl bg-white text-slate-900 shadow-2xl rounded-xl sm:rounded-none p-6 sm:p-12 print:p-4 print:shadow-none print:max-w-none print:w-full print:rounded-none border border-slate-200 print:border-none font-sans text-xs"
-      >
+  /** Isi dokumen cetak — dipakai ulang persis di pratinjau WYSIWYG (isi tidak diubah). */
+  const renderIsiDokumen = (): React.ReactElement => (
+    <>
         {printMode === 'buku-induk' ? (
           <div className="space-y-6">
             {/* Kop Resmi Sekolah (diatur di Profil Sekolah → Kop Surat) */}
@@ -903,10 +812,171 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
               jenjang={jenjang}
               faseLabel={faseLabel}
               template={templateKartu}
+              sembunyikanPratinjau
             />
           </div>
         )}
+    </>
+  );
+
+  return (
+    <div className="print-sheet-root fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs overflow-y-auto flex flex-col items-center justify-start p-2 sm:p-6 print:p-0 print:bg-white print:static">
+      {/* Top Floating Action Bar (Hidden when printing) */}
+      <div className="w-full max-w-4xl bg-white rounded-xl shadow-xl p-3 sm:p-4 mb-4 flex flex-wrap items-center justify-between gap-3 border border-slate-200 print:hidden sticky top-2 z-20">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onClose}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Kembali
+          </button>
+          <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block" />
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+            <button
+              onClick={() => setPrintMode('buku-induk')}
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
+                printMode === 'buku-induk'
+                  ? 'bg-blue-700 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Lembar Buku Induk
+            </button>
+            <button
+              onClick={() => setPrintMode('raport')}
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
+                printMode === 'raport'
+                  ? 'bg-blue-700 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Award className="w-3.5 h-3.5" />
+              Transkrip Nilai Raport
+            </button>
+            <button
+              onClick={() => setPrintMode('kartu-pelajar')}
+              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
+                printMode === 'kartu-pelajar'
+                  ? 'bg-blue-700 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CreditCard className="w-3.5 h-3.5" />
+              Kartu Pelajar
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {sessionTahun && (
+            <span className="hidden sm:inline-block text-[11px] font-mono font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+              Sesi {sessionTahun}
+            </span>
+          )}
+          {printMode === 'raport' && raportList.length > 0 && (
+            <select
+              value={selectedSemesterId}
+              onChange={(e) => setSelectedSemesterId(e.target.value)}
+              className="text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-medium"
+            >
+              <option value="all">Semua Semester (Multi-Tahun)</option>
+              {raportList.map((r) => (
+                <option key={r.id} value={r.id}>
+                  Kelas {r.tingkat} Sem. {r.semester} ({r.tahunAjaran})
+                </option>
+              ))}
+            </select>
+          )}
+
+          <button
+            onClick={() => setTampilPratinjau(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-slate-700 hover:bg-slate-800 rounded-lg shadow-sm transition active:scale-95 cursor-pointer"
+            title="Pratinjau tampilan cetak sebelum mencetak"
+          >
+            <Eye className="w-4 h-4" />
+            Pratinjau
+          </button>
+          <button
+            onClick={handlePrint}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow-sm transition active:scale-95 cursor-pointer"
+          >
+            <Printer className="w-4 h-4" />
+            Cetak Dokumen (Print / PDF)
+          </button>
+          {printMode === 'buku-induk' && (
+            <>
+              <button
+                onClick={() => void handleExportInduk('excel')}
+                disabled={exportingInduk !== null}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-60"
+                title="Unduh lembar induk sebagai Excel (.xlsx)"
+              >
+                <Download className="w-4 h-4" />
+                {exportingInduk === 'excel' ? 'Menyiapkan…' : 'Excel'}
+              </button>
+              <button
+                onClick={() => void handleExportInduk('word')}
+                disabled={exportingInduk !== null}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-indigo-700 hover:bg-indigo-800 rounded-lg shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-60"
+                title="Unduh lembar induk sebagai Word (.docx)"
+              >
+                <Download className="w-4 h-4" />
+                {exportingInduk === 'word' ? 'Menyiapkan…' : 'Word'}
+              </button>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Main Printable Document */}
+      <div
+        ref={printRef}
+        className="print-sheet w-full max-w-4xl bg-white text-slate-900 shadow-2xl rounded-xl sm:rounded-none p-6 sm:p-12 print:p-4 print:shadow-none print:max-w-none print:w-full print:rounded-none border border-slate-200 print:border-none font-sans text-xs"
+      >
+        {renderIsiDokumen()}
+      </div>
+
+      {/* Overlay Pratinjau Cetak WYSIWYG — memakai komponen dokumen yang sama persis */}
+      {tampilPratinjau && (
+        <div className="fixed inset-0 z-[60] bg-slate-900/80 backdrop-blur-xs flex flex-col print:hidden">
+          {/* Header bar pratinjau */}
+          <div className="shrink-0 bg-slate-950/90 border-b border-white/10 px-3 sm:px-4 py-2.5 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <Eye className="w-4 h-4 text-amber-300 shrink-0" />
+              <h3 className="text-sm font-bold text-white truncate">
+                Pratinjau Cetak — {judulPratinjau}
+              </h3>
+              <span className="hidden md:inline-block text-[10px] font-mono text-slate-400 border border-white/10 rounded px-1.5 py-0.5">
+                ≈ hasil print
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleCetakDariPratinjau}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow-sm transition active:scale-95 cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                Cetak
+              </button>
+              <button
+                onClick={() => setTampilPratinjau(false)}
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-200 bg-white/10 hover:bg-white/20 rounded-lg transition active:scale-95 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+                Tutup
+              </button>
+            </div>
+          </div>
+          {/* Area dokumen — bingkai kertas proporsional A4 */}
+          <div className="flex-1 overflow-y-auto flex justify-center items-start p-3 sm:p-8">
+            <div className="w-full max-w-[210mm] bg-white text-slate-900 shadow-2xl p-6 sm:p-12 font-sans text-xs">
+              {renderIsiDokumen()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
