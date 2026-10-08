@@ -37,11 +37,14 @@ import {
   getTutupTahun,
   saveTutupTahun,
   deleteTutupTahun,
-  promoteSiswaKenaikanKelas,
+  saveSiswaBulk,
+  getSiswaById,
+  getTingkatAktifSiswa,
+  getTahunAjaranTerakhirSiswa,
   getAllPetaKelas,
   resetToSingleMainDatabase
 } from './utils/db';
-import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, TingkatKelas, PetaKelas, ModeTampilan } from './types';
+import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, PetaKelas, ModeTampilan, RiwayatTahunAjaran } from './types';
 import { buildSnapshot } from './utils/arsip';
 import { useIdleLogout } from './hooks/useIdleLogout';
 import { resolveTemaEfektif, bacaModeTampilan, simpanModeTampilan, terapkanModeTampilan, modeBerikutnya } from './utils/tema';
@@ -574,16 +577,47 @@ export default function App() {
       const { ringkasan, roster } = buildSnapshot(siswaList, { lulus, naik, tinggal });
 
       // 2. Promosikan per rombel (menulis riwayat tahun lama, bukan menimpa)
+      // F15: DUA FASE agar tutup tahun tidak setengah jalan —
+      //   (a) KUMPUL: baca semua siswa & hitung rekaman baru dulu, TANPA tulis;
+      //   (b) TULIS: saveSiswaBulk sekaligus (satu transaksi IDB; fallback LS
+      //       juga menimpa seluruh array sekaligus).
+      // Penguncian tahun (langkah 3) hanya jalan bila fase (b) sukses penuh.
+      // Bila fase (b) gagal: tahun TIDAK dikunci, error jelas ditampilkan.
+      // Catatan: rollback manual penuh tidak mungkin tanpa transaksi IDB
+      // lintas-store, jadi operator harus verifikasi daftar siswa bila ini
+      // terjadi sebelum mencoba tutup tahun ulang.
+      const nowIso = new Date().toISOString();
+      const promosiBaru: Siswa[] = [];
       for (const g of args.groups) {
-        await promoteSiswaKenaikanKelas(
-          g.ids,
-          args.tahunBaru,
-          (g.nextTingkat || g.tingkat) as TingkatKelas,
-          g.status === 'Lulus' ? g.rombel : g.nextRombel.trim().toUpperCase(),
-          g.status,
-          args.tahunTutup // F1: tahun sesi yang ditutup → tahunLama riwayat
-        );
+        const nextRombel = g.status === 'Lulus' ? g.rombel : g.nextRombel.trim().toUpperCase();
+        for (const id of g.ids) {
+          const s = await getSiswaById(id); // F15(a): hanya baca
+          if (!s) continue;
+          const tingkatLama = getTingkatAktifSiswa(s);
+          const rombelLama = s.rombelSaatIni;
+          // F1: tahunLama = tahun sesi yang ditutup (eksplisit).
+          const tahunLama =
+            args.tahunTutup.trim() || getTahunAjaranTerakhirSiswa(s) || args.tahunBaru;
+          const riwayat: RiwayatTahunAjaran = {
+            id: `rth-${Date.now()}-${s.id}-${promosiBaru.length}`,
+            tahunAjaran: tahunLama,
+            tingkat: tingkatLama,
+            rombel: rombelLama,
+            statusAkhirTahun: g.status,
+            statusKenaikan: g.status,
+            catatan: `Kenaikan ke rombel ${nextRombel} TP ${args.tahunBaru}`,
+          };
+          promosiBaru.push({
+            ...s,
+            rombelSaatIni: g.status === 'Lulus' ? s.rombelSaatIni : nextRombel,
+            statusSiswa: g.status === 'Lulus' ? 'Lulus' : 'Aktif',
+            riwayatTahunAjaran: [...(s.riwayatTahunAjaran || []), riwayat],
+            updatedAt: nowIso,
+          });
+        }
       }
+      // F15(b): satu kali tulis; gagal → lempar, tahun tidak dikunci.
+      await saveSiswaBulk(promosiBaru);
 
       // 3. Kunci tahun + putar tahun aktif ke semester gasal tahun baru
       await saveTutupTahun({
@@ -971,6 +1005,31 @@ export default function App() {
     }
     startTopProgress();
     try {
+      // F8: tulis entri riwayat tahun ajaran berjalan (status 'Mutasi Keluar')
+      // agar riwayat tidak berlubang — mutasi keluar sebelumnya hanya mengisi
+      // tanggalKeluar/sekolahTujuan tanpa menyentuh riwayatTahunAjaran.
+      const taBerjalan = (sesiEfektif || sessionTahun || sekolah.tahunAjaran || '').trim();
+      const sudahTercatat = taBerjalan
+        ? (student.riwayatTahunAjaran || []).some(
+            (r) =>
+              r.tahunAjaran === taBerjalan &&
+              (r.statusAkhirTahun === 'Mutasi Keluar' || r.statusKenaikan === 'Mutasi Keluar')
+          )
+        : true; // tanpa tahun sesi yang jelas → jangan tulis entri tanpa tahun
+      const riwayatBaru: RiwayatTahunAjaran[] = sudahTercatat
+        ? student.riwayatTahunAjaran || []
+        : [
+            ...(student.riwayatTahunAjaran || []),
+            {
+              id: `rth-mutasi-${Date.now()}-${student.id}`,
+              tahunAjaran: taBerjalan,
+              tingkat: getTingkatAktifSiswa(student),
+              rombel: student.rombelSaatIni,
+              statusAkhirTahun: 'Mutasi Keluar',
+              statusKenaikan: 'Mutasi Keluar',
+              catatan: `Mutasi keluar ke ${dok.sekolahTujuan || '-'} (${dok.tanggalKeluar || '-'})`,
+            } as RiwayatTahunAjaran,
+          ];
       await saveSiswa({
         ...student,
         statusSiswa: 'Mutasi Keluar',
@@ -978,6 +1037,7 @@ export default function App() {
         sekolahTujuan: dok.sekolahTujuan,
         noSuratMutasi: dok.noSuratMutasi,
         alasanKeluar: dok.alasanKeluar,
+        riwayatTahunAjaran: riwayatBaru,
         updatedAt: new Date().toISOString(),
       });
       await loadData();
