@@ -6,6 +6,8 @@ import { rombelPadaTahun, siswaTerlibatTahun } from '../utils/sesi';
 import { KopSuratView } from './KopSuratView';
 import { unduhExcel } from '../utils/excel';
 import { toast } from '../utils/notify';
+import { barisMetaEkspor, keCsv, metaLaporan } from '../utils/laporan';
+import { MetaLaporanView } from './MetaLaporanView';
 
 interface RekapitulasiViewProps {
   siswa: Siswa[];
@@ -95,26 +97,68 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
     window.print();
   };
 
+  // Issue #7: metadata laporan (parameter, waktu pembuatan, sumber/periode)
+  // tercetak di rekap — sama seperti di Pusat Laporan.
+  const meta = metaLaporan({
+    judul: 'LAPORAN REKAPITULASI BUKU INDUK SISWA',
+    filter: { jenis: 'statistik', tahunAjaran: sesi || sekolah.tahunAjaran || 'semua', rombel: 'semua', status: 'Aktif' },
+    jumlahBaris: total,
+    sekolah,
+  });
+
+  /** CSV rekap per rombel (UTF-8 + BOM), isi sama dengan tabel pratinjau. */
+  const handleExportCsv = () => {
+    if (total === 0) {
+      toast('Tidak ada data rekap untuk diekspor.', 'warning');
+      return;
+    }
+    try {
+      const isi = [
+        [meta.judul],
+        ['Parameter', meta.parameter],
+        ['Dibuat', meta.dibuatPadaLabel],
+        ['Sumber', meta.sumber],
+        ['Periode', meta.periode],
+        [],
+        ['Rombel', 'Laki-laki (L)', 'Perempuan (P)', 'JK Belum Diisi (X)', 'Jumlah Total', 'Keterangan Fase'],
+        ...rombelList.map(([rombel, c]) => [`Rombel ${rombel}`, c.L, c.P, c.X, c.total, faseOfRombel(rombel)]),
+        ['TOTAL KESELURUHAN', rombelList.reduce((a, c) => a + c[1].L, 0), rombelList.reduce((a, c) => a + c[1].P, 0), rombelList.reduce((a, c) => a + c[1].X, 0), total, '100% Terdaftar'],
+      ];
+      const blob = new Blob([keCsv(isi)], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Rekap_${(sesi || sekolah.tahunAjaran || '').replace('/', '-')}_${sekolah.nama || jenjang}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast(`Rekapitulasi ${total} siswa diekspor ke CSV.`, 'success');
+    } catch (err: unknown) {
+      toast(`Gagal mengekspor CSV: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
+  };
+
   const handleExportExcel = async () => {
     if (total === 0) {
       toast('Tidak ada data rekap untuk diekspor.', 'warning');
       return;
     }
     try {
-      const judul = `REKAPITULASI BUKU INDUK — ${sekolah.nama || ''} — TA ${sesi || sekolah.tahunAjaran}`;
+      const metaBaris = barisMetaEkspor(meta);
       const sheetRombel = [
-        [judul], [],
+        ...metaBaris,
         ['Rombel', 'Laki-laki (L)', 'Perempuan (P)', 'JK Belum Diisi (X)', 'Jumlah Total', 'Keterangan Fase'],
         ...rombelList.map(([rombel, c]) => [`Rombel ${rombel}`, c.L, c.P, c.X, c.total, faseOfRombel(rombel)]),
         ['TOTAL KESELURUHAN', rombelList.reduce((a, c) => a + c[1].L, 0), rombelList.reduce((a, c) => a + c[1].P, 0), rombelList.reduce((a, c) => a + c[1].X, 0), total, '100% Terdaftar'],
       ];
       const sheetAgama = [
-        [judul], [],
+        ...metaBaris,
         ['Agama', 'Jumlah', 'Persentase'],
         ...Object.entries(agamaMap).map(([ag, count]) => [ag, count, `${total > 0 ? Math.round((count / total) * 100) : 0}%`]),
       ];
       const sheetJalur = [
-        [judul], [],
+        ...metaBaris,
         ['Jalur Penerimaan (PPDB)', 'Jumlah', 'Persentase'],
         ...Object.entries(jalurMap).map(([j, count]) => [j, count, `${total > 0 ? Math.round((count / total) * 100) : 0}%`]),
       ];
@@ -127,7 +171,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
         ['Kreatif', 'kreatif'],
       ];
       const sheetP5 = [
-        [judul], [],
+        ...metaBaris,
         ['Dimensi Karakter Pancasila', 'Sangat Berkembang (SB)', 'Sesuai Harapan (BSH)', 'Mulai Berkembang (MB)', 'Belum Berkembang (BB)'],
         ...dimensiNama.map(([nama, k]) => [nama, p5Dimensi[k].SB, p5Dimensi[k].BSH, p5Dimensi[k].MB, p5Dimensi[k].BB]),
       ];
@@ -179,6 +223,15 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
           <BarChart3 className="w-4 h-4" />
           Ekspor Excel
         </button>
+
+        <button
+          onClick={handleExportCsv}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-xl text-xs shadow-sm transition"
+          title="Ekspor rekap per rombel ke CSV (UTF-8 + BOM)"
+        >
+          <BarChart3 className="w-4 h-4" />
+          Ekspor CSV
+        </button>
       </div>
 
       {/* Main Printable Area */}
@@ -196,6 +249,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
             )}
           </p>
         </div>
+        <MetaLaporanView meta={meta} />
 
         {/* 1. Rekapitulasi per Rombel */}
         <div className="space-y-2">
