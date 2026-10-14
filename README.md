@@ -15,6 +15,11 @@ Server Node (`server.ts`) hanya menjadi perantara ke Web Service Dapodik lokal.
 - Nilai raport per semester + riwayat semester & kenaikan kelas multi-tahun
 - Cetak Lembar Buku Induk & Kartu Pelajar standar dinas
 - Rekapitulasi & dashboard statistik
+- **Pusat Laporan**: 6 laporan administratif siap cetak (Statistik, Daftar Siswa,
+  Mutasi Masuk/Keluar, Data Belum Lengkap, Temuan Validasi) dengan filter
+  tahun ajaran/rombel/status, metadata laporan (parameter, waktu pembuatan,
+  sumber/periode data) di setiap keluaran, dan ekspor Excel/CSV. PDF dibuat lewat
+  dialog cetak browser (Cetak → Save as PDF) — tidak ada generator PDF native.
 - Sinkronisasi Dapodik lokal (host/port/token terkonfigurasi) + mode simulasi
 - Multi-pengguna berbasis peran: `administrator` & `operator`
 - Cadangan lokal (JSON, opsional **terenkripsi password**) & Google Drive
