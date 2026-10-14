@@ -6,6 +6,7 @@ import { toast } from './notify';
 // Aman dari siklus impor: kedua modul hanya memakai binding satu sama lain
 // di dalam badan fungsi (tidak saat evaluasi modul).
 import { muatTombstoneLokal, simpanTombstoneLokal } from './tombstone';
+import { bolehImporEntriAudit } from './auditSanitasi';
 // Issue #10 — integritas (SHA-256), kompatibilitas & validasi struktur backup.
 import {
   BACKUP_FORMAT_VERSION,
@@ -1322,6 +1323,8 @@ export async function addAuditLog(entry: AuditLog): Promise<void> {
     const raw = localStorage.getItem(sk(LS_KEYS.AUDIT));
     const parsed = raw ? JSON.parse(raw) : [];
     const list: AuditLog[] = Array.isArray(parsed) ? parsed : [];
+    const idxLama = list.findIndex((l) => l && l.id === entry.id);
+    if (idxLama >= 0) list.splice(idxLama, 1);
     list.unshift(entry);
     localStorage.setItem(sk(LS_KEYS.AUDIT), JSON.stringify(list.slice(0, AUDIT_LS_MIRROR_MAX)));
   } catch {
@@ -1329,28 +1332,7 @@ export async function addAuditLog(entry: AuditLog): Promise<void> {
   }
 }
 
-export async function clearAuditLogs(): Promise<void> {
-  try {
-    const db = await openDB();
-    await new Promise<void>((resolve) => {
-      try {
-        const tx = db.transaction(STORES.AUDIT, 'readwrite');
-        const req = tx.objectStore(STORES.AUDIT).clear();
-        req.onsuccess = () => resolve();
-        req.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
-  } catch {
-    /* abaikan */
-  }
-  try {
-    localStorage.removeItem(sk(LS_KEYS.AUDIT));
-  } catch {
-    /* abaikan */
-  }
-}
+// Audit log append-only: tidak ada API penghapusan entri individual.
 
 // ---------------- CADANGAN OTOMATIS (snapshot di IndexedDB, maks 5) ----------------
 
@@ -2256,20 +2238,19 @@ export async function importBackupData(
 
     // D3: cegah profil/data sekolah lain menimpa sekolah aktif tanpa sadar.
     const npsnBackup = String(data.sekolah?.npsn || '').trim();
-    if (npsnBackup) {
-      let npsnAktif = '';
-      try {
-        npsnAktif = String((await getSekolahProfile())?.npsn || '').trim();
-      } catch {
-        /* profil tak terbaca — tak bisa memverifikasi, lewati cek */
-      }
-      if (npsnAktif && npsnBackup !== npsnAktif && !opts?.konfirmasiSekolahLain && !opts?.lewatiSnapshotPengaman) {
-        return tolak(
-          `Restore ditolak: file cadangan milik sekolah lain (NPSN ${npsnBackup}), ` +
-          `sedangkan sekolah aktif bernpsn ${npsnAktif}. ` +
-          `Centang "saya paham ini data sekolah lain" untuk melanjutkan.`
-        );
-      }
+    let npsnSekolahSebelumRestore = '';
+    try {
+      npsnSekolahSebelumRestore = String((await getSekolahProfile())?.npsn || '').trim();
+    } catch {
+      /* profil tak terbaca — hanya entri audit ber-sekolahId cocok yang dapat lolos */
+    }
+    if (npsnBackup && npsnSekolahSebelumRestore &&
+        npsnBackup !== npsnSekolahSebelumRestore && !opts?.konfirmasiSekolahLain && !opts?.lewatiSnapshotPengaman) {
+      return tolak(
+        `Restore ditolak: file cadangan milik sekolah lain (NPSN ${npsnBackup}), ` +
+        `sedangkan sekolah aktif bernpsn ${npsnSekolahSebelumRestore}. ` +
+        `Centang "saya paham ini data sekolah lain" untuk melanjutkan.`
+      );
     }
 
     // Issue #10 — FASE 2: snapshot pengaman kondisi saat ini SEBELUM mutasi.
@@ -2391,9 +2372,20 @@ export async function importBackupData(
     }
 
     if (data.audit && Array.isArray(data.audit)) {
+      const npsnAktifRestore = npsnSekolahSebelumRestore;
+      const sekolahIdAktif = getActiveSchoolId();
+      let auditDitolak = 0;
       for (const a of data.audit.slice(0, 500)) {
-        if (a && a.id && a.timestamp && a.aksi) await addAuditLog(a as AuditLog);
+        if (!a || !a.id || !a.timestamp || !a.aksi) continue;
+        if (!bolehImporEntriAudit(a as AuditLog, sekolahIdAktif, npsnBackup, npsnAktifRestore)) {
+          auditDitolak++;
+          continue;
+        }
+        await addAuditLog(a as AuditLog);
       }
+      if (auditDitolak > 0) peringatan.push(
+        `${auditDitolak} entri audit dari sekolah lain tidak diimpor (isolasi audit antar-sekolah).`
+      );
     }
 
     // D15(b): rekonsiliasi tombstone — record hasil restore yang masih punya

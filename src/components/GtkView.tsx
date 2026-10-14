@@ -22,6 +22,7 @@ import { PageControl } from './PageControl';
 import { toast, confirmDialog } from '../utils/notify';
 import { unduhExcel } from '../utils/excel';
 import { validateGtkInput } from '../utils/validation';
+import { catatAudit, diffAudit } from '../utils/audit';
 
 interface GtkViewProps {
   ptk: PtkRef[];
@@ -178,6 +179,10 @@ export const GtkView: React.FC<GtkViewProps> = ({ ptk, rombel, isAdmin, onOpenSy
     a.download = `GTK_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    catatAudit('dokumen_ekspor', {
+      entitas: 'dokumen',
+      ringkasan: `Ekspor daftar GTK ke CSV (${filtered.length} baris)`,
+    });
     toast(`Diekspor ${filtered.length} data GTK ke CSV.`, 'success');
   };
 
@@ -205,6 +210,10 @@ export const GtkView: React.FC<GtkViewProps> = ({ ptk, rombel, isAdmin, onOpenSy
       await unduhExcel(`GTK_${new Date().toISOString().slice(0, 10)}`, [
         { nama: 'GTK', baris: [header, ...rows] },
       ]);
+      catatAudit('dokumen_ekspor', {
+        entitas: 'dokumen',
+        ringkasan: `Ekspor daftar GTK ke Excel (${filtered.length} baris)`,
+      });
       toast(`Diekspor ${filtered.length} data GTK ke Excel.`, 'success');
     } catch (err: unknown) {
       toast(`Gagal mengekspor Excel: ${err instanceof Error ? err.message : String(err)}`, 'error');
@@ -219,6 +228,13 @@ export const GtkView: React.FC<GtkViewProps> = ({ ptk, rombel, isAdmin, onOpenSy
       // D7: catat hapus agar dirambatkan ke cloud (tanpa ini data terhapus
       // "hidup lagi" dari salinan cloud).
       catatHapusCloud('ptk', p.id);
+      catatAudit('gtk_ubah', {
+        entitas: 'gtk',
+        entitasId: p.id,
+        ringkasan: `Hapus GTK "${p.nama}"`,
+        sebelum: { nama: p.nama, jenisPtk: p.jenisPtk || '' },
+        sesudah: {},
+      });
       toast(`Data GTK "${p.nama}" berhasil dihapus.`, 'success');
       if (detail?.id === p.id) setDetail(null);
       onDataChanged();
@@ -237,7 +253,22 @@ export const GtkView: React.FC<GtkViewProps> = ({ ptk, rombel, isAdmin, onOpenSy
     }
     setSaving(true);
     try {
-      await savePtkRef({ ...editing, nama: editing.nama.trim().toUpperCase() });
+      const prevGtk = (ptk || []).find((x) => x.id === editing.id);
+      const tersimpan = { ...editing, nama: editing.nama.trim().toUpperCase() };
+      await savePtkRef(tersimpan);
+      const diffGtk = diffAudit(prevGtk, tersimpan, [
+        'jenisPtk',
+        'statusKepegawaian',
+        'mapelAjar',
+        'tugasTambahan',
+        'jenisKelamin',
+      ]);
+      catatAudit('gtk_ubah', {
+        entitas: 'gtk',
+        entitasId: tersimpan.id,
+        ringkasan: `${prevGtk ? 'Ubah' : 'Tambah'} GTK "${tersimpan.nama}"`,
+        ...(diffGtk || {}),
+      });
       toast(`Data GTK "${editing.nama}" tersimpan.`, 'success');
       setEditing(null);
       onDataChanged();
