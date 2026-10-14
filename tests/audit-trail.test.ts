@@ -206,7 +206,7 @@ describe('isolasi antar-sekolah saat restore', () => {
         entitas: 'sesi',
         ringkasan: 'log lama sekolah sumber',
       }],
-    }), { konfirmasiSekolahLain: true });
+    }), { konfirmasiSekolahLain: true, lewatiSnapshotPengaman: true });
     assert.equal(result.success, true);
     assert.equal((await getSekolahProfile()).npsn, '999');
     const logs = await getAuditLogs(100);
