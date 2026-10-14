@@ -197,6 +197,8 @@ describe('isolasi antar-sekolah saat restore', () => {
   it('menolak audit lawas sekolah sumber saat restore mengganti profil NPSN tujuan', async () => {
     await saveSekolahProfile({ npsn: '123' } as never);
     const result = await importBackupData(JSON.stringify({
+      app: 'Buku Induk Siswa Kurikulum Merdeka',
+      version: '1.3.0',
       sekolah: { npsn: '999' },
       siswa: [],
       audit: [{
