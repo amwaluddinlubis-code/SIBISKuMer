@@ -39,14 +39,15 @@ IndexedDB per laptop; sinkron antar-laptop via Sinkron Cloud (§4b), bukan via e
 
 | Kemampuan | Administrator | Operator (rombongan X) |
 |-----------|:---:|:---:|
-| Dasbor Operasional, Master Siswa, Nilai Raport, Rekap, Pusat Laporan, Cetak, Referensi + GTK (lihat; GTK manual hanya admin) | ✅ semua rombel | ✅ hanya rombel X |
+| Dasbor Operasional, Master Siswa, Nilai Raport, Rekap, Cetak, Referensi + GTK (lihat; GTK manual hanya admin) | ✅ semua rombel | ✅ hanya rombel X |
 | Tambah/ubah/hapus siswa + wizard mutasi masuk/keluar + leger nilai | ✅ | ✅ hanya rombel X (`canUserAccessRombel`) |
+| Impor Excel/CSV siswa (pemetaan + pratinjau + rekonsiliasi) | ✅ semua rombel | ✅ hanya rombel X (baris di luar kewenangan dilewati) |
 | Sinkron Dapodik, Profil Sekolah, Backup, Manajemen Pengguna, Pemetaan Kelas, Tutup Tahun, Tema Tampilan, Log Audit | ✅ (via dropdown pengguna topbar) | ❌ (notice `AccessDeniedNotice` + redirect Dasbor) |
 | Arsip tahun ajaran (lihat roster terkunci) | ✅ | ✅ (sebatas rombel kewenangan) |
 | Impersonate (lihat sebagai operator) | ✅ | ❌ |
 | Ganti password sendiri (dropdown topbar) | ✅ | ✅ |
 
-Sidebar memuat 10 menu utama (`dasbor, siswa, raport, leger, rekap, laporan, cetak,
+Sidebar memuat 9 menu utama (`dasbor, siswa, raport, leger, rekap, cetak,
 referensi, gtk, arsip`); 6 menu admin disembunyikan dari sidebar dan hanya ada di
 dropdown pengguna (`src/components/Navbar.tsx : adminMenu`).
 
@@ -57,20 +58,88 @@ Akun bawaan (seed `src/data/initialData.ts : initialUsersList`):
 Password tersimpan sebagai hash (bukan plaintext); 5x salah login mengunci akun
 15 menit per database — tercatat di tab **Log Audit** (khusus administrator).
 
+## 3a. Panduan Dasbor Pusat Kendali (Issue #2)
+
+Tab **Dasbor** menampilkan angka dari data nyata dalam kewenangan Anda
+(`visibleSiswa`: sudah terpotong rombel akses + sesi) — bukan angka contoh.
+
+- **Filter Dasbor** (tahun ajaran / rombel / status) mempersempit SEMUA kartu
+  dasbor. Rentang tanggal di widget **Arus Siswa** hanya membatasi arus
+  penerimaan/keluar (berdasarkan tanggal diterima/keluar), bukan roster.
+- **Setiap angka dapat dibuka**: klik angka/kartu untuk membuka daftar data
+  sumber pembentuknya di Master Siswa (atau Nilai Raport untuk raport).
+  Daftar tujuan memakai predikat yang sama dengan angka dasbor.
+- **Antrean Tugas**: data wajib kosong, data tidak valid, dokumen belum
+  lengkap, belum ditempatkan ke rombel, raport semester berjalan belum ada,
+  mutasi keluar tanpa surat. Satu siswa bisa muncul di beberapa tugas.
+- **Tenggat & Kewajiban**: backup kedaluwarsa/belum pernah + kewajiban
+  raport berjalan. Aplikasi belum menyimpan tanggal tenggat laporan, jadi
+  widget ini sengaja TIDAK menampilkan tanggal tenggat karangan.
+- **Batasan**: aplikasi tidak punya antrean persetujuan mutasi (MutasiWizard
+  langsung mengubah status). "Mutasi keluar tanpa surat" adalah tindak
+  lanjut dokumen, bukan antrean persetujuan.
+
 ## 4. SOP Backup & Restore
+
+### 4.0 Cakupan data yang dicadangkan (tegas)
+
+Satu file backup JSON (`BackupPayload` v`1.3.0`) berisi **seluruh database
+sekolah aktif**: profil sekolah, siswa (termasuk foto `fotoUrl`/`fotoMini`
+yang tersimpan di record), nilai raport, riwayat, akun pengguna (password
+dalam bentuk hash), referensi rombel, PTK, tutup tahun, peta kelas, log
+sinkron, dan log audit (maks 500 entri terbaru). Server `server.ts` bersifat
+stateless (hanya proxy Dapodik + penyaji file statis) — tidak ada data yang
+dicadangkan dari server; yang dicadangkan adalah IndexedDB per-DB sekolah
+aktif di browser/perangkat.
+
+**Yang TIDAK ikut backup:** token Web Service Dapodik (dieksklusi saat ekspor
+— masukkan ulang setelah restore), snapshot auto-backup itu sendiri,
+tombstone sinkron cloud, sesi login, dan pengaturan per-mesin (koneksi
+Dapodik, PIN cloud). File backup berlaku per-DB aktif — untuk multi-sekolah,
+backup tiap sekolah secara terpisah.
+
+### 4.1 Membuat backup
 
 1. **Otomatis (penjadwal):** aktif bawaan tiap 60 menit (diubah di tab Backup →
    Cadangan Otomatis: 15/30/60/120/240/mati); 5 snapshot terbaru tersimpan di
    perangkat dan dapat diunduh/dipulihkan/dihapus per snapshot. Snapshot hanya
-   dibuat bila database berisi siswa.
+   dibuat bila database berisi siswa. Setiap snapshot membawa blok integritas
+   (lihat §4.3).
 2. **Rutin (mingguan):** Backup → unduh JSON (`Backup_BukuInduk_<sekolah>_<tgl>.json`);
-   simpan 2 salinan (laptop TU + flashdisk/Drive).
-3. **Restore:** Backup → pilih file → pratinjau (nama sekolah, NPSN berkas vs aktif,
-   jumlah siswa) → pilih mode **Gabung** (tambah/upsert, bawaan) atau **Ganti total**
-   (hapus dulu seluruh data sekolah aktif, lalu restore) → bila NPSN berkas ≠ NPSN
-   sekolah aktif, wajib centang "Saya paham file ini berisi data sekolah lain" →
-   konfirmasi → tunggu status (ditolak/digabung/diganti + alasan) → verifikasi jumlah
-   siswa. File invalid atau NPSN beda tanpa konfirmasi ditolak otomatis.
+   simpan 2 salinan (laptop TU + flashdisk/Drive). Periksa file hasil unduh:
+   ukuran > 0 dan dapat dibuka sebagai JSON; bila unduhan terpotong, file
+   akan ditolak saat restore (checksum tidak cocok) — unduh ulang.
+3. **Penyimpanan aman:** file backup berisi data pribadi siswa + hash password
+   akun — simpan di media milik sekolah, jangan dibagikan lewat chat/medsos,
+   jangan diberi nama yang memuat data siswa. File di Google Drive hanya
+   terbaca oleh akun Google yang mengunggahnya (scope `drive.file`). Bila
+   file pernah terekspos ke pihak tak dipercaya, anggap bocor: ganti password
+   semua akun setelah restore di perangkat aman, dan buat backup baru.
+
+### 4.2 Restore
+
+1. Backup → pilih file → **pratinjau** (nama sekolah, NPSN berkas vs aktif,
+   jumlah siswa, **status integritas**: checksum SHA-256 terverifikasi ATAU
+   peringatan "backup lama tanpa checksum") → pilih mode **Gabung**
+   (tambah/upsert, bawaan) atau **Ganti total** (hapus dulu seluruh data
+   sekolah aktif, lalu restore) → bila NPSN berkas ≠ NPSN sekolah aktif,
+   wajib centang "Saya paham file ini berisi data sekolah lain" → konfirmasi
+   → tunggu status + **laporan verifikasi** (jumlah siswa diharapkan vs aktual,
+   profil cocok) → verifikasi jumlah siswa.
+2. **Sebelum restore, kondisi saat ini otomatis disimpan sebagai snapshot
+   pengaman** (label "Pengaman restore" di daftar snapshot, tidak pernah
+   digusur pruning snapshot otomatis; hanya pengaman terbaru yang
+   dipertahankan). Bila restore gagal — baik saat tulis maupun saat
+   verifikasi — aplikasi **rollback otomatis** ke snapshot pengaman dan
+   melaporkan hasilnya. Bila rollback otomatis juga gagal, pulihkan manual:
+   pilih snapshot berlabel "Pengaman restore" → Pulihkan.
+3. **File ditolak (tidak ada mutasi apa pun)** bila: bukan JSON valid, bukan
+   cadangan SIBISKuMer, versi format lebih baru dari aplikasi, struktur
+   tidak valid (mis. tanpa array siswa, id/username ganda), checksum SHA-256
+   tidak cocok (file rusak/terpotong/diubah), NPSN beda tanpa konfirmasi,
+   atau snapshot pengaman gagal dibuat. Pesan penolakan menyebutkan alasan
+   spesifiknya. File terenkripsi (envelope password) saat ini ditolak dengan
+   pesan jelas — pemulihan file terenkripsi belum didukung di tab ini.
 4. **Awal tahun ajaran (ritme Dapodik — urutan baku):** (a) backup penuh;
    (b) buka tab **Arsip → Tutup Tahun Ajaran**: susun rencana (Lulus/Naik/Tinggal
    per rombel, target terisi otomatis) → tutup, promosikan & kunci → tahun aktif
@@ -78,8 +147,40 @@ Password tersimpan sebagai hash (bukan plaintext); 5x salah login mengunci akun
    (d) **baru** Sinkron Dapodik untuk murid baru (lulusan tak muncul di Dapodik dan
    tak tersentuh arsip). Promosi manual susulan di Nilai Raport melewati siswa
    yang tahun terakhirnya terkunci.
-4. **Reset contoh / kosongkan DB** hanya oleh administrator dan selalu dengan dialog
+5. **Reset contoh / kosongkan DB** hanya oleh administrator dan selalu dengan dialog
    konfirmasi danger; kosongkan DB bersifat permanen. Semua aksi tercatat di Log Audit.
+
+### 4.3 Integritas & verifikasi (Issue #10)
+
+Setiap backup baru membawa blok `integritas`: `{ algoritma: 'SHA-256',
+checksum, jumlah, dibuatPada }`. Checksum = SHA-256 atas isi payload tanpa
+blok integritas (kanonik: kunci terurut), sehingga perubahan satu byte pun
+terdeteksi. Saat restore: (1) pratinjau memverifikasi checksum + jumlah
+tercatat vs isi file; (2) setelah tulis, aplikasi membaca ulang database dan
+memverifikasi jumlah siswa, kehadiran semua id yang diharapkan, dan
+kecocokan profil sekolah — hasilnya ditampilkan di panel "Laporan Pemulihan
+Terakhir". Backup lama tanpa blok integritas tetap dapat dipulihkan
+(kompatibel ke belakang) tetapi ditandai peringatan "tanpa checksum".
+
+### 4d. Uji pemulihan berkala (wajib tiap awal semester, disarankan bulanan)
+
+Jangan percaya backup yang belum pernah diuji dipulihkan. Prosedur uji
+(±10 menit, di profil browser / perangkat uji — JANGAN di database produksi):
+
+1. Unduh backup terbaru dari perangkat produksi (atau salin file backup).
+2. Di perangkat/profil uji: buka aplikasi → tab Backup → pilih file →
+   pastikan pratinjau menampilkan "Integritas terverifikasi" → restore mode
+   **Ganti total** → tunggu laporan verifikasi.
+3. Bandingkan: jumlah siswa hasil verifikasi = jumlah di produksi; buka 2–3
+   siswa acak (nama, NISN, rombel, nilai raport) dan cocokkan dengan produksi;
+   cek profil sekolah (NPSN) cocok.
+4. Bila gagal (checksum tidak cocok / verifikasi gagal): backup tersebut
+   TIDAK SAH — buat backup baru, unduh ulang, ulangi uji. Catat hasil uji
+   (tanggal, file, jumlah siswa, berhasil/gagal) di Log Audit perangkat uji
+   atau buku agenda TU.
+5. Bila uji di perangkat produksi tidak dapat dihindari, lakukan SETELAH
+   backup terbaru dibuat — snapshot pengaman akan melindungi kondisi saat ini
+   bila restore uji bermasalah.
 
 ## 4a. SOP Mutasi & Leger
 
@@ -91,35 +192,6 @@ Password tersimpan sebagai hash (bukan plaintext); 5x salah login mengunci akun
    data lain via Edit.
 3. **Leger:** tab Leger Nilai → pilih tahun + semester + tingkat/rombel → periksa
    rata-rata & peringkat → Ekspor CSV / Cetak. Nilai <70 ditandai merah.
-
-## 4a2. SOP Pusat Laporan
-
-1. **Buka:** sidebar **Pusat Laporan** (semua peran; operator hanya melihat rombel
-   kewenangannya — data rombel lain tidak tampil maupun terekspos).
-2. **Pilih jenis laporan:** Statistik Siswa, Daftar Siswa, Mutasi Masuk, Mutasi
-   Keluar, Data Belum Lengkap, atau Temuan Validasi.
-3. **Atur filter:** tahun ajaran (periode), kelas/rombel, status siswa. Pratinjau
-   memperlihatkan persis isi yang akan dicetak/diekspor untuk filter itu.
-4. **Periksa metadata:** setiap laporan mencantumkan parameter filter, waktu
-   pembuatan, sumber data (nama + NPSN sekolah), dan periode — di pratinjau,
-   cetakan, maupun file Excel/CSV.
-5. **Keluarkan:** **Cetak / PDF** → dialog cetak browser → pilih *Save as PDF*
-   untuk PDF (aplikasi tidak punya generator PDF native); **Ekspor Excel**
-   (`.xlsx`) atau **Ekspor CSV** (UTF-8 + BOM, aman dibuka di Excel/LibreOffice).
-   Tombol ekspor nonaktif bila 0 baris.
-6. **Audit:** setiap ekspor tercatat di tab **Log Audit** (admin) sebagai
-   `laporan_ekspor` beserta jenis, format, jumlah baris, dan parameter filter.
-7. **Privasi:** laporan sengaja TIDAK memuat NIK, No. KK, alamat lengkap, atau
-   nomor telepon — hanya nama + NISN/NIPD + rombel. Jangan menempel data
-   sensitif ke laporan secara manual.
-8. **Perbedaan dengan Rekapitulasi:** Rekapitulasi (tab tersendiri) kohortnya
-   selalu siswa Aktif. Di Pusat Laporan, filter status “Semua status” pada jenis
-   Statistik ikut menghitung siswa non-Aktif — bila ingin angka dinas, pakai
-   status **Aktif** (bawaan).
-9. **Data Belum Lengkap vs Temuan Validasi:** Belum Lengkap = field kosong yang
-   perlu dilengkapi TU; Temuan Validasi = Belum Lengkap + format salah + duplikat
-   (NISN/NIK/NIPD) + logika tanggal. Perbaiki di Master Siswa, lalu buka ulang
-   laporan untuk verifikasi.
 
 ## 4b. SOP Sinkron Cloud Antar-Perangkat (Firebase gratis, tanpa kartu kredit)
 **Disiapkan sekali oleh administrator (di console.firebase.google.com,
@@ -154,6 +226,40 @@ project sesuai `firebase-applet-config.json`):**
 5. Sinkron Dapodik: Terapkan diblokir bila sesi di bawah tahun aktif database
    (preview & tes koneksi tetap boleh). Pindah sesi tercatat di Log Audit.
 
+## 4e. SOP Pemeriksa Data (Issue #3)
+
+Tab **Pemeriksa Data** (semua peran; operator hanya melihat temuan rombelnya
+karena daftar yang diperiksa adalah `visibleSiswa` yang sudah terfilter hak
+akses). Alur kerja:
+
+1. **Pindai:** buka tab — temuan dihitung dari data saat ini tiap render
+   (tidak ada data turunan yang bisa basi). Ringkasan menampilkan total per
+   prioritas dan per status penanganan.
+2. **Tinjau:** filter per prioritas/kategori/status + cari nama/NISN/judul.
+   Tiap temuan menampilkan prioritas, alasan, sumber (`data lokal`), dan
+   siswa yang terlibat.
+3. **Perbaiki:** tombol "Perbaiki di formulir" membuka formulir siswa
+   bersangkutan (atau "Perbaiki record kedua" untuk pasangan duplikat).
+   Perbaikan dilakukan lewat jalur simpan normal — termasuk validasi
+   `validateIdentitasSiswa` dan kunci field tetap Dapodik.
+4. **Tandai:** setelah diperbaiki, tandai "Diperbaiki" — atau "Abaikan…"
+   dengan **alasan wajib** (mis. "Nama kembar, sudah dikonfirmasi berbeda").
+   Temuan yang sudah tidak muncul pada pemindaian berikutnya berarti datanya
+   sudah benar (temuan hilang = teratasi).
+5. **Aturan:** panel "Lihat & atur aturan" mengaktifkan/menonaktifkan
+   aturan per sekolah aktif (tersimpan di perangkat ini). Daftar aturan
+   lengkap ada di `docs/03-model-data.md` §4a.
+6. **Pratinjau impor:** unggah CSV (`nisn,nama,tanggalLahir,rombel,nik`)
+   untuk melihat status tiap baris — baru / sama / berbeda / konflik /
+   tanpa-kunci — **tanpa mengubah data**. Baris konflik (NIK milik siswa
+   lain) tidak boleh diterapkan tanpa tinjauan manual; penerapan tetap
+   satu per satu lewat formulir. Untuk perbedaan Dapodik, pakai tab
+   Sinkron Dapodik (pratinjau baru/berbeda/sama + konflik NISN) — lihat §5.
+
+Privasi: status penanganan temuan hanya menyimpan ID temuan + status +
+alasan di localStorage; tidak ada nama/NISN/NIK siswa di dalamnya, dan
+temuan tidak pernah ditulis ke log apa pun.
+
 ## 5. SOP Sinkron Dapodik
 
 1. Pastikan aplikasi Dapodik desktop berjalan dan Web Service aktif (default `:5774`).
@@ -167,12 +273,67 @@ project sesuai `firebase-applet-config.json`):**
      meminta konfirmasi eksplisit sebelum mengubah (bawaan: tidak diubah).
 5. Bila respons kosong untuk rombel/PTK, coba alias method (`getGtk` ↔ `getPTK`) via `wsMethod`.
 
+## 5b. SOP Impor Excel/CSV Siswa (alternatif Dapodik offline, Issue #11)
+
+Tombol **Impor Excel/CSV** di toolbar Master Siswa (administrator + operator).
+Alur: Pilih berkas → Pemetaan kolom → Pratinjau & rekonsiliasi → Konfirmasi → Hasil.
+
+1. **Template:** unduh Template CSV / Excel (.xlsx, sheet Template + Panduan) dari
+   langkah 1, atau salin `docs/contoh-impor-siswa.csv` (2 baris contoh fiktif).
+   Baris pertama WAJIB header. Field wajib: **Nama Lengkap, NISN, Rombel Saat Ini**.
+2. **Batasan berkas:** hanya `.csv` / `.xlsx`, maks **5 MB**, maks **2000 baris**
+   per berkas (bagi berkas bila lebih). CSV harus **UTF-8** (Excel: Save As →
+   CSV UTF-8), delimiter `;` atau `,` (terdeteksi otomatis). Excel: hanya sheet
+   pertama yang dibaca.
+3. **Pemetaan:** header dikenali otomatis dari label/alias (cth. `Nama`, `Rombel`,
+   `NIK Ayah`). Kolom yang tidak dikenal ditandai **kolom asing** — petakan
+   manual ke field yang dikenal atau biarkan "Abaikan". Dua kolom tidak boleh
+   memetakan ke field yang sama.
+4. **Validasi per baris:** NISN 10 digit, NIK/No.KK 16 digit bila diisi,
+   enum (jenis kelamin, agama, jalur, status, dst.), angka, tanggal, format
+   rombel (`7A`). Duplikat NISN/NIK/NIPD **di dalam berkas** ditandai error.
+   Tanggal diterima: `YYYY-MM-DD` (juga diterima `DD/MM/YYYY`, `DD-MM-YYYY`,
+   dan tanggal Excel). Tahun 2 digit ditolak.
+5. **Rekonsiliasi:** tiap baris diklasifikasikan `baru` / `sama` / `beda` /
+   `konflik` / `error` / `ditolak-akses`. Pencocokan: NISN → NIK → NIPD.
+   Bila NISN menunjuk siswa A tetapi NIK menunjuk siswa B = **konflik**,
+   baris dilewati (perbaiki kunci identitas, impor ulang baris itu).
+   Baris `beda` menampilkan perbedaan lama → baru; default **lewati**
+   (tidak ada penggabungan otomatis). Pengguna memilih massal (lewati /
+   perbarui semua yang berbeda) + override per baris, lalu mencentang
+   persetujuan. **Sel kosong pada baris perbarui = "tidak diubah"** — tidak
+   pernah mengosongkan data lama.
+6. **Hak akses:** operator hanya dapat menambah/mengubah siswa pada rombel
+   dalam `rombelAkses`-nya (`canUserAccessRombel`). Baris di luar kewenangan
+   dilewati dan nilai lamanya tidak ditampilkan di pratinjau.
+7. **Keamanan penerapan:** sebelum tulis dibuat **snapshot pengaman**
+   (auto-backup; dapat dipulihkan dari menu Backup). Tulis memakai satu
+   transaksi (`saveSiswaBulk`) — bila gagal, tidak ada data yang berubah.
+   Tercatat di Log Audit sebagai `impor_siswa` (hanya hitungan, tanpa data
+   siswa). Siswa baru hasil impor memiliki P5/ekskul/prestasi/riwayat KOSONG
+   (tidak dibuatkan data karangan) — lengkapi lewat form/raport seperti biasa.
+8. **Cegah unggah ulang:** sidik jari (SHA-256) berkas yang sudah diterapkan
+   disimpan per database (maks 50 catatan, kunci `bukuinduk_impor_sidik`).
+   Mengunggah berkas yang sama lagi menampilkan peringatan + wajib mencentang
+   "impor ulang" untuk melanjutkan.
+9. **Laporan error:** tombol "Unduh Laporan Error (.csv)" berisi baris
+   konflik / error / di luar kewenangan beserta alasannya — perbaiki di
+   berkas, lalu impor ulang (baris yang sudah masuk akan terklasifikasi
+   `sama` / `beda`, tidak ganda).
+10. **Batasan jujur — otorisasi:** aplikasi ini offline-first tanpa backend,
+    sehingga tidak ada "otorisasi server" dalam arti server memvalidasi
+    tiap tulis. Penegakan impor dilakukan di lapisan aplikasi (UI +
+    rekonsiliasi + tulis), sama seperti seluruh penegakan peran yang sudah
+    ada (`canUserAccessRombel`, `filterSiswaByAccess`). Jangan anggap berkas
+    impor sebagai jalur yang melewati hak akses — ia memakai aturan yang
+    sama dengan input manual.
+
 ## 5a. Multi-Sekolah (satu laptop, banyak DB) — khusus Administrator
 
 Registry di `bukuinduk_schools` / `bukuinduk_active_school` (localStorage).
 Instalasi lama otomatis diadopsi sebagai sekolah pertama (`ensureSchoolsInit` di
-`src/main.tsx`). Backup/restore JSON (`BackupPayload` v`1.1.0`) berlaku per-DB
-aktif. SOP:
+`src/main.tsx`). Backup/restore JSON (`BackupPayload` v`1.3.0`, dengan blok
+integritas SHA-256 — lihat §4.3) berlaku per-DB aktif. SOP:
 
 1. **Beralih:** pemilih di topbar / sidebar / kartu Profil Sekolah → pilih sekolah
    → tab kembali ke Dasbor; sesi dipertahankan bila username sama aktif di DB
@@ -191,7 +352,7 @@ aktif. SOP:
 |--------|---------------|----------|
 | `Dapodik menolak ... pastikan token/IP ... restart` | Token/IP belum terdaftar | Daftarkan ulang di Dapodik, restart, tes lagi |
 | Respons tanpa JSON / method tak dikenal | Versi Dapodik beda | Coba alias `wsMethod`, pakai simulasi/impor |
-| Data tidak tampil setelah restore | File bukan backup valid | Pastikan ada array `siswa`; lihat pesan error |
+| Data tidak tampil setelah restore | File bukan backup valid | Lihat pesan error spesifik (checksum tidak cocok / versi tidak didukung / NPSN beda); file rusak → unduh ulang backup; verifikasi di panel "Laporan Pemulihan Terakhir" |
 | Layar panel kosong + tombol Coba Lagi | Crash render terisolasi | Klik Coba Lagi; lapor pesan error ke admin |
 | Akun dikunci ±15 menit | 5x salah kata sandi | Tunggu masa kunci habis; reset via admin (Reset Kata Sandi) bila mendesak |
 | PWA tidak terinstal | Ikon/service worker | Gunakan `PWAInstallButton`; pastikan akses via HTTPS/localhost |
@@ -218,10 +379,6 @@ aktif. SOP:
   tersimpan plaintext di perangkat — jangan bagikan file profil/DB mentah.
 - **Rekapitulasi**: hanya siswa Aktif yang dihitung; jenis kelamin kosong masuk
   kolom "Belum Diisi" (tidak lagi dihitung Perempuan).
-- **Pusat Laporan**: ekspor membaca hanya data tersaring hak rombel pemakai;
-  laporan tidak memuat NIK, No. KK, alamat lengkap, atau nomor telepon; setiap
-  ekspor tercatat di Log Audit (`laporan_ekspor`). PDF dibuat lewat dialog
-  cetak browser (Save as PDF) — tidak ada generator PDF native.
 - **Nilai kosong = "belum dinilai"** (null), bukan 0; rata-rata memakai pembulatan
   tunggal 1 desimal di simpan/cetak/ekspor.
 - **Keputusan "Lulus" di raport** meminta konfirmasi lalu mengubah status siswa +
