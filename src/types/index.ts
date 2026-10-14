@@ -298,6 +298,23 @@ export interface KopSurat {
   ukuranNama: KopUkuranNama;
 }
 
+// ---------------- PENOMORAN DOKUMEN SURAT (Issue #4) ----------------
+// Aturan penomoran per template surat, dikonfigurasi sekolah di Generator
+// Dokumen (khusus administrator). Nomor TIDAK PERNAH dikarang: berasal dari
+// pola + nomorTerakhir ini, atau ditulis manual oleh operator.
+
+/** ID template surat — definisi template lengkap di src/utils/suratDokumen.ts. */
+export type TemplateSuratId = 'keterangan-aktif' | 'pindah-keluar' | 'panggilan-ortu' | 'daftar-rombel';
+
+export interface PenomoranTemplate {
+  /** Pola nomor, placeholder {no} {no3} {bulan} {bulanRomawi} {tahun}. */
+  pola: string;
+  /** Nomor urut terakhir yang dipakai; saran berikutnya = +1. */
+  nomorTerakhir: number;
+}
+
+export type PenomoranDokumen = Partial<Record<TemplateSuratId, PenomoranTemplate>>;
+
 // ---------------- TEMA TAMPILAN ----------------
 // Aksen biru untuk SMP, maroon untuk SD. Otomatis mengikuti jenjang,
 // dapat dikunci manual. Hanya administrator yang dapat mengubah.
@@ -338,6 +355,8 @@ export interface SekolahProfile {  nama: string;
   syncSource?: string;
   /** Pengaturan kop surat cetakan (lembar induk, raport, rekap). */
   kop?: KopSurat;
+  /** Aturan penomoran dokumen surat per template (Issue #4). */
+  penomoran?: PenomoranDokumen;
   /** Tema warna tampilan (khusus administrator). */
   tema?: TemaKustom;
 }
