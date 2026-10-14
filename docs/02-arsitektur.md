@@ -134,6 +134,16 @@ Dapodik (murid baru masuk; lulusan tak muncul di Dapodik dan tak tersentuh:
 converter tak mengubah `statusSiswa`/rombel-tebakan; flag `arsip` menandai
 baris cocok non-Aktif di preview).
 
+**5.7 Generator Dokumen (Issue #4):** `GeneratorDokumen` (tab `dokumen`) hanya
+menerima `visibleSiswa` (sudah terpotong hak rombel + sesi) → pilih template →
+`bangunDokumenSurat` (modul murni `src/utils/suratDokumen.ts`: template,
+penomoran, validasi, builder isi) → pratinjau langsung (field wajib kosong
+= `[BELUM DIISI]` + cetak/ekspor diblokir) → cetak (`window.print`, lembar
+`.print-sheet`) / ekspor Word (`unduhSuratWord`, `docx` lazy-load) / Excel
+(`unduhDaftarRombelExcel`, khusus daftar rombel). Penomoran: pola +
+`nomorTerakhir` dari `SekolahProfile.penomoran` (khusus administrator) atau
+nomor manual operator; tanpa nomor karangan & tanpa tanda tangan karangan.
+
 ## 6. Keputusan Arsitektur (ADR ringkas)
 
 | ID | Keputusan | Alasan | Konsekuensi |
