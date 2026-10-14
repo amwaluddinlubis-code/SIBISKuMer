@@ -143,6 +143,8 @@ const LS_KEYS = {
   LOCKOUT: 'bukuinduk_login_lock',
   AUTOBACKUP_CFG: 'bukuinduk_autobackup_cfg',
   TOMBSTONE: 'bukuinduk_tombstone',
+  /** Sidik jari (SHA-256) berkas impor Excel/CSV yang sudah diterapkan (Issue #11). */
+  IMPOR_SIDIK: 'bukuinduk_impor_sidik',
   CLOUDSYNC: 'bukuinduk_cloudsync',
   SCHOOLS: 'bukuinduk_schools',
   ACTIVE_SCHOOL: 'bukuinduk_active_school',
