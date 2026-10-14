@@ -23,6 +23,7 @@ import {
   Archive,
   LayoutGrid,
   ScrollText,
+  ShieldCheck,
   Table,
   FileText,
   Sun,
@@ -111,6 +112,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'referensi', label: 'Data Referensi', icon: Layers, badge: undefined },
     { id: 'gtk', label: 'Data GTK', icon: Contact, badge: undefined },
     { id: 'arsip', label: 'Arsip Tahun Ajaran', icon: Archive, badge: undefined },
+    { id: 'pemeriksa', label: 'Pemeriksa Data', icon: ShieldCheck, badge: undefined },
   ];
 
   // Menu admin hanya lewat dropdown pengguna di topbar (tidak di sidebar)
