@@ -35,6 +35,7 @@ Relasi bersifat logis (tanpa foreign key DB): `RaportSemester.siswaId → Siswa.
 | `ptk` | `id` | `nama`, `nip` | `PtkRef[]` |
 | `tutup_tahun` | `tahunAjaran` | — | `TutupTahunAjaran[]` (arsip terkunci per tahun) |
 | `peta_kelas` | `id` | `tahunAjaran`, `rombel` | `PetaKelas[]` (rombel resmi per tahun) |
+| `audit_logs` | `id` | `timestamp`, `aksi` | `AuditLog[]` — append-only, maks 2000 entri terbaru (lihat §3.9) |
 
 Fallback: `localStorage` kunci `bukuinduk_*` (siswa, sekolah, config, logs, users, rombel,
 ptk, current_user, impersonate_from) + registry `bukuinduk_schools` /
@@ -135,8 +136,9 @@ raport, rekapitulasi (logo kartu pelajar ikut logo kiri bila ada).
 
 ### 3.6 Format backup (`BackupPayload`, versi `1.3.0`)
 
-`{ app, version, exportedAt, sekolah, dapodikConfig, siswa[], syncLogs[], users?[], rombel?[], ptk?[], tutupTahun?[], petaKelas?[] }`.
-Restore menolak payload tanpa array `siswa` yang valid; `tutupTahun`/`petaKelas` opsional (backup lama tetap terbaca).
+`{ app, version, exportedAt, sekolah, dapodikConfig, siswa[], syncLogs[], users?[], rombel?[], ptk?[], tutupTahun?[], petaKelas?[], audit?[] }`.
+Restore menolak payload tanpa array `siswa` yang valid; `tutupTahun`/`petaKelas` opsional (backup lama tetap terbaca). Entri `audit` saat restore
+difilter isolasi antar-sekolah (lihat §3.9 / `05-operasional.md` §4d).
 
 ### 3.7 `TutupTahunAjaran` / `RosterArsip` (arsip terkunci)
 
@@ -153,6 +155,21 @@ Restore menolak payload tanpa array `siswa` yang valid; `tutupTahun`/`petaKelas`
 `waliKelas?`, `updatedAt`, `source` (`manual|generate`). CRUD:
 `getAllPetaKelas` / `savePetaKelasList` / `savePetaKelas` / `deletePetaKelas`.
 Dipakai wizard arsip sebagai saran target (`ArsipView : saranRombelBaru`).
+
+### 3.9 `AuditLog` (jejak audit, issue #9)
+
+`id`, `timestamp`, `aktor` (username / `'sistem'`), `peran?`, `aksi`
+(`AuditAksi`: login/logout, `login_gagal`, akun, siswa, mutasi, tutup/buka
+tahun, sinkron, backup, cloud, `rombel_ubah`, `dokumen_ekspor`,
+`pengaturan_ubah`, `gtk_ubah`), `entitas`, `entitasId?`, `ringkasan`,
+`detail?`, `sekolahId?` (cap isolasi antar-sekolah), `hasil?`
+(`'berhasil'` default | `'gagal'`), `sebelum?`/`sesudah?` (diff field
+operasional allowlist yang berubah, tersanitasi — tanpa rahasia/data pribadi).
+Penulis tunggal `catatAudit` (`src/utils/audit.ts`, tidak pernah melempar);
+sanitasi + `diffAudit` + filter impor restore di `src/utils/auditSanitasi.ts`;
+baca via `getAuditLogs(limit)`, tulis via `addAuditLog` (dedup per `id`).
+Tidak ada API ubah/hapus entri. Kebijakan akses/retensi/sanitasi:
+`docs/05-operasional.md` §4d.
 
 ## 4. Aturan Validasi (`src/utils/validation.ts`)
 
