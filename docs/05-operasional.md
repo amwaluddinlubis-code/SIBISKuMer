@@ -40,14 +40,15 @@ IndexedDB per laptop; sinkron antar-laptop via Sinkron Cloud (§4b), bukan via e
 | Kemampuan | Administrator | Operator (rombongan X) |
 |-----------|:---:|:---:|
 | Dasbor Operasional, Master Siswa, Nilai Raport, Rekap, Cetak, Referensi + GTK (lihat; GTK manual hanya admin) | ✅ semua rombel | ✅ hanya rombel X |
+| Generator Dokumen (surat aktif/pindah/panggilan + daftar rombel) | ✅ semua rombel + atur penomoran | ✅ hanya rombel X; penomoran hanya lihat/saran + nomor manual |
 | Tambah/ubah/hapus siswa + wizard mutasi masuk/keluar + leger nilai | ✅ | ✅ hanya rombel X (`canUserAccessRombel`) |
 | Sinkron Dapodik, Profil Sekolah, Backup, Manajemen Pengguna, Pemetaan Kelas, Tutup Tahun, Tema Tampilan, Log Audit | ✅ (via dropdown pengguna topbar) | ❌ (notice `AccessDeniedNotice` + redirect Dasbor) |
 | Arsip tahun ajaran (lihat roster terkunci) | ✅ | ✅ (sebatas rombel kewenangan) |
 | Impersonate (lihat sebagai operator) | ✅ | ❌ |
 | Ganti password sendiri (dropdown topbar) | ✅ | ✅ |
 
-Sidebar memuat 9 menu utama (`dasbor, siswa, raport, leger, rekap, cetak,
-referensi, gtk, arsip`); 6 menu admin disembunyikan dari sidebar dan hanya ada di
+Sidebar memuat 10 menu utama (`dasbor, siswa, raport, leger, rekap, cetak,
+dokumen, referensi, gtk, arsip`); 6 menu admin disembunyikan dari sidebar dan hanya ada di
 dropdown pengguna (`src/components/Navbar.tsx : adminMenu`).
 
 Akun bawaan (seed `src/data/initialData.ts : initialUsersList`):
@@ -124,6 +125,58 @@ project sesuai `firebase-applet-config.json`):**
 4. Siswa baru manual selalu dikonfirmasi masuk TA sesi (riwayat awal = sesi).
 5. Sinkron Dapodik: Terapkan diblokir bila sesi di bawah tahun aktif database
    (preview & tes koneksi tetap boleh). Pindah sesi tercatat di Log Audit.
+
+## 4d. SOP Generator Dokumen Administrasi (Issue #4)
+
+Tab **Generator Dokumen** (semua peran; operator hanya melihat siswa dalam
+rombel kewenangannya karena yang diteruskan hanya `visibleSiswa`).
+
+1. **Pilih template** — Surat Keterangan Siswa Aktif, Surat Keterangan
+   Pindah/Mutasi Keluar, Surat Panggilan Orang Tua/Wali, atau Daftar Siswa
+   per Kelas/Rombel.
+2. **Pilih siswa/rombel** — surat per-siswa: cari nama/NISN/rombel lalu
+   pilih. Surat pindah menerima siswa Aktif (diproses) dan Mutasi Keluar
+   (cetak ulang dari data mutasi tercatat — sekolah tujuan/tanggal/alasan
+   terisi otomatis dari data mutasi, bukan karangan). Daftar rombel: pilih
+   satu rombel → pratinjau menampilkan seluruh siswa aktif rombel itu
+   (urut nama) + jumlahnya.
+3. **Nomor & tanggal** — nomor berasal dari aturan penomoran sekolah
+   (lihat butir 6) atau ditulis manual (mis. mencetak ulang dengan nomor
+   tercatat di data mutasi). **Jangan mengarang nomor.** Nomor manual
+   dipakai apa adanya.
+4. **Isi surat** — lengkapi field template. Field wajib yang kosong
+   ditandai `[BELUM DIISI]` di pratinjau dan **cetak/ekspor diblokir**
+   sampai lengkap.
+5. **Pratinjau → cetak/ekspor** — pratinjau adalah persis yang tercetak
+   (kop resmi + pemenggalan halaman via CSS cetak). Cetak via tombol
+   Cetak; untuk PDF pilih “Save as PDF” di dialog cetak browser. Ekspor
+   Word (`.docx`) tersedia untuk semua template; ekspor Excel (`.xlsx`)
+   hanya daftar rombel. Catatan: ekspor Word memakai **teks** kop resmi
+   (logo tidak disematkan ke DOCX); cetak via browser memakai kop lengkap
+   termasuk logo.
+6. **Aturan penomoran (khusus administrator)** — di dalam tab Generator
+   Dokumen, bagian “Atur aturan penomoran sekolah”: per template, isi
+   `pola` (placeholder `{no}` `{no3}` `{bulan}` `{bulanRomawi}` `{tahun}`
+   — placeholder tak dikenal dibiarkan terlihat di pratinjau agar salah
+   konfigurasi ketahuan) dan `nomorTerakhir`. Saran nomor berikutnya =
+   `nomorTerakhir + 1`. Setelah dokumen diterbitkan, tekan “Tandai nomor
+   terpakai” agar nomor tidak dipakai ganda. Pola bawaan adalah contoh
+   awal (`{no}/SK-AKTIF/{bulanRomawi}/{tahun}`, dst.) — **wajib
+   disesuaikan** dengan aturan penomoran sekolah sebelum dipakai resmi.
+   **Tanda tangan tidak pernah dikarang:** blok penandatangan hanya memakai
+   nama + NIP Kepala Sekolah dari Profil Sekolah; bila kosong, dokumen
+   dinyatakan belum lengkap.
+7. **Pencatatan** — pencatatan ekspor dokumen memakai aksi `dokumen_ekspor`
+   dari PR #18 (audit trail, belum merge). Data siswa tidak pernah ditulis
+   ke log.
+8. **Cara menambah template** — tambahkan 1 entri ke `TEMPLATE_SURAT` di
+   `src/utils/suratDokumen.ts` (id, judul, perihal, daftar field dengan
+   `kunci`/`label`/`deskripsi`/`wajib`), 1 cabang builder di
+   `bangunDokumenSurat`, pola bawaan di `defaultPenomoran()`, dan 1 tipe
+   di `TemplateSuratId` (`src/types/index.ts`). Tidak perlu mengubah
+   komponen: form + pratinjau + validasi dirender dari definisi template.
+   Tambahkan tes di `tests/generator-dokumen.test.ts` dan dokumentasikan
+   template baru di SRS (FR-P5) + SOP ini.
 
 ## 5. SOP Sinkron Dapodik
 
