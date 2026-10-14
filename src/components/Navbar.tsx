@@ -25,6 +25,7 @@ import {
   ScrollText,
   ShieldCheck,
   Table,
+  FileText,
   Sun,
   Moon,
   Monitor
@@ -107,6 +108,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'leger', label: 'Leger Nilai', icon: Table, badge: undefined },
     { id: 'rekap', label: 'Rekapitulasi', icon: BarChart3, badge: undefined },
     { id: 'cetak', label: 'Cetak Lembar Induk', icon: Printer, badge: undefined },
+    { id: 'dokumen', label: 'Generator Dokumen', icon: FileText, badge: undefined },
     { id: 'referensi', label: 'Data Referensi', icon: Layers, badge: undefined },
     { id: 'gtk', label: 'Data GTK', icon: Contact, badge: undefined },
     { id: 'arsip', label: 'Arsip Tahun Ajaran', icon: Archive, badge: undefined },

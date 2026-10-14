@@ -63,7 +63,9 @@ Sudah ada: kop resmi terpusat (`KopSuratView`, diatur di Profil Sekolah),
 isolasi cetak (`index.css` `@media print`: hanya `.print-sheet` yang tercetak —
 tanpa sidebar/topbar/tombol/toast/backdrop/header-footer browser via
 `@page A4 margin 0`), warna backgrounds dicetak persis (`print-color-adjust`),
-tabel mengulang thead + baris/tanda tangan anti-terpotong. Sisa: cetak massal
+tabel mengulang thead + baris/tanda tangan anti-terpotong. Generator Dokumen
+Administrasi (Issue #4, SELESAI): 4 template surat + penomoran terkonfigurasi
+sekolah + pratinjau sebelum cetak/ekspor Word/Excel. Sisa: cetak massal
 per-rombel + nomor halaman, ekspor Excel rekap + PDF raport, kartu pelajar
 bolak-balik + QR NISN. Terima: 1 siswa = 1 lembar induk utuh di Chrome/Edge.
 
