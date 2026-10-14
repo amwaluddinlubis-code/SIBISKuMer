@@ -156,6 +156,11 @@ Dipakai wizard arsip sebagai saran target (`ArsipView : saranRombelBaru`).
 
 ## 4. Aturan Validasi (`src/utils/validation.ts`)
 
+Impor Excel/CSV memakai aturan yang sama + aturan berkas (`src/utils/imporSiswa.ts`):
+maks 5 MB / 2000 baris; rombel wajib format `7A`; sel kosong pada perbarui =
+"tidak diubah"; duplikat kunci di dalam berkas ditolak; konflik identitas
+(NISN vs NIK menunjuk siswa berbeda) dilewati.
+
 | Field | Aturan |
 |-------|--------|
 | `namaLengkap` | wajib, disimpan uppercase |
