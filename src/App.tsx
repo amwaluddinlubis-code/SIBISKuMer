@@ -83,6 +83,7 @@ const ArsipView = lazyView(() => import('./components/ArsipView'), 'ArsipView');
 const AuditLogView = lazyView(() => import('./components/AuditLogView'), 'AuditLogView');
 const LegerNilaiView = lazyView(() => import('./components/LegerNilaiView'), 'LegerNilaiView');
 const PemetaanKelasView = lazyView(() => import('./components/PemetaanKelasView'), 'PemetaanKelasView');
+const PemeriksaDataView = lazyView(() => import('./components/PemeriksaDataView'), 'PemeriksaDataView');
 const SchoolManagerModal = lazyView(() => import('./components/SchoolManagerModal'), 'SchoolManagerModal');
 const CetakKartuMassal = lazyView(() => import('./components/CetakKartuMassal'), 'CetakKartuMassal');
 import type { RencanaRombel } from './components/ArsipView';
@@ -113,6 +114,7 @@ const TAB_META: Record<string, { title: string; subtitle: string; accent: 'blue'
   referensi: { title: 'Data Referensi', subtitle: 'Rombel, PTK & profil sekolah hasil sinkronisasi', accent: 'purple', icon: Layers },
   gtk: { title: 'Data GTK', subtitle: 'Guru & tendik hasil sinkronisasi Dapodik (getGtk/getPTK)', accent: 'indigo', icon: Contact },
   arsip: { title: 'Arsip Tahun Ajaran', subtitle: 'Potret terkunci per tahun + tutup tahun & promosi massal', accent: 'slate', icon: Archive },
+  pemeriksa: { title: 'Pemeriksa Data', subtitle: 'Kelengkapan, validitas, inkonsistensi & kemungkinan duplikat siswa', accent: 'emerald', icon: LayoutDashboard },
   pemetaan: { title: 'Pemetaan Kelas', subtitle: 'Daftar rombel resmi per tahun ajaran', accent: 'amber', icon: LayoutGrid },
   pengaturan: { title: 'Profil Sekolah', subtitle: 'Identitas, periode aktif & konfigurasi layanan', accent: 'slate', icon: Settings },
   users: { title: 'Manajemen Pengguna', subtitle: 'Akun administrator & operator beserta batas rombel', accent: 'purple', icon: UserCog },
@@ -1606,6 +1608,22 @@ export default function App() {
             {/* View: 8. Log Audit (Administrator Only) */}
             {activeTab === 'audit' && (
               isAdmin ? <AuditLogView /> : AccessDeniedNotice
+            )}
+
+            {/* View: Pemeriksa Data (Issue #3) — semua peran; data sudah
+                terfilter hak akses lewat visibleSiswa (operator = rombelnya). */}
+            {activeTab === 'pemeriksa' && (
+              <ErrorBoundary fallbackTitle="Pemeriksa data gagal dimuat">
+                <PemeriksaDataView
+                  siswa={visibleSiswa}
+                  sekolahNpsn={sekolah.npsn}
+                  onEditSiswa={(s) => {
+                    setEditingSiswa(s);
+                    setIsFormOpen(true);
+                  }}
+                  onViewSiswa={(s) => setDetailSiswa(s)}
+                />
+              </ErrorBoundary>
             )}
           </>
         )}
