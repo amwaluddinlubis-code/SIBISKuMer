@@ -18,6 +18,14 @@ import {
 import { Siswa, SekolahProfile, JenjangSekolah, StatusSiswa } from '../types';
 import { getTingkatOptions, getFaseKurikulum, getTingkatDariRombel } from '../utils/raportUtils';
 import { siswaTerlibatTahun, tahunSiswa } from '../utils/sesi';
+import {
+  KONDISI_LABELS,
+  ROMBEL_KOSONG,
+  cocokKondisi,
+  tanpaRombel,
+  type KondisiDrillDown,
+  type SiswaPresetFilter,
+} from '../utils/dashboard';
 import { PageControl } from './PageControl';
 import { toast } from '../utils/notify';
 import { unduhExcel } from '../utils/excel';
@@ -39,6 +47,10 @@ interface SiswaListProps {
   /** Sesi tahun ajaran login (fondasi sesi; roster lingkup sekolah). */
   sessionTahun?: string | null;
   tahunOptions?: string[];
+  /** Preset filter dari drill-down dasbor (Issue #2). Diterapkan saat
+   *  `filterNonce` berubah — termasuk saat Master Siswa baru dipasang. */
+  filterAwal?: SiswaPresetFilter | null;
+  filterNonce?: number;
 }
 
 /** Gradien avatar deterministik dari nama — konsisten antar render. */
@@ -89,7 +101,9 @@ export const SiswaList: React.FC<SiswaListProps> = ({
   onOpenMutasi,
   isAdmin = false,
   sessionTahun,
-  tahunOptions
+  tahunOptions,
+  filterAwal,
+  filterNonce,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRombel, setFilterRombel] = useState<string>('all');
@@ -99,6 +113,26 @@ export const SiswaList: React.FC<SiswaListProps> = ({
   // Filter keterlibatan tahun ajaran (riwayat/raport). Default 'all' agar roster
   // lingkup sekolah tidak menyembunyikan siswa; sesi ditampilkan eksplisit.
   const [filterTahun, setFilterTahun] = useState<string>('all');
+  // Kondisi data (Issue #2): predikat yang SAMA dengan angka dasbor
+  // (cocokKondisi di utils/dashboard.ts) agar drill-down selalu sepakat.
+  const [filterKondisi, setFilterKondisi] = useState<KondisiDrillDown>('semua');
+  // Rentang tanggal untuk kondisi 'diterima-rentang' / 'keluar-rentang'.
+  const [filterDari, setFilterDari] = useState('');
+  const [filterSampai, setFilterSampai] = useState('');
+
+  // Preset dari drill-down dasbor: terapkan & kembali ke halaman 1.
+  useEffect(() => {
+    if (!filterNonce || !filterAwal) return;
+    setFilterRombel(filterAwal.rombel ?? 'all');
+    setFilterTingkat(filterAwal.tingkat ?? 'all');
+    setFilterStatus(filterAwal.status ?? 'all');
+    setFilterTahun(filterAwal.tahun ?? 'all');
+    setFilterKondisi(filterAwal.kondisi ?? 'semua');
+    setFilterDari(filterAwal.dari ?? '');
+    setFilterSampai(filterAwal.sampai ?? '');
+    setSearchTerm('');
+    setPage(1);
+  }, [filterNonce]); // eslint-disable-line react-hooks/exhaustive-deps
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -173,8 +207,12 @@ export const SiswaList: React.FC<SiswaListProps> = ({
       }
 
       // Rombel
-      if (filterRombel !== 'all' && s.rombelSaatIni !== filterRombel) {
-        return false;
+      if (filterRombel !== 'all') {
+        if (filterRombel === ROMBEL_KOSONG) {
+          if (!tanpaRombel(s)) return false;
+        } else if (s.rombelSaatIni !== filterRombel) {
+          return false;
+        }
       }
 
       // Tingkat
@@ -200,14 +238,25 @@ export const SiswaList: React.FC<SiswaListProps> = ({
         return false;
       }
 
+      // Kondisi data (drill-down dasbor) — predikat yang sama dengan angka
+      // dasbor. 'raport-belum' tidak ditawarkan di sini (tujuannya tab
+      // Raport); bila preset itu sampai ke sini, hasilnya kosong — bukan
+      // daftar yang salah.
+      if (
+        filterKondisi !== 'semua' &&
+        !cocokKondisi(s, filterKondisi, { semua: siswa, dari: filterDari, sampai: filterSampai })
+      ) {
+        return false;
+      }
+
       return true;
     });
-  }, [siswa, searchTerm, filterRombel, filterTingkat, filterGender, filterStatus, filterTahun]);
+  }, [siswa, searchTerm, filterRombel, filterTingkat, filterGender, filterStatus, filterTahun, filterKondisi, filterDari, filterSampai]);
 
   // Pagination — reset ke halaman 1 setiap filter berubah agar tidak kosong
   useEffect(() => {
     setPage(1);
-  }, [searchTerm, filterRombel, filterTingkat, filterGender, filterStatus, filterTahun, siswa.length]);
+  }, [searchTerm, filterRombel, filterTingkat, filterGender, filterStatus, filterTahun, filterKondisi, filterDari, filterSampai, siswa.length]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -216,7 +265,7 @@ export const SiswaList: React.FC<SiswaListProps> = ({
     return filtered.slice(start, start + pageSize);
   }, [filtered, safePage, pageSize]);
 
-  const hasActiveFilter = searchTerm !== '' || filterRombel !== 'all' || filterTingkat !== 'all' || filterGender !== 'all' || filterStatus !== 'all' || filterTahun !== 'all';
+  const hasActiveFilter = searchTerm !== '' || filterRombel !== 'all' || filterTingkat !== 'all' || filterGender !== 'all' || filterStatus !== 'all' || filterTahun !== 'all' || filterKondisi !== 'semua' || filterDari !== '' || filterSampai !== '';
   const resetFilters = () => {
     setSearchTerm('');
     setFilterRombel('all');
@@ -224,6 +273,9 @@ export const SiswaList: React.FC<SiswaListProps> = ({
     setFilterGender('all');
     setFilterStatus('all');
     setFilterTahun('all');
+    setFilterKondisi('semua');
+    setFilterDari('');
+    setFilterSampai('');
   };
 
   const handleExportCSV = () => {
@@ -439,6 +491,7 @@ export const SiswaList: React.FC<SiswaListProps> = ({
             {rombelOptions.map((r) => (
               <option key={r} value={r}>Rombel {r}</option>
             ))}
+            <option value={ROMBEL_KOSONG}>Tanpa Rombel</option>
           </select>
 
           <select
@@ -477,6 +530,43 @@ export const SiswaList: React.FC<SiswaListProps> = ({
             ))}
           </select>
         </div>
+
+        {/* Kondisi data (Issue #2): predikat yang sama dengan angka dasbor,
+            sehingga drill-down dari dasbor membuka persis daftar ini. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
+          <label className="block">
+            <span className="block text-[11px] font-bold text-slate-600 mb-1">Kondisi data</span>
+            <select
+              value={filterKondisi}
+              onChange={(e) => setFilterKondisi(e.target.value as KondisiDrillDown)}
+              className="ui-select"
+              aria-label="Filter kondisi data (sama dengan angka dasbor)"
+            >
+              <option value="semua">Semua kondisi</option>
+              {(['data-kosong', 'data-tidak-valid', 'dokumen', 'tanpa-rombel', 'tanpa-nisn', 'tanpa-tanggal-lahir', 'tanpa-foto', 'mutasi-surat', 'diterima-rentang', 'keluar-rentang'] as KondisiDrillDown[]).map((k) => (
+                <option key={k} value={k}>{KONDISI_LABELS[k]}</option>
+              ))}
+            </select>
+          </label>
+          {(filterKondisi === 'diterima-rentang' || filterKondisi === 'keluar-rentang') && (
+            <>
+              <label className="block">
+                <span className="block text-[11px] font-bold text-slate-600 mb-1">Dari tanggal</span>
+                <input type="date" value={filterDari} onChange={(e) => setFilterDari(e.target.value)} className="ui-input" aria-label="Kondisi dari tanggal" />
+              </label>
+              <label className="block">
+                <span className="block text-[11px] font-bold text-slate-600 mb-1">Sampai tanggal</span>
+                <input type="date" value={filterSampai} onChange={(e) => setFilterSampai(e.target.value)} className="ui-input" aria-label="Kondisi sampai tanggal" />
+              </label>
+            </>
+          )}
+        </div>
+
+        {filterKondisi !== 'semua' && (
+          <p className="mt-3 text-[11px] text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2" role="status">
+            Filter kondisi aktif: <strong>{KONDISI_LABELS[filterKondisi]}</strong> — daftar ini adalah data sumber pembentuk angka dasbor.
+          </p>
+        )}
 
         {hasActiveFilter && (
           <div className="flex items-center justify-between pt-3 mt-3 border-t border-slate-100">
