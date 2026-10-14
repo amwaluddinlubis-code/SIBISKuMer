@@ -1948,6 +1948,8 @@ export interface SnapshotPengaman {
   timestamp: string;
   jumlahSiswa: number;
   payload: string;
+  /** Token lokal Dapodik untuk memulihkan konfigurasi persis setelah rollback. */
+  tokenDapodikSebelumnya?: string;
 }
 
 /** D3 — Mode restore backup. */
@@ -1968,6 +1970,8 @@ export interface RestoreOptions {
   /** Issue #10 (internal) — true = lewati pembuatan snapshot pengaman
    *  (dipakai jalur rollback, yang SUDAH memegang snapshot pengaman). */
   lewatiSnapshotPengaman?: boolean;
+  /** Issue #10 (internal rollback) — hapus akun hasil restore gagal sebelum replay snapshot. */
+  hapusPenggunaSaatRestore?: boolean;
 }
 
 /** Issue #10 — hasil verifikasi pasca-restore (jumlah/relasi). */
@@ -2141,7 +2145,16 @@ async function cobaRollback(pengaman: SnapshotPengaman | undefined): Promise<Rol
     const hasil = await importBackupData(pengaman.payload, {
       mode: 'ganti-total',
       lewatiSnapshotPengaman: true,
+      konfirmasiSekolahLain: true,
+      hapusPenggunaSaatRestore: true,
     });
+    // Token sengaja tidak pernah dimasukkan ke file/snapshot JSON yang dapat
+    // diunduh. Simpan token lokal lama di state rollback dan pulihkan setelah
+    // payload snapshot yang sudah disanitasi selesai direplay.
+    if (hasil.success && pengaman.tokenDapodikSebelumnya !== undefined) {
+      const cfg = await getDapodikConfig();
+      await saveDapodikConfig({ ...cfg, token: pengaman.tokenDapodikSebelumnya });
+    }
     try {
       await saveAutoSnapshot({
         id: pengaman.id,
@@ -2248,7 +2261,7 @@ export async function importBackupData(
       } catch {
         /* profil tak terbaca — tak bisa memverifikasi, lewati cek */
       }
-      if (npsnAktif && npsnBackup !== npsnAktif && !opts?.konfirmasiSekolahLain) {
+      if (npsnAktif && npsnBackup !== npsnAktif && !opts?.konfirmasiSekolahLain && !opts?.lewatiSnapshotPengaman) {
         return tolak(
           `Restore ditolak: file cadangan milik sekolah lain (NPSN ${npsnBackup}), ` +
           `sedangkan sekolah aktif bernpsn ${npsnAktif}. ` +
@@ -2266,11 +2279,13 @@ export async function importBackupData(
       try {
         const payloadPengaman = await exportAllData();
         const idPengaman = await simpanSnapshotPengaman(payloadPengaman, siswaSebelumnya.length);
+        const dapodikSebelumnya = await getDapodikConfig();
         pengaman = {
           id: idPengaman,
           timestamp: new Date().toISOString(),
           jumlahSiswa: siswaSebelumnya.length,
           payload: payloadPengaman,
+          tokenDapodikSebelumnya: dapodikSebelumnya.token,
         };
       } catch (e) {
         return tolak(
@@ -2314,6 +2329,13 @@ export async function importBackupData(
     }
 
     if (data.users && Array.isArray(data.users)) {
+      // Rollback internal harus mengembalikan himpunan akun secara persis,
+      // termasuk menghapus akun baru yang sempat masuk dari backup gagal.
+      if (opts?.hapusPenggunaSaatRestore) {
+        for (const user of await getAllUsers()) {
+          await deleteUser(user.id);
+        }
+      }
       // D15(a): file backup jahat bisa menyisipkan akun administrator.
       // Administrator yang SUDAH ADA tidak pernah ditimpa dari backup kecuali
       // user memberi konfirmasi eksplisit (opts.konfirmasiTimpaAdmin).
