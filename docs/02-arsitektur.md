@@ -58,6 +58,7 @@ App.tsx (15 tab via TAB_META: dasbor|siswa|raport|leger|rekap|cetak|referensi|gt
  + PageHeader.tsx (kepala halaman konsisten per tab via TAB_META)
  + Navbar.tsx (sidebar 7 menu utama + topbar terang, admin via dropdown pengguna, drawer mobile, ganti password, impersonate banner, collapse persisten)
  + OperatorDashboard.tsx (dasbor operasional: sapaan, antrean data, jalan pintas) + DashboardStats.tsx (kartu hero navy + ring kelengkapan + bilah fase + status Dapodik)
+ + utils/dashboard.ts (Issue #2, FUNGSI MURNI + teruji): predikat kondisi, filter roster, ringkasan, tugas tertunda, arus, tenggat — dipakai dasbor & Master Siswa agar angka dan daftar tujuan selalu sepakat; drill-down via preset filter (`SiswaPresetFilter` + nonce) dari App.tsx
  + SiswaList.tsx (filter memo + pagination default 20 via PageControl + ekspor CSV + avatar inisial + upload foto kolom aksi via `utils/photo.ts`) — dalam <ErrorBoundary>
  + SiswaFormModal.tsx (wizard 7 langkah + bilah kemajuan + draft otomatis localStorage + validasi utils/validation.ts)
  + SiswaDetailModal.tsx + CetakBukuInduk.tsx (mode buku-induk|raport|kartu-pelajar)
@@ -71,11 +72,13 @@ App.tsx (15 tab via TAB_META: dasbor|siswa|raport|leger|rekap|cetak|referensi|gt
  + SchoolSwitcher.tsx (pemilih topbar admin) + SchoolManagerModal.tsx (tambah/aktif/hapus + lencana jumlah siswa)
  + ArsipView.tsx (tahun terkunci + roster + wizard tutup tahun & promosi)
  + PemetaanKelasView.tsx (CRUD rombel resmi per tahun ajaran, khusus admin; saran target di wizard arsip)
+ + PemeriksaDataView.tsx (temuan prioritas + filter/cari + status penanganan + pratinjau impor CSV)
  + PageControl.tsx (pagination bersama) + OfflineIndicator.tsx + PWAInstallButton.tsx + SyncProgressBar.tsx
  + TopProgressBar.tsx (bar atas tiap boot/reload/ganti-tab/simpan) + ToastHost.tsx + ConfirmDialogHost.tsx (sistem umpan balik global)
 Lintas: utils/db.ts (CRUD+authz+multi-sekolah+arsip `tutup_tahun` v4 + audit `audit_logs` & snapshot `auto_backup` v7) · utils/dapodikSync.ts (konversi + flag arsip) · utils/arsip.ts (snapshot/roster/kunci) · utils/raportUtils.ts
         (fase/mapel/predikat/deskripsi) · utils/notify.ts (toast/confirm event bus) · utils/validation.ts
-        (wajib/format per form) · utils/progress.ts (bus progres atas) · utils/pagination.ts
+        (wajib/format per form) · utils/pemeriksaData.ts (mesin pemeriksa
+        Issue #3: aturan terkonfigurasi + status + banding impor, murni/tanpa IO) · utils/progress.ts (bus progres atas) · utils/pagination.ts
         · utils/password.ts (hash PBKDF2 + fallback SHA-256) · utils/security.ts (kunci login)
         · utils/audit.ts (penulis audit) · utils/autoBackup.ts (penjadwal snapshot)
         · utils/firebaseApp.ts (app/auth/Firestore/Storage bersama) · utils/cloudSync.ts
@@ -83,9 +86,9 @@ Lintas: utils/db.ts (CRUD+authz+multi-sekolah+arsip `tutup_tahun` v4 + audit `au
         agar bundel utama ramping)
 ```
 
-Navigasi adalah state `activeTab` di `App.tsx` (bukan router URL). 15 tab terdaftar di
-`TAB_META` (`dasbor, siswa, raport, leger, rekap, cetak, referensi, gtk, arsip` untuk semua
-peran + 6 admin `dapodik, pemetaan, pengaturan, backup, users, audit`); sidebar menampilkan 9 menu utama, 6 menu admin
+Navigasi adalah state `activeTab` di `App.tsx` (bukan router URL). 16 tab terdaftar di
+`TAB_META` (`dasbor, siswa, raport, leger, rekap, cetak, referensi, gtk, arsip, pemeriksa` untuk semua
+peran + 6 admin `dapodik, pemetaan, pengaturan, backup, users, audit`); sidebar menampilkan 10 menu utama, 6 menu admin
 hanya lewat dropdown pengguna topbar dan dijaga
 `handleNavigateTab` + `AccessDeniedNotice`. Tab `cetak` memakai pencarian +
 `PageControl` sendiri (default 9/kartu), tab `siswa` memakai `PageControl` (default 20).
@@ -122,8 +125,15 @@ checkbox pilih → `saveSiswa`/`saveSekolahProfile`/`saveRombelRefs`/`savePtkRef
 **5.4 Hapus/konfirmasi:** `confirmDialog(...)` (promise, `ConfirmDialogHost`) → aksi →
 `toast(...)` (`ToastHost`). Tidak ada `alert`/`confirm`/`prompt` native di `src/`.
 
-**5.5 Backup:** `exportAllData` (v`1.2.0`, termasuk `tutupTahun`) → unduh JSON / unggah Drive; restore: pilih file →
-`confirmDialog` danger → `importBackupData` (validasi array `siswa`) → `onDataChanged()`.
+**5.5 Backup:** `exportAllData` (v`1.3.0`, termasuk `tutupTahun` + blok
+`integritas` SHA-256) → unduh JSON / unggah Drive; restore: pilih file →
+pratinjau (`pratinjauBackup`: kompatibilitas + struktur + checksum) →
+`confirmDialog` danger → `importBackupData` (snapshot pengaman pra-restore →
+tulis → verifikasi pasca-restore → rollback otomatis bila gagal) →
+`onDataChanged()`. Snapshot pengaman (`pengaman-restore`) dikecualikan dari
+pruning snapshot otomatis. Detail: `docs/05-operasional.md` §4.
+
+**5.7 Impor Excel/CSV siswa:** `ImporSiswaView` → baca berkas (CSV `parseCsv` / Excel `barisDariExcel`, sheet pertama) → `petakanKolomOtomatis` (label/alias; kolom asing ditandai) → `validasiSemuaBaris` (format + duplikat dalam berkas) → `rekonsiliasiImpor` (baru/sama/beda/konflik/error/ditolak-akses; `canUserAccessRombel`) → pilihan eksplisit pengguna (massal + per baris + checkbox persetujuan) → `jalankanAutoBackup` (snapshot pengaman) → `rencanaTerapkan` → `saveSiswaBulk` (satu transaksi atomik) → sidik jari SHA-256 dicatat (`bukuinduk_impor_sidik`) + audit `impor_siswa` → `onDataChanged()`. Tidak ada mutasi sebelum konfirmasi pratinjau.
 
 **5.6 Arsip tahun ajaran:** `ArsipView` (wizard: susun rencana per rombel →
 `App.handleTutupTahun`: `buildSnapshot` pra-promosi → `promoteSiswaKenaikanKelas`
@@ -164,4 +174,5 @@ nomor manual operator; tanpa nomor karangan & tanpa tanda tangan karangan.
 - Penegakan di `filterSiswaByAccess`, `canUserAccessRombel`, `isAdministrator` — dipakai di
   tampil, simpan, dan hapus (`App.tsx`).
 - Tab admin disembunyikan dari operator + dijaga ulang saat render (`AccessDeniedNotice`).
+- Impor Excel/CSV: penegakan di lapisan aplikasi (UI + rekonsiliasi + tulis) via `canUserAccessRombel`; tidak ada backend yang memvalidasi tulis (lihat `05-operasional.md` §5b butir 10).
 - Diketahui belum aman: password plaintext (lihat NFR-03 / roadmap Tahap 5).
