@@ -6,6 +6,7 @@ import { toast } from './notify';
 // Aman dari siklus impor: kedua modul hanya memakai binding satu sama lain
 // di dalam badan fungsi (tidak saat evaluasi modul).
 import { muatTombstoneLokal, simpanTombstoneLokal } from './tombstone';
+import { bolehImporEntriAudit } from './auditSanitasi';
 
 const DB_NAME = 'BukuInduk_Merdeka_DB';
 // Naikkan versi setiap kali ada store baru agar database lama di browser
@@ -1218,6 +1219,10 @@ export async function addAuditLog(entry: AuditLog): Promise<void> {
     const raw = localStorage.getItem(sk(LS_KEYS.AUDIT));
     const parsed = raw ? JSON.parse(raw) : [];
     const list: AuditLog[] = Array.isArray(parsed) ? parsed : [];
+    // Dedup cermin LS berdasarkan id (put IndexedDB sudah dedup; tanpa ini
+    // tulis ulang entri yang sama — mis. dari restore — menggandakan cermin).
+    const idxLama = list.findIndex((l) => l && l.id === entry.id);
+    if (idxLama >= 0) list.splice(idxLama, 1);
     list.unshift(entry);
     localStorage.setItem(sk(LS_KEYS.AUDIT), JSON.stringify(list.slice(0, AUDIT_LS_MIRROR_MAX)));
   } catch {
@@ -1225,28 +1230,10 @@ export async function addAuditLog(entry: AuditLog): Promise<void> {
   }
 }
 
-export async function clearAuditLogs(): Promise<void> {
-  try {
-    const db = await openDB();
-    await new Promise<void>((resolve) => {
-      try {
-        const tx = db.transaction(STORES.AUDIT, 'readwrite');
-        const req = tx.objectStore(STORES.AUDIT).clear();
-        req.onsuccess = () => resolve();
-        req.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
-  } catch {
-    /* abaikan */
-  }
-  try {
-    localStorage.removeItem(sk(LS_KEYS.AUDIT));
-  } catch {
-    /* abaikan */
-  }
-}
+// NOTE (issue #9, append-only): fungsi clearAuditLogs SENGAJA DIHAPUS.
+// Audit log tidak dapat dihapus pengguna; satu-satunya penghapusan adalah
+// reset total database (`clearDatabase`, dicatat `backup_reset` SETELAH
+// wipe) dan retensi bergulir (maks 2000 entri, tertua terhapus).
 
 // ---------------- CADANGAN OTOMATIS (snapshot di IndexedDB, maks 5) ----------------
 
@@ -2008,8 +1995,29 @@ export async function importBackupData(
     }
 
     if (data.audit && Array.isArray(data.audit)) {
+      // Issue #9: audit sekolah lain TIDAK BOLEH masuk ke database ini —
+      // entri asing (sekolahId berbeda, atau lawas tanpa sekolahId dengan
+      // NPSN berkas ≠ NPSN aktif) dibuang dan dilaporkan.
+      let npsnAktifRestore = '';
+      try {
+        npsnAktifRestore = String((await getSekolahProfile())?.npsn || '').trim();
+      } catch {
+        /* profil tak terbaca — hanya entri ber-sekolahId cocok yang lolos */
+      }
+      const sekolahIdAktif = getActiveSchoolId();
+      let auditDitolak = 0;
       for (const a of data.audit.slice(0, 500)) {
-        if (a && a.id && a.timestamp && a.aksi) await addAuditLog(a as AuditLog);
+        if (!a || !a.id || !a.timestamp || !a.aksi) continue;
+        if (!bolehImporEntriAudit(a as AuditLog, sekolahIdAktif, npsnBackup, npsnAktifRestore)) {
+          auditDitolak++;
+          continue;
+        }
+        await addAuditLog(a as AuditLog);
+      }
+      if (auditDitolak > 0) {
+        peringatan.push(
+          `${auditDitolak} entri audit dari sekolah lain tidak diimpor (isolasi audit antar-sekolah).`
+        );
       }
     }
 
