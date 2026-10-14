@@ -165,6 +165,54 @@ Dipakai wizard arsip sebagai saran target (`ArsipView : saranRombelBaru`).
 | `noKk` | opsional; bila diisi 16 digit angka |
 | Umum | mode edit mengecualikan record sendiri; error tampil inline + toast pertama |
 
+### 4a. Aturan Pemeriksa Data (`src/utils/pemeriksaData.ts`, Issue #3)
+
+Satu-satunya sumber kebenaran aturan adalah konstanta `ATURAN_PEMERIKSA` di
+`src/utils/pemeriksaData.ts` (ID, kategori, prioritas, judul, penjelasan).
+Pengguna dapat menonaktifkan aturan per sekolah aktif dari tab Pemeriksa Data
+(tersimpan di localStorage, kunci `bukuinduk_pemeriksa_konfig_<NPSN>`); tidak
+ada aturan tersembunyi di UI. Cek per-record hanya untuk siswa **Aktif**
+(arsip historis dikecualikan); cek duplikat berlaku untuk **semua** record.
+
+| ID aturan | Kategori | Prioritas | Aturan |
+|-----------|----------|-----------|--------|
+| `nama-kosong` | wajib | tinggi | Nama lengkap kosong |
+| `nisn-kosong` | wajib | tinggi | NISN kosong |
+| `nisn-format` | format | tinggi | NISN bukan tepat 10 digit angka |
+| `nik-format` | format | sedang | NIK bukan 16 digit angka bila diisi |
+| `nokk-format` | format | rendah | No. KK bukan 16 digit angka bila diisi |
+| `nipd-format` | format | rendah | NIPD di luar 3–20 karakter bila diisi |
+| `nik-ortu-format` | format | rendah | NIK ayah/ibu bukan 16 digit angka bila diisi |
+| `tgl-lahir-kosong` | wajib | sedang | Tanggal lahir kosong |
+| `tgl-lahir-format` | format | tinggi | Tanggal lahir tidak valid (YYYY-MM-DD) atau masa depan |
+| `rombel-kosong` | wajib | sedang | Rombel saat ini kosong |
+| `alamat-kosong` | wajib | rendah | Alamat kosong |
+| `kodepos-format` | format | rendah | Kode pos bukan 5 digit angka bila diisi |
+| `lahir-setelah-diterima` | konflik | tinggi | Tanggal lahir setelah tanggal diterima |
+| `usia-diterima-tidak-wajar` | konflik | sedang | Usia saat diterima di luar 4–18 tahun |
+| `tanggal-keluar-aktif` | konflik | sedang | Status Aktif tetapi tanggal keluar terisi |
+| `pindahan-tanpa-asal` | konflik | sedang | Pindahan tetapi asal mutasi kosong |
+| `nik-ortu-sama` | konflik | sedang | NIK ayah sama dengan NIK ibu |
+| `anakke-rentang` | rentang | rendah | Anak ke di luar 1–30 |
+| `fisik-rentang` | rentang | rendah | Tinggi 50–220 cm / berat 5–200 kg |
+| `jarak-rentang` | rentang | rendah | Jarak ke sekolah di luar 0–150 km |
+| `lama-sd-rentang` | rentang | rendah | Lama belajar SD di luar 0–12 tahun |
+| `tahun-lahir-ortu-rentang` | rentang | rendah | Tahun lahir ortu di luar 1900–tahun berjalan |
+| `duplikat-nisn` | duplikat | tinggi | NISN sama persis pada 2 record |
+| `duplikat-nik` | duplikat | tinggi | NIK sama persis pada 2 record |
+| `duplikat-nipd` | duplikat | sedang | NIPD sama persis pada 2 record |
+| `duplikat-kemungkinan` | duplikat | sedang | Nama persis + tanggal lahir sama, NISN berbeda |
+| `duplikat-nama-mirip` | duplikat | sedang | Nama beda ≤2 huruf (Levenshtein) + tanggal lahir sama |
+
+Temuan duplikat selalu berstatus "kemungkinan" — aplikasi tidak pernah
+menggabungkan/menghapus otomatis. Keterbatasan yang diketahui: nama umum
+Indonesia + tanggal lahir sama bisa menandai dua anak berbeda (mis. kembar
+dengan nama mirip); karena itu tanggal lahir wajib sama persis dan nama saja
+tidak pernah cukup untuk temuan duplikat. Status penanganan temuan disimpan
+di localStorage (`bukuinduk_pemeriksa_status_<NPSN>`): hanya ID temuan +
+status + alasan — tanpa nama/NISN/NIK siswa (privasi, lihat §4e
+`docs/05-operasional.md`).
+
 ## 5. Data Seed (`src/data/initialData.ts`) — terverifikasi
 
 5 siswa contoh (`sis-001`…; lintas rombel + raport multi-semester), 3 akun
