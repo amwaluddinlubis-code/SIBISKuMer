@@ -1909,20 +1909,21 @@ export async function importBackupData(
 
     // D3: cegah profil/data sekolah lain menimpa sekolah aktif tanpa sadar.
     const npsnBackup = String(data.sekolah?.npsn || '').trim();
-    if (npsnBackup) {
-      let npsnAktif = '';
-      try {
-        npsnAktif = String((await getSekolahProfile())?.npsn || '').trim();
-      } catch {
-        /* profil tak terbaca — tak bisa memverifikasi, lewati cek */
-      }
-      if (npsnAktif && npsnBackup !== npsnAktif && !opts?.konfirmasiSekolahLain) {
-        return tolak(
-          `Restore ditolak: file cadangan milik sekolah lain (NPSN ${npsnBackup}), ` +
-          `sedangkan sekolah aktif bernpsn ${npsnAktif}. ` +
-          `Centang "saya paham ini data sekolah lain" untuk melanjutkan.`
-        );
-      }
+    // Simpan identitas sekolah tujuan SEBELUM restore mengubah profilnya.
+    // Nilai ini juga menjadi dasar isolasi audit untuk entri lawas tanpa sekolahId.
+    let npsnSekolahSebelumRestore = '';
+    try {
+      npsnSekolahSebelumRestore = String((await getSekolahProfile())?.npsn || '').trim();
+    } catch {
+      /* profil tak terbaca — hanya entri audit ber-sekolahId cocok yang dapat lolos */
+    }
+    if (npsnBackup && npsnSekolahSebelumRestore &&
+        npsnBackup !== npsnSekolahSebelumRestore && !opts?.konfirmasiSekolahLain) {
+      return tolak(
+        `Restore ditolak: file cadangan milik sekolah lain (NPSN ${npsnBackup}), ` +
+        `sedangkan sekolah aktif bernpsn ${npsnSekolahSebelumRestore}. ` +
+        `Centang "saya paham ini data sekolah lain" untuk melanjutkan.`
+      );
     }
 
     // D3: mode 'ganti-total' — hapus dulu seluruh data sekolah aktif.
@@ -1998,12 +1999,9 @@ export async function importBackupData(
       // Issue #9: audit sekolah lain TIDAK BOLEH masuk ke database ini —
       // entri asing (sekolahId berbeda, atau lawas tanpa sekolahId dengan
       // NPSN berkas ≠ NPSN aktif) dibuang dan dilaporkan.
-      let npsnAktifRestore = '';
-      try {
-        npsnAktifRestore = String((await getSekolahProfile())?.npsn || '').trim();
-      } catch {
-        /* profil tak terbaca — hanya entri ber-sekolahId cocok yang lolos */
-      }
+      // Gunakan NPSN sekolah tujuan sebelum restore, bukan profil backup yang
+      // mungkin sudah ditulis di atas; ini mencegah audit sekolah sumber lolos.
+      const npsnAktifRestore = npsnSekolahSebelumRestore;
       const sekolahIdAktif = getActiveSchoolId();
       let auditDitolak = 0;
       for (const a of data.audit.slice(0, 500)) {
