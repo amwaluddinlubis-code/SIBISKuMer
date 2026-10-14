@@ -39,14 +39,14 @@ IndexedDB per laptop; sinkron antar-laptop via Sinkron Cloud (§4b), bukan via e
 
 | Kemampuan | Administrator | Operator (rombongan X) |
 |-----------|:---:|:---:|
-| Dasbor Operasional, Master Siswa, Nilai Raport, Rekap, Cetak, Referensi + GTK (lihat; GTK manual hanya admin) | ✅ semua rombel | ✅ hanya rombel X |
+| Dasbor Operasional, Master Siswa, Nilai Raport, Rekap, Pusat Laporan, Cetak, Referensi + GTK (lihat; GTK manual hanya admin) | ✅ semua rombel | ✅ hanya rombel X |
 | Tambah/ubah/hapus siswa + wizard mutasi masuk/keluar + leger nilai | ✅ | ✅ hanya rombel X (`canUserAccessRombel`) |
 | Sinkron Dapodik, Profil Sekolah, Backup, Manajemen Pengguna, Pemetaan Kelas, Tutup Tahun, Tema Tampilan, Log Audit | ✅ (via dropdown pengguna topbar) | ❌ (notice `AccessDeniedNotice` + redirect Dasbor) |
 | Arsip tahun ajaran (lihat roster terkunci) | ✅ | ✅ (sebatas rombel kewenangan) |
 | Impersonate (lihat sebagai operator) | ✅ | ❌ |
 | Ganti password sendiri (dropdown topbar) | ✅ | ✅ |
 
-Sidebar memuat 9 menu utama (`dasbor, siswa, raport, leger, rekap, cetak,
+Sidebar memuat 10 menu utama (`dasbor, siswa, raport, leger, rekap, laporan, cetak,
 referensi, gtk, arsip`); 6 menu admin disembunyikan dari sidebar dan hanya ada di
 dropdown pengguna (`src/components/Navbar.tsx : adminMenu`).
 
@@ -91,6 +91,35 @@ Password tersimpan sebagai hash (bukan plaintext); 5x salah login mengunci akun
    data lain via Edit.
 3. **Leger:** tab Leger Nilai → pilih tahun + semester + tingkat/rombel → periksa
    rata-rata & peringkat → Ekspor CSV / Cetak. Nilai <70 ditandai merah.
+
+## 4a2. SOP Pusat Laporan
+
+1. **Buka:** sidebar **Pusat Laporan** (semua peran; operator hanya melihat rombel
+   kewenangannya — data rombel lain tidak tampil maupun terekspos).
+2. **Pilih jenis laporan:** Statistik Siswa, Daftar Siswa, Mutasi Masuk, Mutasi
+   Keluar, Data Belum Lengkap, atau Temuan Validasi.
+3. **Atur filter:** tahun ajaran (periode), kelas/rombel, status siswa. Pratinjau
+   memperlihatkan persis isi yang akan dicetak/diekspor untuk filter itu.
+4. **Periksa metadata:** setiap laporan mencantumkan parameter filter, waktu
+   pembuatan, sumber data (nama + NPSN sekolah), dan periode — di pratinjau,
+   cetakan, maupun file Excel/CSV.
+5. **Keluarkan:** **Cetak / PDF** → dialog cetak browser → pilih *Save as PDF*
+   untuk PDF (aplikasi tidak punya generator PDF native); **Ekspor Excel**
+   (`.xlsx`) atau **Ekspor CSV** (UTF-8 + BOM, aman dibuka di Excel/LibreOffice).
+   Tombol ekspor nonaktif bila 0 baris.
+6. **Audit:** setiap ekspor tercatat di tab **Log Audit** (admin) sebagai
+   `laporan_ekspor` beserta jenis, format, jumlah baris, dan parameter filter.
+7. **Privasi:** laporan sengaja TIDAK memuat NIK, No. KK, alamat lengkap, atau
+   nomor telepon — hanya nama + NISN/NIPD + rombel. Jangan menempel data
+   sensitif ke laporan secara manual.
+8. **Perbedaan dengan Rekapitulasi:** Rekapitulasi (tab tersendiri) kohortnya
+   selalu siswa Aktif. Di Pusat Laporan, filter status “Semua status” pada jenis
+   Statistik ikut menghitung siswa non-Aktif — bila ingin angka dinas, pakai
+   status **Aktif** (bawaan).
+9. **Data Belum Lengkap vs Temuan Validasi:** Belum Lengkap = field kosong yang
+   perlu dilengkapi TU; Temuan Validasi = Belum Lengkap + format salah + duplikat
+   (NISN/NIK/NIPD) + logika tanggal. Perbaiki di Master Siswa, lalu buka ulang
+   laporan untuk verifikasi.
 
 ## 4b. SOP Sinkron Cloud Antar-Perangkat (Firebase gratis, tanpa kartu kredit)
 **Disiapkan sekali oleh administrator (di console.firebase.google.com,
@@ -189,6 +218,10 @@ aktif. SOP:
   tersimpan plaintext di perangkat — jangan bagikan file profil/DB mentah.
 - **Rekapitulasi**: hanya siswa Aktif yang dihitung; jenis kelamin kosong masuk
   kolom "Belum Diisi" (tidak lagi dihitung Perempuan).
+- **Pusat Laporan**: ekspor membaca hanya data tersaring hak rombel pemakai;
+  laporan tidak memuat NIK, No. KK, alamat lengkap, atau nomor telepon; setiap
+  ekspor tercatat di Log Audit (`laporan_ekspor`). PDF dibuat lewat dialog
+  cetak browser (Save as PDF) — tidak ada generator PDF native.
 - **Nilai kosong = "belum dinilai"** (null), bukan 0; rata-rata memakai pembulatan
   tunggal 1 desimal di simpan/cetak/ekspor.
 - **Keputusan "Lulus" di raport** meminta konfirmasi lalu mengubah status siswa +
