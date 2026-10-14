@@ -439,7 +439,14 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
       }
     } catch (err: any) {
       console.error('Failed to restore from drive:', err);
-      showStatus('error', `Gagal mengunduh atau memulihkan dari Google Drive: ${err.message}`);
+      const detail = err instanceof Error ? err.message : String(err || 'Kesalahan tidak diketahui');
+      catatAudit('backup_pulihkan', {
+        entitas: 'backup',
+        ringkasan: `Gagal memulihkan dari Google Drive "${file.name}"`,
+        hasil: 'gagal',
+        detail,
+      });
+      showStatus('error', `Gagal mengunduh atau memulihkan dari Google Drive: ${detail}`);
     } finally {
       setProcessingFileId(null);
     }
