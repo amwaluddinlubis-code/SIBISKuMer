@@ -197,6 +197,8 @@ describe('isolasi antar-sekolah saat restore', () => {
   it('menolak audit lawas sekolah sumber saat restore mengganti profil NPSN tujuan', async () => {
     await saveSekolahProfile({ npsn: '123' } as never);
     const result = await importBackupData(JSON.stringify({
+      app: 'Buku Induk Siswa Kurikulum Merdeka',
+      version: '1.3.0',
       sekolah: { npsn: '999' },
       siswa: [],
       audit: [{
@@ -206,8 +208,8 @@ describe('isolasi antar-sekolah saat restore', () => {
         entitas: 'sesi',
         ringkasan: 'log lama sekolah sumber',
       }],
-    }), { konfirmasiSekolahLain: true });
-    assert.equal(result.success, true);
+    }), { konfirmasiSekolahLain: true, lewatiSnapshotPengaman: true });
+    assert.equal(result.success, true, result.message || result.alasan || JSON.stringify(result));
     assert.equal((await getSekolahProfile()).npsn, '999');
     const logs = await getAuditLogs(100);
     assert.equal(logs.some((log) => log.id === 'legacy-audit-sumber'), false);
