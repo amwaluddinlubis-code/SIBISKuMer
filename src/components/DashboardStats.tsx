@@ -3,6 +3,11 @@ import { Users, GraduationCap, CheckCircle, RefreshCw, AlertCircle, ArrowRight, 
 import { Siswa, DapodikSyncLog, JenjangSekolah } from '../types';
 import { getTingkatOptions, getTingkatDariRombel, getRaportList } from '../utils/raportUtils';
 import { bacaAutoBackupSetting } from '../utils/autoBackup';
+import {
+  KondisiDrillDown,
+  dataWajibKosong,
+  type SiswaPresetFilter,
+} from '../utils/dashboard';
 
 interface DashboardStatsProps {
   siswa: Siswa[];
@@ -15,6 +20,9 @@ interface DashboardStatsProps {
   onOpenSync: () => void;
   /** Navigasi opsional dari kartu "Perlu Perhatian" — disambungkan App bila tersedia. */
   onLihat?: (tujuan: 'siswa' | 'nilai' | 'backup') => void;
+  /** Drill-down (Issue #2): buka daftar data sumber pembentuk angka.
+   *  Bila tidak diisi, kartu "Perlu Perhatian" memakai `onLihat`. */
+  onDrillDown?: (kondisi: KondisiDrillDown, opts?: Partial<SiswaPresetFilter> & { tujuan?: 'siswa' | 'raport' }) => void;
 }
 
 type TujuanLihat = 'siswa' | 'nilai' | 'backup';
@@ -28,6 +36,8 @@ interface KartuPerhatian {
   label: string;
   desc: string;
   tujuan: TujuanLihat;
+  /** Kondisi drill-down ke daftar sumber (tanpa ini: navigasi biasa). */
+  kondisi?: KondisiDrillDown;
 }
 
 export const DashboardStats: React.FC<DashboardStatsProps> = ({
@@ -38,7 +48,8 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
   sessionTahun,
   tahunAktif,
   onOpenSync,
-  onLihat
+  onLihat,
+  onDrillDown,
 }) => {
   const jenjang = (jenjangProp || 'SMP') as JenjangSekolah;
   const total = siswa.length;
@@ -56,10 +67,9 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
   const maxTingkat = Math.max(1, ...tingkatOptions.map(countByTingkat));
   const faseLabel = jenjang === 'SD' ? 'Fase A–C (Tingkat SD)' : 'Fase D (Tingkat SMP)';
 
-  // Calculate completeness of master records
-  const lengkapCount = siswa.filter(
-    (s) => s.namaLengkap && s.nisn && s.nik && s.ayah?.nama && s.ibu?.nama && s.asalSdMi
-  ).length;
+  // Calculate completeness of master records — satu predikat dengan
+  // OperatorDashboard & tugas dasbor (utils/dashboard.ts).
+  const lengkapCount = siswa.filter((s) => !dataWajibKosong(s)).length;
   const persentaseLengkap = total > 0 ? Math.round((lengkapCount / total) * 100) : 100;
   const ringR = 22;
   const ringC = 2 * Math.PI * ringR;
@@ -109,28 +119,28 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
         id: 'nisn', icon: <Hash className="w-4 h-4" />,
         tint: 'bg-red-100 text-red-700', border: 'border-red-200',
         angka: String(tanpaNisn), label: 'Siswa tanpa NISN',
-        desc: 'NISN wajib untuk data induk & Dapodik.', tujuan: 'siswa',
+        desc: 'NISN wajib untuk data induk & Dapodik.', tujuan: 'siswa', kondisi: 'tanpa-nisn',
       });
     if (tanpaTglLahir > 0)
       kartu.push({
         id: 'tgl', icon: <CalendarX className="w-4 h-4" />,
         tint: 'bg-amber-100 text-amber-700', border: 'border-amber-200',
         angka: String(tanpaTglLahir), label: 'Siswa tanpa tanggal lahir',
-        desc: 'Tanggal lahir kosong — periksa data induk.', tujuan: 'siswa',
+        desc: 'Tanggal lahir kosong — periksa data induk.', tujuan: 'siswa', kondisi: 'tanpa-tanggal-lahir',
       });
     if (tanpaRombel > 0)
       kartu.push({
         id: 'rombel', icon: <UserX className="w-4 h-4" />,
         tint: 'bg-amber-100 text-amber-700', border: 'border-amber-200',
         angka: String(tanpaRombel), label: 'Siswa tanpa rombel',
-        desc: 'Belum ditempatkan di rombel belajar.', tujuan: 'siswa',
+        desc: 'Belum ditempatkan di rombel belajar.', tujuan: 'siswa', kondisi: 'tanpa-rombel',
       });
     if (nilaiKurang > 0)
       kartu.push({
         id: 'nilai', icon: <Award className="w-4 h-4" />,
         tint: 'bg-red-100 text-red-700', border: 'border-red-200',
         angka: String(nilaiKurang), label: 'Nilai raport TA berjalan belum lengkap',
-        desc: `Siswa aktif tanpa record nilai tahun ${tahunRaport || 'berjalan'}.`, tujuan: 'nilai',
+        desc: `Siswa aktif tanpa record nilai tahun ${tahunRaport || 'berjalan'}.`, tujuan: 'nilai', kondisi: 'raport-belum',
       });
     if (backupKedaluwarsa)
       kartu.push({
@@ -172,8 +182,13 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
               <p className="mt-2 text-xs font-extrabold text-slate-900">{k.label}</p>
               <p className="text-[11px] text-slate-500 leading-snug">{k.desc}</p>
               <button
-                onClick={() => onLihat?.(k.tujuan)}
+                onClick={() =>
+                  k.kondisi && onDrillDown
+                    ? onDrillDown(k.kondisi, { tujuan: k.tujuan === 'nilai' ? 'raport' : 'siswa' })
+                    : onLihat?.(k.tujuan)
+                }
                 className="ui-btn ui-btn-outline w-full mt-3 !py-2"
+                aria-label={`Lihat daftar: ${k.label} (${k.angka})`}
               >
                 Lihat
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -196,8 +211,13 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
       </p>
     )}
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      {/* Card 1: Total Siswa — hero navy, dipadatkan */}
-      <div className="relative overflow-hidden rounded p-3 text-white bg-gradient-to-br from-navy-800 via-navy-900 to-[#0b1e4b] shadow-md shadow-navy-900/25">
+      {/* Card 1: Total Siswa — hero navy, dipadatkan. Klik -> daftar sumber. */}
+      <button
+        onClick={() => onDrillDown?.('semua')}
+        className="relative overflow-hidden rounded p-3 text-white text-left bg-gradient-to-br from-navy-800 via-navy-900 to-[#0b1e4b] shadow-md shadow-navy-900/25 cursor-pointer"
+        aria-label={`Lihat daftar semua siswa: ${total} peserta didik`}
+        title="Klik untuk melihat daftar siswa pembentuk angka ini"
+      >
         <div className="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-blue-500/20 blur-2xl" />
         <div className="relative flex items-center justify-between">
           <span className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-300">Total Siswa</span>
@@ -224,7 +244,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
             </span>
           </div>
         </div>
-      </div>
+      </button>
 
       {/* Card 2: Distribusi Fase — dipadatkan */}
       <div className="ui-card ui-card-hover p-3">
@@ -244,7 +264,13 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
           {tingkatOptions.map((t) => {
             const c = countByTingkat(t);
             return (
-              <div key={t} className="flex items-center gap-2 text-[11px] leading-none">
+              <button
+                key={t}
+                onClick={() => onDrillDown?.('semua', { tingkat: t })}
+                className="w-full flex items-center gap-2 text-[11px] leading-none rounded hover:bg-indigo-50/60 cursor-pointer"
+                aria-label={`Lihat daftar siswa tingkat ${t}: ${c} siswa`}
+                title="Klik untuk melihat daftar siswa tingkat ini"
+              >
                 <span className="w-12 shrink-0 font-bold text-slate-600">Kls {t}</span>
                 <div className="flex-1 h-1.5 rounded-sm bg-slate-100 overflow-hidden">
                   <div
@@ -253,14 +279,19 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
                   />
                 </div>
                 <span className="w-7 text-right font-extrabold text-slate-800 tabular-nums">{c}</span>
-              </div>
+              </button>
             );
           })}
         </div>
       </div>
 
-      {/* Card 3: Kelengkapan — ring kecil */}
-      <div className="ui-card ui-card-hover p-3">
+      {/* Card 3: Kelengkapan — ring kecil. Klik -> daftar siswa tak lengkap. */}
+      <button
+        onClick={() => onDrillDown?.('data-kosong')}
+        className="ui-card ui-card-hover p-3 text-left cursor-pointer"
+        aria-label={`Lihat daftar siswa dengan data belum lengkap: ${total - lengkapCount} siswa`}
+        title="Klik untuk melihat daftar siswa dengan data belum lengkap"
+      >
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Kelengkapan Data</span>
           <div className="w-7 h-7 rounded bg-emerald-50 text-emerald-700 flex items-center justify-center">
@@ -300,7 +331,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
             </p>
           </div>
         </div>
-      </div>
+      </button>
 
       {/* Card 4: Status Dapodik — dibatasi untuk administrator */}
       <div className="ui-card ui-card-hover p-3 flex flex-col">
