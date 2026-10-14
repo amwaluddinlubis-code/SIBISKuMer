@@ -58,6 +58,7 @@ App.tsx (15 tab via TAB_META: dasbor|siswa|raport|leger|rekap|cetak|referensi|gt
  + PageHeader.tsx (kepala halaman konsisten per tab via TAB_META)
  + Navbar.tsx (sidebar 7 menu utama + topbar terang, admin via dropdown pengguna, drawer mobile, ganti password, impersonate banner, collapse persisten)
  + OperatorDashboard.tsx (dasbor operasional: sapaan, antrean data, jalan pintas) + DashboardStats.tsx (kartu hero navy + ring kelengkapan + bilah fase + status Dapodik)
+ + utils/dashboard.ts (Issue #2, FUNGSI MURNI + teruji): predikat kondisi, filter roster, ringkasan, tugas tertunda, arus, tenggat — dipakai dasbor & Master Siswa agar angka dan daftar tujuan selalu sepakat; drill-down via preset filter (`SiswaPresetFilter` + nonce) dari App.tsx
  + SiswaList.tsx (filter memo + pagination default 20 via PageControl + ekspor CSV + avatar inisial + upload foto kolom aksi via `utils/photo.ts`) — dalam <ErrorBoundary>
  + SiswaFormModal.tsx (wizard 7 langkah + bilah kemajuan + draft otomatis localStorage + validasi utils/validation.ts)
  + SiswaDetailModal.tsx + CetakBukuInduk.tsx (mode buku-induk|raport|kartu-pelajar)
