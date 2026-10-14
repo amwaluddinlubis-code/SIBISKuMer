@@ -207,7 +207,7 @@ describe('isolasi antar-sekolah saat restore', () => {
         ringkasan: 'log lama sekolah sumber',
       }],
     }), { konfirmasiSekolahLain: true, lewatiSnapshotPengaman: true });
-    assert.equal(result.success, true);
+    assert.equal(result.success, true, result.message || result.alasan || JSON.stringify(result));
     assert.equal((await getSekolahProfile()).npsn, '999');
     const logs = await getAuditLogs(100);
     assert.equal(logs.some((log) => log.id === 'legacy-audit-sumber'), false);
