@@ -647,6 +647,7 @@ export type AuditAksi =
   | 'backup_buat'
   | 'backup_pulihkan'
   | 'backup_reset'
+  | 'laporan_ekspor'
   | 'cloud_unggah'
   | 'cloud_unduh'
   | 'cloud_sinkron';

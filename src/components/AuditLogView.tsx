@@ -31,6 +31,7 @@ const AKSI_LABEL: Record<AuditAksi, string> = {
   backup_buat: 'Backup dibuat',
   backup_pulihkan: 'Backup dipulihkan',
   backup_reset: 'Reset database',
+  laporan_ekspor: 'Laporan diekspor',
   cloud_unggah: 'Cloud diunggah',
   cloud_unduh: 'Cloud diunduh',
   cloud_sinkron: 'Sinkron cloud',
@@ -52,7 +53,7 @@ const AKSI_BADGE: Partial<Record<AuditAksi, string>> = {
   password_reset: 'ui-badge-indigo',
 };
 
-const ENTITAS_OPTIONS = ['semua', 'sesi', 'akun', 'siswa', 'tahun', 'sinkron', 'backup'];
+const ENTITAS_OPTIONS = ['semua', 'sesi', 'akun', 'siswa', 'tahun', 'sinkron', 'backup', 'laporan'];
 const AKSI_OPTIONS: Array<'semua' | AuditAksi> = ['semua', ...(Object.keys(AKSI_LABEL) as AuditAksi[])];
 
 function formatWaktu(iso: string): string {
