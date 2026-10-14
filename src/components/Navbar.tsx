@@ -107,6 +107,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'raport', label: 'Nilai Raport', icon: Award, badge: undefined },
     { id: 'leger', label: 'Leger Nilai', icon: Table, badge: undefined },
     { id: 'rekap', label: 'Rekapitulasi', icon: BarChart3, badge: undefined },
+    { id: 'laporan', label: 'Pusat Laporan', icon: FileText, badge: undefined },
     { id: 'cetak', label: 'Cetak Lembar Induk', icon: Printer, badge: undefined },
     { id: 'dokumen', label: 'Generator Dokumen', icon: FileText, badge: undefined },
     { id: 'referensi', label: 'Data Referensi', icon: Layers, badge: undefined },
