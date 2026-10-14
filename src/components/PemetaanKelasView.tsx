@@ -18,6 +18,7 @@ import {
 import { PetaKelas, Siswa, SekolahProfile, TingkatKelas, PtkRef, RombelRef, AppUser } from '../types';
 import { savePetaKelas, deletePetaKelas, savePetaKelasList, saveSiswa, saveSiswaBulk, getTahunAjaranTerakhirSiswa } from '../utils/db';
 import { catatHapusCloud } from '../utils/tombstone';
+import { catatAudit, diffAudit } from '../utils/audit';
 import { getTingkatOptions, getTingkatDariRombel, getRaportList } from '../utils/raportUtils';
 import { cekTulisTahun, opsiTahunMaksSesi } from '../utils/sesi';
 import { canUserAccessTahun } from '../utils/tahunAjaran';
@@ -254,7 +255,15 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
     setSaving(true);
     startTopProgress();
     try {
+      const prevPeta = (peta || []).find((p) => p.id === editing.id);
       await savePetaKelas(editing);
+      const diffPeta = diffAudit(prevPeta, editing, ['tahunAjaran', 'tingkat', 'rombel', 'waliKelas']);
+      catatAudit('rombel_ubah', {
+        entitas: 'rombel',
+        entitasId: editing.id,
+        ringkasan: `${prevPeta ? 'Ubah' : 'Tambah'} pemetaan ${editing.rombel.trim().toUpperCase()} (${editing.tahunAjaran.trim()})`,
+        ...(diffPeta || {}),
+      });
       toast(`Pemetaan ${editing.rombel.trim().toUpperCase()} (${editing.tahunAjaran.trim()}) tersimpan.`, 'success');
       setEditing(null);
       onDataChanged();
@@ -284,6 +293,13 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
       // D7: catat hapus agar dirambatkan ke cloud (tanpa ini data terhapus
       // "hidup lagi" dari salinan cloud).
       catatHapusCloud('peta', p.id);
+      catatAudit('rombel_ubah', {
+        entitas: 'rombel',
+        entitasId: p.id,
+        ringkasan: `Hapus pemetaan ${p.rombel} (${p.tahunAjaran})`,
+        sebelum: { tahunAjaran: p.tahunAjaran, rombel: p.rombel, waliKelas: p.waliKelas || '' },
+        sesudah: {},
+      });
       toast(`Pemetaan ${p.rombel} dihapus.`, 'success');
       onDataChanged();
     } catch (err: unknown) {
@@ -344,6 +360,11 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
         source: 'manual',
       }));
       await savePetaKelasList(items);
+      catatAudit('rombel_ubah', {
+        entitas: 'rombel',
+        ringkasan: `Salin ${items.length} rombel dari ${sumber || efektif} ke ${tujuan}`,
+        sesudah: { jumlah: items.length, tahunAjaran: tujuan },
+      });
       toast(`${items.length} rombel disalin ke ${tujuan}.`, 'success');
       setTahunAktif(tujuan);
       setTahunBaru('');
@@ -403,6 +424,11 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
           source: 'generate',
         }))
       );
+      catatAudit('rombel_ubah', {
+        entitas: 'rombel',
+        ringkasan: `Bangkitkan ${baru.length} rombel dari data siswa ke ${efektif}`,
+        sesudah: { jumlah: baru.length, tahunAjaran: efektif },
+      });
       toast(`${baru.length} rombel dibangkitkan dari data siswa ke ${efektif}.`, 'success');
       onDataChanged();
     } catch (err: unknown) {
@@ -571,6 +597,11 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
         if (n > 0) finalCap.push(cur);
       }
       if (finalCap.length > 0) await saveSiswaBulk(finalCap);
+      catatAudit('rombel_ubah', {
+        entitas: 'rombel',
+        ringkasan: `Petakan mundur ${rencanaMundur.baru.length} rombel ke ${ringkas} + cap ${finalCap.length} riwayat siswa`,
+        sesudah: { jumlah: rencanaMundur.baru.length, tahunAjaran: ringkas },
+      });
       const info: string[] = [];
       if (rencanaMundur.sudahAda > 0) info.push(`${rencanaMundur.sudahAda} sudah ada (dilewati)`);
       if (rencanaMundur.terkunciLewat > 0) info.push(`${rencanaMundur.terkunciLewat} terkunci (dilewati)`);
@@ -648,6 +679,11 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
           source: 'generate' as const,
         }))
       );
+      catatAudit('rombel_ubah', {
+        entitas: 'rombel',
+        ringkasan: `Impor ${baru.length} rombel dari Data Referensi ke ${efektif}`,
+        sesudah: { jumlah: baru.length, tahunAjaran: efektif },
+      });
       toast(`${baru.length} rombel diimpor dari Data Referensi ke ${efektif}.`, 'success');
       onDataChanged();
     } catch (err: unknown) {
@@ -797,6 +833,13 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
         }
         await saveSiswa({ ...s, rombelSaatIni: tujuan, updatedAt: new Date().toISOString() });
         pindah++;
+      }
+      if (pindah > 0) {
+        catatAudit('rombel_ubah', {
+          entitas: 'rombel',
+          ringkasan: `Pindahkan ${pindah} siswa ke ${tujuan} (${efektif})${ditahan > 0 ? `; ${ditahan} dilewati (tahun terakhir terkunci)` : ''}`,
+          sesudah: { jumlah: pindah, rombel: tujuan, tahunAjaran: efektif },
+        });
       }
       toast(
         `${pindah} siswa dipindahkan ke ${tujuan}.${ditahan > 0 ? ` ${ditahan} dilewati (tahun terakhir terkunci).` : ''}`,
