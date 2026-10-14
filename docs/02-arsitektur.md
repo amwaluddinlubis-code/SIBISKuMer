@@ -125,6 +125,8 @@ checkbox pilih → `saveSiswa`/`saveSekolahProfile`/`saveRombelRefs`/`savePtkRef
 **5.5 Backup:** `exportAllData` (v`1.2.0`, termasuk `tutupTahun`) → unduh JSON / unggah Drive; restore: pilih file →
 `confirmDialog` danger → `importBackupData` (validasi array `siswa`) → `onDataChanged()`.
 
+**5.7 Impor Excel/CSV siswa:** `ImporSiswaView` → baca berkas (CSV `parseCsv` / Excel `barisDariExcel`, sheet pertama) → `petakanKolomOtomatis` (label/alias; kolom asing ditandai) → `validasiSemuaBaris` (format + duplikat dalam berkas) → `rekonsiliasiImpor` (baru/sama/beda/konflik/error/ditolak-akses; `canUserAccessRombel`) → pilihan eksplisit pengguna (massal + per baris + checkbox persetujuan) → `jalankanAutoBackup` (snapshot pengaman) → `rencanaTerapkan` → `saveSiswaBulk` (satu transaksi atomik) → sidik jari SHA-256 dicatat (`bukuinduk_impor_sidik`) + audit `impor_siswa` → `onDataChanged()`. Tidak ada mutasi sebelum konfirmasi pratinjau.
+
 **5.6 Arsip tahun ajaran:** `ArsipView` (wizard: susun rencana per rombel →
 `App.handleTutupTahun`: `buildSnapshot` pra-promosi → `promoteSiswaKenaikanKelas`
 per grup → `saveTutupTahun` → putar tahun aktif + semester gasal → `loadData()`).
@@ -154,4 +156,5 @@ baris cocok non-Aktif di preview).
 - Penegakan di `filterSiswaByAccess`, `canUserAccessRombel`, `isAdministrator` — dipakai di
   tampil, simpan, dan hapus (`App.tsx`).
 - Tab admin disembunyikan dari operator + dijaga ulang saat render (`AccessDeniedNotice`).
+- Impor Excel/CSV: penegakan di lapisan aplikasi (UI + rekonsiliasi + tulis) via `canUserAccessRombel`; tidak ada backend yang memvalidasi tulis (lihat `05-operasional.md` §5b butir 10).
 - Diketahui belum aman: password plaintext (lihat NFR-03 / roadmap Tahap 5).
