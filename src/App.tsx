@@ -109,7 +109,7 @@ import { PageControl } from './components/PageControl';
 import { SchoolSwitcher } from './components/SchoolSwitcher';
 import { TopProgressBar } from './components/TopProgressBar';
 import { startTopProgress, doneTopProgress } from './utils/progress';
-import { catatAudit } from './utils/audit';
+import { catatAudit, diffAudit } from './utils/audit';
 import { catatHapusCloud } from './utils/tombstone';
 import { centangAutoBackup } from './utils/autoBackup';
 import { validateSchoolEntryInput } from './utils/validation';
@@ -714,6 +714,13 @@ export default function App() {
         'success'
       );
     } catch (err: unknown) {
+      catatAudit('tutup_tahun', {
+        entitas: 'tahun',
+        entitasId: args.tahunTutup,
+        ringkasan: `Gagal tutup ${args.tahunTutup} → ${args.tahunBaru}`,
+        hasil: 'gagal',
+        detail: err instanceof Error ? err.message : String(err),
+      });
       toast(`Gagal menutup tahun: ${err instanceof Error ? err.message : String(err)}`, 'error');
       throw err;
     } finally {
@@ -996,10 +1003,14 @@ export default function App() {
       await loadData();
       setIsFormOpen(false);
       setEditingSiswa(null);
+      const diffSiswa = prev
+        ? diffAudit(prev, locked, ['statusSiswa', 'rombelSaatIni'])
+        : undefined;
       catatAudit(prev ? 'siswa_ubah' : 'siswa_tambah', {
         entitas: 'siswa',
         entitasId: locked.id,
         ringkasan: `${prev ? 'Ubah' : 'Tambah'} siswa "${(siswaData.namaLengkap || '').trim()}" (${locked.rombelSaatIni || '-'})`,
+        ...(diffSiswa || {}),
       });
       toast(`Data "${(siswaData.namaLengkap || 'siswa').trim()}" berhasil disimpan.`, 'success');
     } catch (err: unknown) {
@@ -1108,6 +1119,8 @@ export default function App() {
         entitasId: id,
         ringkasan: `Mutasi keluar "${student.namaLengkap}" → ${dok.sekolahTujuan}`,
         detail: dok.noSuratMutasi ? `No. surat: ${dok.noSuratMutasi}` : undefined,
+        sebelum: { statusSiswa: student.statusSiswa },
+        sesudah: { statusSiswa: 'Mutasi Keluar' },
       });
       toast(`"${student.namaLengkap}" dimutasi keluar ke ${dok.sekolahTujuan}.`, 'success');
     } catch (err: unknown) {
