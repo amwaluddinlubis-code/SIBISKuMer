@@ -582,6 +582,12 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
       }
     } catch (err: any) {
       const msg = err.message || 'Kesalahan saat menyimpan sinkronisasi';
+      catatAudit('sinkron_terapkan', {
+        entitas: 'sinkron',
+        ringkasan: 'Gagal menerapkan sinkron Dapodik',
+        hasil: 'gagal',
+        detail: msg.slice(0, 200),
+      });
       setSyncSteps((prev) => prev.map((s) => (s.status === 'active' ? { ...s, status: 'error' as const, detail: msg.slice(0, 120) } : s)));
       setSyncPercent(100);
       setSyncResult({
