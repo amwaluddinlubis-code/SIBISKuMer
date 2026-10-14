@@ -27,6 +27,8 @@ const AKSI_LABEL: Record<AuditAksi, string> = {
   tutup_tahun: 'Tutup tahun',
   buka_tahun: 'Buka kunci tahun',
   sinkron_terapkan: 'Sinkron diterapkan',
+  // Issue #11: label untuk aksi impor siswa (wajib — AKSI_LABEL exhaustive atas AuditAksi).
+  impor_siswa: 'Impor siswa (Excel/CSV)',
   backup_buat: 'Backup dibuat',
   backup_pulihkan: 'Backup dipulihkan',
   backup_reset: 'Reset database',
