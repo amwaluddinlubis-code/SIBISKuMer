@@ -14,15 +14,12 @@ Server Node (`server.ts`) hanya menjadi perantara ke Web Service Dapodik lokal.
 - Master data siswa (biodata lengkap, NISN/NIPD, rombel, status)
 - Nilai raport per semester + riwayat semester & kenaikan kelas multi-tahun
 - Cetak Lembar Buku Induk & Kartu Pelajar standar dinas
-- Rekapitulasi & dashboard statistik
-- **Pusat Laporan**: 6 laporan administratif siap cetak (Statistik, Daftar Siswa,
-  Mutasi Masuk/Keluar, Data Belum Lengkap, Temuan Validasi) dengan filter
-  tahun ajaran/rombel/status, metadata laporan (parameter, waktu pembuatan,
-  sumber/periode data) di setiap keluaran, dan ekspor Excel/CSV. PDF dibuat lewat
-  dialog cetak browser (Cetak → Save as PDF) — tidak ada generator PDF native.
+- Rekapitulasi & dashboard pusat kendali: filter tahun/rombel/status, widget pekerjaan tertunda, arus siswa per rentang tanggal, tenggat laporan — setiap angka dapat dibuka ke daftar data sumbernya (drill-down)
 - Sinkronisasi Dapodik lokal (host/port/token terkonfigurasi) + mode simulasi
 - Multi-pengguna berbasis peran: `administrator` & `operator`
+- Pemeriksa Data: kelengkapan, validitas, inkonsistensi & kemungkinan duplikat siswa (tanpa ubah/hapus otomatis)
 - Cadangan lokal (JSON, opsional **terenkripsi password**) & Google Drive
+- **Impor siswa dari Excel (.xlsx) / CSV**: pemetaan kolom (label/alias, kolom asing ditandai), pratinjau + rekonsiliasi (baru/sama/beda/konflik/error/di luar kewenangan), laporan error CSV, snapshot pengaman + satu transaksi, cegah unggah ulang (sidik jari SHA-256) — maks 5 MB / 2000 baris; template dapat diunduh dari wizard impor, contoh di `docs/contoh-impor-siswa.csv`
 - PWA: dapat diinstal & berjalan offline
 - **Baru:** form siswa wizard 5 langkah (mobile-friendly) • dashboard "Perlu Perhatian" • pencarian global (Ctrl+K) • pratinjau cetak WYSIWYG • mode malam + pengaturan ukuran huruf
 
@@ -55,6 +52,9 @@ Skrip lain: `bun run build`, `bun run preview`, `bun run lint` (`tsc --noEmit`).
   perangkat bersama di tata usaha).
 - File cadangan lokal dapat **dienkripsi dengan password** (PBKDF2 + AES-GCM-256)
   — sangat disarankan untuk file yang disimpan di flashdisk.
+- Impor Excel/CSV menegakkan hak rombel operator di lapisan aplikasi (UI +
+  rekonsiliasi + tulis), sama seperti input manual — tidak ada server yang
+  memvalidasi tulis secara independen (aplikasi offline-first).
 - Batasan yang perlu dipahami: aplikasi berjalan penuh di sisi klien (browser),
   sehingga perlindungannya setara dengan keamanan perangkat itu sendiri.
   Untuk data sangat sensitif, gunakan perangkat khusus operator dan kunci layarnya.
