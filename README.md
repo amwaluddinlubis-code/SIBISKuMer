@@ -62,8 +62,44 @@ Skrip lain: `bun run build`, `bun run preview`, `bun run lint` (`tsc --noEmit`).
    `localhost`, `127.0.0.1`, `::1`.
    Untuk server Dapodik di IP LAN lain, jalankan server dengan:
    ```
-   DAPODIK_ALLOWED_HOSTS="localhost,127.0.0.1,192.168.1.10" bun run dev
+   DAPODIK_ALLOW_HOSTS="localhost,127.0.0.1,192.168.1.10" bun run dev
    ```
+   Nama variabel yang berlaku adalah `DAPODIK_ALLOW_HOSTS`. README lama
+   menyebut `DAPODIK_ALLOWED_HOSTS` — nama itu tidak pernah dibaca aplikasi,
+   tetapi tetap didukung sebagai alias lama (deprecated) agar deployment yang
+   mengikuti README lama tidak tiba-tiba kehilangan allowlist. Bila keduanya
+   diatur dengan nilai berbeda, yang dipakai adalah `DAPODIK_ALLOW_HOSTS`.
+   Server mencatat peringatan saat alias dipakai. Konfigurasi dibaca sekali
+   saat startup; perubahan env butuh restart server. Detail lengkap:
+   `docs/05-operasional.md` §7a–7b.
+
+### Secret proxy Dapodik
+
+Semua request proxy `/api/dapodik/*` wajib membawa header
+`x-dapodik-secret` yang nilainya sama dengan `DAPODIK_PROXY_SECRET` di
+env server. Tanpa secret ini:
+
+- secret belum diatur di server → request ditolak **503** (proxy
+  dinonaktifkan);
+- header tidak ada atau tidak cocok → ditolak **403**;
+- port di luar 1–65535 → ditolak **400**.
+
+Cara mengatur (server): set `DAPODIK_PROXY_SECRET` ke nilai acak yang kuat
+(minimal 32 karakter, mis. hasil `openssl rand -hex 32`), dan samakan
+`VITE_DAPODIK_PROXY_SECRET` di env frontend lalu rebuild frontend. Contoh
+placeholder ada di `.env.example` — jangan pernah commit nilai sungguhan.
+
+Rotasi secret: (1) set nilai baru di env server, (2) samakan
+`VITE_DAPODIK_PROXY_SECRET` di frontend dan rebuild, (3) restart server.
+Sejak restart, secret lama langsung tidak berlaku.
+
+Catatan jujur: nilai secret tidak pernah ditulis ke log, respons error,
+maupun repository. Namun karena browser harus mengirim secret ini,
+salinan frontend-nya (`VITE_DAPODIK_PROXY_SECRET`) secara teknis tertanam
+di client bundle — jadi perlakukan secret ini sebagai rahasia bersama
+khusus LAN, bukan kredensial kuat: biarkan server bind ke `127.0.0.1`
+(bawaan), jangan pakai nilai yang sama untuk keperluan lain, dan rotasi
+bila bundle pernah terekspos ke pihak yang tidak dipercaya.
 
 ## Regulasi Acuan
 
