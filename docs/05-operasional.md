@@ -203,8 +203,56 @@ aktif. SOP:
 
 | Env | Fungsi |
 |-----|--------|
-| `DAPODIK_PROXY_SECRET` | **Wajib di server** bila fitur proxy dipakai — tanpa ini semua request `/api/dapodik/*` ditolak 503. Nilai harus sama dengan `VITE_DAPODIK_PROXY_SECRET` di frontend. |
+| `DAPODIK_PROXY_SECRET` | **Wajib di server** bila fitur proxy dipakai — tanpa ini semua request `/api/dapodik/*` ditolak 503. Nilai harus sama dengan `VITE_DAPODIK_PROXY_SECRET` di frontend. Lihat §7b untuk cara setel dan rotasi. |
 | `VITE_DAPODIK_PROXY_SECRET` | Secret yang dikirim frontend via header `x-dapodik-secret`. |
-| `DAPODIK_ALLOW_HOSTS` | Daftar host Dapodik tambahan yang diizinkan (comma-separated). `localhost`/`127.0.0.1`/`::1` selalu diizinkan; host publik selalu ditolak (anti-SSRF). |
+| `DAPODIK_ALLOW_HOSTS` | **Kanonis.** Daftar host Dapodik tambahan yang diizinkan (comma-separated). `localhost`/`127.0.0.1`/`::1` selalu diizinkan; host publik selalu ditolak (anti-SSRF). |
+| `DAPODIK_ALLOWED_HOSTS` | **Alias lama (deprecated).** Nama dari README lama yang tidak pernah dibaca aplikasi sebelum perbaikan #14. Tetap didukung untuk kompatibilitas: dipakai hanya bila `DAPODIK_ALLOW_HOSTS` tidak diatur. Bila keduanya diatur dengan nilai berbeda, yang kanonis menang dan server mencatat peringatan saat startup. Pindahkan ke nama kanonis. |
 | `HOST` | Bind address server (bawaan `127.0.0.1`; set `0.0.0.0` hanya bila perlu diakses dari LAN dan sudah memahami risikonya). |
 | `PORT` | Port server (angka 1–65535). |
+
+Konfigurasi proxy dibaca sekali saat startup (snapshot); perubahan env butuh
+restart server. Saat startup, server memvalidasi konfigurasi dan mencatat
+peringatan operator (tanpa pernah menampilkan nilai secret) bila:
+`DAPODIK_PROXY_SECRET` belum diatur, alias lama dipakai, kedua variabel
+allowlist diatur dengan nilai berbeda, atau `DAPODIK_ALLOW_HOSTS` tidak
+berisi host yang valid.
+
+### 7b. Secret proxy Dapodik — konfigurasi, rotasi, dan arti kegagalan
+
+**Kapan secret dibutuhkan.** Setiap request ke `/api/dapodik/*`
+(fetch-sekolah, fetch-peserta-didik, fetch-rombel, fetch-ptk,
+fetch-pengguna, test-connection) melewati guard proxy. Guard menolak
+request sebelum menyentuh Dapodik bila secret tidak terkonfigurasi atau
+header tidak cocok.
+
+**Cara menyetel (server).** Set `DAPODIK_PROXY_SECRET` di env server ke
+nilai acak yang kuat (minimal 32 karakter, mis. hasil
+`openssl rand -hex 32`), samakan `VITE_DAPODIK_PROXY_SECRET` di env
+frontend, rebuild frontend, lalu restart server. Contoh placeholder ada di
+`.env.example` — jangan pernah commit nilai sungguhan ke repository.
+
+**Rotasi.** (1) Set nilai baru di env server. (2) Samakan
+`VITE_DAPODIK_PROXY_SECRET` di frontend dan rebuild. (3) Restart server.
+Sejak restart, secret lama langsung tidak berlaku. Rotasi wajib dilakukan
+bila secret pernah terekspos (mis. bundle frontend dibagikan ke pihak
+yang tidak dipercaya, atau nilai tersalin ke log/chat).
+
+**Arti kegagalan konfigurasi.**
+
+| Status | Arti | Tindakan operator |
+|--------|------|-------------------|
+| 503 | `DAPODIK_PROXY_SECRET` belum diatur di server — proxy dinonaktifkan. | Set secret, restart server. |
+| 403 | Header `x-dapodik-secret` tidak ada atau tidak cocok. | Samakan `VITE_DAPODIK_PROXY_SECRET` frontend dengan server, rebuild, restart bila perlu. |
+| 403 | Host Dapodik tidak diizinkan. | Tambahkan host ke `DAPODIK_ALLOW_HOSTS`, restart server. |
+| 400 | Port tidak valid (bukan integer 1–65535). | Perbaiki nilai port di request. |
+
+Pesan error tidak pernah memuat nilai secret — hanya nama variabel dan
+statusnya.
+
+**Batasan yang perlu dipahami.** Karena browser harus mengirim secret ini,
+salinan frontend-nya (`VITE_DAPODIK_PROXY_SECRET`) secara teknis tertanam
+di client bundle. Artinya secret ini adalah rahasia bersama khusus LAN,
+bukan kredensial kuat: biarkan server bind ke `127.0.0.1` (bawaan), jangan
+pakai nilai yang sama untuk keperluan lain, dan rotasi bila bundle pernah
+terekspos. Menghilangkan secret dari bundle sepenuhnya butuh desain ulang
+autentikasi (mis. sesi server-side) — di luar cakupan perbaikan #15.
