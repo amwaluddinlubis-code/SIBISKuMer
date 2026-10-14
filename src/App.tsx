@@ -48,6 +48,14 @@ import {
 } from './utils/db';
 import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, PetaKelas, ModeTampilan, RiwayatTahunAjaran } from './types';
 import { buildSnapshot } from './utils/arsip';
+import {
+  DEFAULT_DASHBOARD_FILTER,
+  ROMBEL_KOSONG,
+  terapkanFilterDasbor,
+  type DashboardFilter,
+  type KondisiDrillDown,
+  type SiswaPresetFilter,
+} from './utils/dashboard';
 import { useIdleLogout } from './hooks/useIdleLogout';
 import { resolveTemaEfektif, bacaModeTampilan, simpanModeTampilan, terapkanModeTampilan, modeBerikutnya } from './utils/tema';
 import { getDaftarTahunAjaran, getTahunDiizinkan } from './utils/tahunAjaran';
@@ -214,6 +222,19 @@ export default function App() {
     () => filterSiswaByAccess(siswaList, currentUser).filter((s) => siswaTerlihatSesi(s, sesiEfektif)),
     [siswaList, currentUser, sesiEfektif]
   );
+  // ----- Dasbor pusat kendali (Issue #2) -----
+  // Filter roster dasbor + preset drill-down. Dasbor HANYA menerima
+  // `visibleSiswa` (sudah terpotong hak akses + sesi) — filter di sini
+  // hanya mempersempit, tidak pernah memperlebar cakupan.
+  const [dashboardFilter, setDashboardFilter] = useState<DashboardFilter>(DEFAULT_DASHBOARD_FILTER);
+  const [siswaPreset, setSiswaPreset] = useState<SiswaPresetFilter | null>(null);
+  const [siswaPresetNonce, setSiswaPresetNonce] = useState(0);
+  const [raportPresetRombel, setRaportPresetRombel] = useState<string | null>(null);
+  const [raportPresetNonce, setRaportPresetNonce] = useState(0);
+  const dashboardSiswa = useMemo(
+    () => terapkanFilterDasbor(visibleSiswa, dashboardFilter),
+    [visibleSiswa, dashboardFilter]
+  );
   const adminOnlyTabs = ['dapodik', 'pengaturan', 'backup', 'users', 'pemetaan', 'audit'];
 
   // Daftar cetak terfilter + pagination (setelah visibleSiswa tersedia)
@@ -254,6 +275,37 @@ export default function App() {
     setActiveTab(tab);
     window.setTimeout(() => doneTopProgress(), 450);
   }, [currentUser]);
+
+  /** Drill-down: buka daftar data sumber pembentuk angka dasbor.
+   *  Filter dasbor yang sedang aktif ikut diteruskan sebagai preset, jadi
+   *  daftar tujuan selalu sepakat dengan angka yang diklik. */
+  const handleDashboardDrillDown = useCallback(
+    (kondisi: KondisiDrillDown, opts?: Partial<SiswaPresetFilter> & { tujuan?: 'siswa' | 'raport' }) => {
+      const rombelDasbor = dashboardFilter.rombel !== 'all' ? dashboardFilter.rombel : undefined;
+      const statusDasbor = dashboardFilter.status !== 'all' ? dashboardFilter.status : undefined;
+      const tahunDasbor = dashboardFilter.tahun !== 'all' ? dashboardFilter.tahun : undefined;
+      if (kondisi === 'raport-belum' || opts?.tujuan === 'raport') {
+        // Tab Raport tak punya filter "Tanpa Rombel" — petakan ke semua rombel.
+        const rombel = opts?.rombel ?? rombelDasbor;
+        setRaportPresetRombel(rombel && rombel !== ROMBEL_KOSONG ? rombel : null);
+        setRaportPresetNonce((v) => v + 1);
+        handleNavigateTab('raport');
+        return;
+      }
+      setSiswaPreset({
+        rombel: opts?.rombel ?? rombelDasbor,
+        tingkat: opts?.tingkat,
+        status: opts?.status ?? statusDasbor,
+        tahun: opts?.tahun ?? tahunDasbor,
+        kondisi,
+        dari: opts?.dari,
+        sampai: opts?.sampai,
+      });
+      setSiswaPresetNonce((v) => v + 1);
+      handleNavigateTab('siswa');
+    },
+    [dashboardFilter, handleNavigateTab]
+  );
 
   // Jika peran berubah (mis. selesai impersonate / ganti akun), pastikan
   // operator tidak tertinggal di halaman admin.
@@ -1245,7 +1297,7 @@ export default function App() {
             {/* 4 kartu utama — hanya di Dasbor */}
             {activeTab === 'dasbor' && (
               <DashboardStats
-                siswa={visibleSiswa}
+                siswa={dashboardSiswa}
                 jenjang={sekolah.jenjang || 'SMP'}
                 lastSyncLog={syncLogs[0]}
                 isAdmin={isAdmin}
@@ -1257,6 +1309,7 @@ export default function App() {
                   else if (tujuan === 'nilai') handleNavigateTab('raport');
                   else if (tujuan === 'backup') handleNavigateTab('backup');
                 }}
+                onDrillDown={handleDashboardDrillDown}
               />
             )}
 
@@ -1264,7 +1317,8 @@ export default function App() {
             {activeTab === 'dasbor' && (
               <ErrorBoundary fallbackTitle="Dasbor gagal dimuat">
                 <OperatorDashboard
-                  siswa={visibleSiswa}
+                  siswa={dashboardSiswa}
+                  jumlahSebelumFilter={visibleSiswa.length}
                   sekolah={sekolah}
                   syncLogs={syncLogs}
                   rombelRefs={rombelRefs}
@@ -1272,6 +1326,11 @@ export default function App() {
                   currentUser={currentUser}
                   isAdmin={isAdmin}
                   sessionTahun={sessionTahun}
+                  filter={dashboardFilter}
+                  onFilterChange={setDashboardFilter}
+                  tahunOptions={daftarTahunAjaran}
+                  onDrillDown={handleDashboardDrillDown}
+                  onOpenBackup={() => handleNavigateTab('backup')}
                   onNavigate={handleNavigateTab}
                   onAddSiswa={() => {
                     setEditingSiswa(null);
@@ -1311,6 +1370,8 @@ export default function App() {
                 isAdmin={isAdmin}
                 sessionTahun={sessionTahun}
                 tahunOptions={daftarTahunAjaran}
+                filterAwal={siswaPreset}
+                filterNonce={siswaPresetNonce}
               />
               </ErrorBoundary>
             )}
@@ -1325,6 +1386,8 @@ export default function App() {
                 ptk={ptkRefs}
                 onDataChanged={loadData}
                 sessionTahun={sessionTahun}
+                presetRombel={raportPresetRombel}
+                presetNonce={raportPresetNonce}
               />
             )}
 

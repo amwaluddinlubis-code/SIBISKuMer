@@ -2,6 +2,14 @@
 
 > **Status:** Aktif · **Revisi:** 2026-09-15 · **Sumber kebenaran:** `src/types/index.ts`, `src/utils/db.ts`
 
+> **Catatan Issue #2 (Dasbor pusat kendali):** tidak ada perubahan model
+> data. Dasbor hanya membaca field `Siswa` yang sudah ada
+> (status/rombel/tanggal diterima & keluar/surat/dokumen/raport). Dua
+> batasan model yang sengaja didokumentasikan, bukan ditambal dengan
+> angka karangan: (a) tidak ada antrean persetujuan mutasi — mutasi
+> langsung mengubah status; (b) tidak ada tanggal tenggat laporan yang
+> tersimpan, jadi widget tenggat tidak menampilkan tanggal karangan.
+
 ## 1. ERD (tekstual)
 
 ```text

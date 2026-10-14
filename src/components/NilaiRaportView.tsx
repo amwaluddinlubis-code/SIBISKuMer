@@ -71,6 +71,10 @@ interface NilaiRaportViewProps {
   /** Sesi tahun ajaran hasil login per-TA (dipakai sebagai default filter). */
   sessionTahun?: string | null;
   onDataChanged: () => void;
+  /** Preset rombel dari drill-down dasbor (Issue #2). Diterapkan saat
+   *  `presetNonce` berubah. */
+  presetRombel?: string | null;
+  presetNonce?: number;
 }
 
 export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
@@ -80,7 +84,9 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
   tahunTerkunci,
   ptk,
   sessionTahun,
-  onDataChanged
+  onDataChanged,
+  presetRombel,
+  presetNonce,
 }) => {
   const jenjang = sekolah.jenjang || (sekolah.bentukPendidikan?.toUpperCase().includes('SD') ? 'SD' : 'SMP');
   const tingkatOptions = useMemo(() => getTingkatOptions(jenjang), [jenjang]);
@@ -129,6 +135,13 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
   useEffect(() => {
     if (sessionTahun) setSelectedTahun(sessionTahun);
   }, [sessionTahun]);
+
+  // Preset dari drill-down dasbor: saring ke rombel pembentuk angka.
+  useEffect(() => {
+    if (!presetNonce) return;
+    if (presetRombel && presetRombel !== 'all') setSelectedRombel(presetRombel);
+    else setSelectedRombel('all');
+  }, [presetNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cutoff sesi: pilihan di atas sesi dikembalikan ke sesi.
   useEffect(() => {

@@ -57,6 +57,27 @@ Akun bawaan (seed `src/data/initialData.ts : initialUsersList`):
 Password tersimpan sebagai hash (bukan plaintext); 5x salah login mengunci akun
 15 menit per database — tercatat di tab **Log Audit** (khusus administrator).
 
+## 3a. Panduan Dasbor Pusat Kendali (Issue #2)
+
+Tab **Dasbor** menampilkan angka dari data nyata dalam kewenangan Anda
+(`visibleSiswa`: sudah terpotong rombel akses + sesi) — bukan angka contoh.
+
+- **Filter Dasbor** (tahun ajaran / rombel / status) mempersempit SEMUA kartu
+  dasbor. Rentang tanggal di widget **Arus Siswa** hanya membatasi arus
+  penerimaan/keluar (berdasarkan tanggal diterima/keluar), bukan roster.
+- **Setiap angka dapat dibuka**: klik angka/kartu untuk membuka daftar data
+  sumber pembentuknya di Master Siswa (atau Nilai Raport untuk raport).
+  Daftar tujuan memakai predikat yang sama dengan angka dasbor.
+- **Antrean Tugas**: data wajib kosong, data tidak valid, dokumen belum
+  lengkap, belum ditempatkan ke rombel, raport semester berjalan belum ada,
+  mutasi keluar tanpa surat. Satu siswa bisa muncul di beberapa tugas.
+- **Tenggat & Kewajiban**: backup kedaluwarsa/belum pernah + kewajiban
+  raport berjalan. Aplikasi belum menyimpan tanggal tenggat laporan, jadi
+  widget ini sengaja TIDAK menampilkan tanggal tenggat karangan.
+- **Batasan**: aplikasi tidak punya antrean persetujuan mutasi (MutasiWizard
+  langsung mengubah status). "Mutasi keluar tanpa surat" adalah tindak
+  lanjut dokumen, bukan antrean persetujuan.
+
 ## 4. SOP Backup & Restore
 
 ### 4.0 Cakupan data yang dicadangkan (tegas)
