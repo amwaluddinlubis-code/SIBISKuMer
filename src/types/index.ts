@@ -627,6 +627,7 @@ export type AuditAksi =
   | 'tutup_tahun'
   | 'buka_tahun'
   | 'sinkron_terapkan'
+  | 'impor_siswa'
   | 'backup_buat'
   | 'backup_pulihkan'
   | 'backup_reset'
