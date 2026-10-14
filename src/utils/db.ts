@@ -7,6 +7,18 @@ import { toast } from './notify';
 // di dalam badan fungsi (tidak saat evaluasi modul).
 import { muatTombstoneLokal, simpanTombstoneLokal } from './tombstone';
 import { bolehImporEntriAudit } from './auditSanitasi';
+// Issue #10 — integritas (SHA-256), kompatibilitas & validasi struktur backup.
+import {
+  BACKUP_FORMAT_VERSION,
+  deteksiCadanganTerenkripsi,
+  periksaIntegritas,
+  periksaRelasiBackup,
+  tambahIntegritas,
+  validasiKompatibilitas,
+  validasiStrukturBackup,
+  type HasilPeriksaIntegritas,
+  type IntegritasBackup,
+} from './backupIntegrity';
 
 const DB_NAME = 'BukuInduk_Merdeka_DB';
 // Naikkan versi setiap kali ada store baru agar database lama di browser
@@ -144,6 +156,8 @@ const LS_KEYS = {
   LOCKOUT: 'bukuinduk_login_lock',
   AUTOBACKUP_CFG: 'bukuinduk_autobackup_cfg',
   TOMBSTONE: 'bukuinduk_tombstone',
+  /** Sidik jari (SHA-256) berkas impor Excel/CSV yang sudah diterapkan (Issue #11). */
+  IMPOR_SIDIK: 'bukuinduk_impor_sidik',
   CLOUDSYNC: 'bukuinduk_cloudsync',
   SCHOOLS: 'bukuinduk_schools',
   ACTIVE_SCHOOL: 'bukuinduk_active_school',
@@ -801,40 +815,122 @@ export async function saveSiswaBulk(daftar: Siswa[]): Promise<void> {
   }
 }
 
-/** Urai file backup JSON menjadi payload + ringkasan rombel (untuk restore selektif). */
-export function parseBackupPayload(jsonString: string): {
-  payload: BackupPayload;
-  totalSiswa: number;
-  rombel: Array<{ rombel: string; jumlah: number }>;
-} {
-  const data: BackupPayload = JSON.parse(jsonString);
-  if (!data.siswa || !Array.isArray(data.siswa)) {
-    throw new Error('Format data cadangan tidak valid (tidak ada array siswa).');
-  }
+/** Ringkasan rombel dari payload (dipakai pratinjau & restore selektif). */
+function ringkasRombel(data: BackupPayload): Array<{ rombel: string; jumlah: number }> {
   const hitung = new Map<string, number>();
   for (const s of data.siswa) {
     const r = (s?.rombelSaatIni || 'Tanpa Rombel').toString().trim() || 'Tanpa Rombel';
     hitung.set(r, (hitung.get(r) || 0) + 1);
   }
-  const rombel = [...hitung.entries()]
+  return [...hitung.entries()]
     .map(([rombel, jumlah]) => ({ rombel, jumlah }))
     .sort((a, b) => a.rombel.localeCompare(b.rombel));
-  return { payload: data, totalSiswa: data.siswa.length, rombel };
+}
+
+/**
+ * Urai file backup JSON menjadi payload + ringkasan rombel (untuk restore selektif).
+ * Issue #10 — melempar Error dengan pesan jelas bila: file terenkripsi,
+ * bukan JSON valid, tidak kompatibel (app/versi), atau struktur tidak valid.
+ */
+export function parseBackupPayload(jsonString: string): {
+  payload: BackupPayload;
+  totalSiswa: number;
+  rombel: Array<{ rombel: string; jumlah: number }>;
+  /** true bila file membawa blok integritas (checksum) — jika false, UI
+   *  menampilkan peringatan "backup lama tanpa checksum". */
+  punyaIntegritas: boolean;
+  /** Peringatan relasi non-fatal (mis. rombel tak dikenal, NISN ganda). */
+  peringatanRelasi: string[];
+} {
+  if (deteksiCadanganTerenkripsi(jsonString)) {
+    throw new Error(
+      'File cadangan terenkripsi (butuh password) — pemulihan file terenkripsi belum didukung di tab ini.'
+    );
+  }
+  let data: BackupPayload;
+  try {
+    data = JSON.parse(jsonString);
+  } catch {
+    throw new Error('File bukan JSON yang valid — kemungkinan rusak atau terpotong saat diunduh.');
+  }
+  const masalahKompat = validasiKompatibilitas(data);
+  if (masalahKompat.length > 0) throw new Error(masalahKompat.join(' '));
+  const masalahStruktur = validasiStrukturBackup(data);
+  if (masalahStruktur.length > 0) {
+    throw new Error(`Struktur backup tidak valid: ${masalahStruktur.join(' ')}`);
+  }
+  return {
+    payload: data,
+    totalSiswa: data.siswa.length,
+    rombel: ringkasRombel(data),
+    punyaIntegritas: !!data.integritas,
+    peringatanRelasi: periksaRelasiBackup(data),
+  };
+}
+
+/** Issue #10 — hasil pratinjau file backup (dipakai panel pratinjau restore). */
+export interface HasilPratinjauBackup {
+  payload: BackupPayload;
+  totalSiswa: number;
+  rombel: Array<{ rombel: string; jumlah: number }>;
+  integritas: HasilPeriksaIntegritas;
+  peringatanRelasi: string[];
+}
+
+/**
+ * Issue #10 — pratinjau file backup SEBELUM restore: parse + validasi
+ * kompatibilitas/struktur + periksa checksum SHA-256. Melempar Error dengan
+ * pesan jelas bila file ditolak (rusak / tidak kompatibel / checksum tidak
+ * cocok). Backup lama tanpa checksum TIDAK ditolak — statusnya
+ * 'tanpa-checksum' dan UI menampilkan peringatan.
+ */
+export async function pratinjauBackup(jsonString: string): Promise<HasilPratinjauBackup> {
+  const { payload, totalSiswa, rombel, peringatanRelasi } = parseBackupPayload(jsonString);
+  const integritas = await periksaIntegritas(payload);
+  if (integritas.status === 'tidak-cocok' || integritas.status === 'tidak-valid') {
+    throw new Error(integritas.alasan || 'Integritas backup tidak valid — file ditolak.');
+  }
+  return { payload, totalSiswa, rombel, integritas, peringatanRelasi };
 }
 
 /**
  * Restore selektif: hanya siswa dari rombel terpilih (upsert per id).
  * Mengembalikan { ditambahkan, diperbarui }.
+ * Issue #10 — sebelum menulis: periksa checksum bila ada (tolak bila tidak
+ * cocok), lalu buat snapshot pengaman. Bila tulis gagal, rollback otomatis
+ * ke snapshot pengaman dan Error menyebutkan hasil rollback.
  */
 export async function importSelectiveSiswa(
   data: BackupPayload,
   rombelTerpilih: string[]
 ): Promise<{ ditambahkan: number; diperbarui: number; total: number }> {
+  const masalahStruktur = validasiStrukturBackup(data);
+  if (masalahStruktur.length > 0) {
+    throw new Error(`Struktur backup tidak valid: ${masalahStruktur.join(' ')}`);
+  }
+  const integritas = await periksaIntegritas(data);
+  if (integritas.status === 'tidak-cocok' || integritas.status === 'tidak-valid') {
+    throw new Error(integritas.alasan || 'Integritas backup tidak valid — restore selektif dibatalkan.');
+  }
   const pilih = new Set((rombelTerpilih || []).map((r) => r.trim()));
   const cocok = (data.siswa || []).filter((s) =>
     pilih.has(((s?.rombelSaatIni || 'Tanpa Rombel').toString().trim() || 'Tanpa Rombel'))
   );
   if (cocok.length === 0) throw new Error('Tidak ada siswa pada rombel terpilih.');
+  // Snapshot pengaman SEBELUM mutasi apa pun (fail-closed: bila gagal dibuat,
+  // restore selektif dibatalkan agar data saat ini tetap aman).
+  let pengaman: SnapshotPengaman;
+  try {
+    const payloadPengaman = await exportAllData();
+    const jumlahSaatIni = (await getAllSiswa()).length;
+    const id = await simpanSnapshotPengaman(payloadPengaman, jumlahSaatIni);
+    pengaman = { id, timestamp: new Date().toISOString(), jumlahSiswa: jumlahSaatIni, payload: payloadPengaman };
+  } catch (e) {
+    throw new Error(
+      `Restore selektif dibatalkan: gagal membuat snapshot pengaman kondisi saat ini ` +
+        `(${e instanceof Error ? e.message : String(e)}). Data saat ini TIDAK diubah.`
+    );
+  }
   const ada = new Set((await getAllSiswa()).map((s) => s.id));
   let ditambahkan = 0;
   for (const s of cocok) {
@@ -843,7 +939,15 @@ export async function importSelectiveSiswa(
       ada.add(s.id);
     }
   }
-  await saveSiswaBulk(cocok);
+  try {
+    await saveSiswaBulk(cocok);
+  } catch (e) {
+    const rollback = await cobaRollback(pengaman);
+    throw new Error(
+      `Restore selektif GAGAL (${e instanceof Error ? e.message : String(e)}). ` +
+        `${rollback.pesan || 'Rollback tidak dilakukan.'}`
+    );
+  }
   return { ditambahkan, diperbarui: cocok.length - ditambahkan, total: cocok.length };
 }
 
@@ -1219,8 +1323,6 @@ export async function addAuditLog(entry: AuditLog): Promise<void> {
     const raw = localStorage.getItem(sk(LS_KEYS.AUDIT));
     const parsed = raw ? JSON.parse(raw) : [];
     const list: AuditLog[] = Array.isArray(parsed) ? parsed : [];
-    // Dedup cermin LS berdasarkan id (put IndexedDB sudah dedup; tanpa ini
-    // tulis ulang entri yang sama — mis. dari restore — menggandakan cermin).
     const idxLama = list.findIndex((l) => l && l.id === entry.id);
     if (idxLama >= 0) list.splice(idxLama, 1);
     list.unshift(entry);
@@ -1230,10 +1332,28 @@ export async function addAuditLog(entry: AuditLog): Promise<void> {
   }
 }
 
-// NOTE (issue #9, append-only): fungsi clearAuditLogs SENGAJA DIHAPUS.
-// Audit log tidak dapat dihapus pengguna; satu-satunya penghapusan adalah
-// reset total database (`clearDatabase`, dicatat `backup_reset` SETELAH
-// wipe) dan retensi bergulir (maks 2000 entri, tertua terhapus).
+export async function clearAuditLogs(): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve) => {
+      try {
+        const tx = db.transaction(STORES.AUDIT, 'readwrite');
+        const req = tx.objectStore(STORES.AUDIT).clear();
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } catch {
+    /* abaikan */
+  }
+  try {
+    localStorage.removeItem(sk(LS_KEYS.AUDIT));
+  } catch {
+    /* abaikan */
+  }
+}
 
 // ---------------- CADANGAN OTOMATIS (snapshot di IndexedDB, maks 5) ----------------
 
@@ -1267,14 +1387,17 @@ export async function saveAutoSnapshot(snap: AutoBackupSnapshot): Promise<void> 
       const putReq = store.put(snap);
       putReq.onerror = () => reject(putReq.error);
       putReq.onsuccess = () => {
-        // Pertahankan hanya N terbaru.
+        // Pertahankan hanya N terbaru — KECUALI snapshot pengaman pra-restore
+        // (Issue #10): snapshot pengaman tidak pernah digusur penjadwal
+        // otomatis; hanya snapshot pengaman terbaru yang dipertahankan
+        // (dikelola simpanSnapshotPengaman).
         try {
           const allReq = store.getAll();
           allReq.onsuccess = () => {
             const rows: AutoBackupSnapshot[] = (allReq.result || []).sort(
               (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
             );
-            const extra = rows.slice(AUTOBACKUP_KEEP);
+            const extra = rows.filter((r) => r.dibuatOleh !== PENGAMAN_RESTORE_OLEH).slice(AUTOBACKUP_KEEP);
             if (extra.length === 0) return resolve();
             let done = 0;
             for (const r of extra) {
@@ -1308,6 +1431,34 @@ export async function deleteAutoSnapshot(id: string): Promise<void> {
       resolve();
     }
   });
+}
+
+/**
+ * Issue #10 — simpan snapshot pengaman kondisi saat ini. Hanya snapshot
+ * pengaman TERBARU yang dipertahankan (yang lama dihapus dulu), dan snapshot
+ * pengaman tidak pernah digusur pruning snapshot otomatis (lihat
+ * saveAutoSnapshot). Mengembalikan id snapshot.
+ */
+export async function simpanSnapshotPengaman(payload: string, jumlahSiswa: number): Promise<string> {
+  const timestamp = new Date().toISOString();
+  const id = `pengaman-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const lama = (await getAutoSnapshots()).filter((s) => s.dibuatOleh === PENGAMAN_RESTORE_OLEH);
+  for (const s of lama) {
+    try {
+      await deleteAutoSnapshot(s.id);
+    } catch {
+      /* lanjut — snapshot lama yang gagal dihapus tidak menggagalkan pengaman baru */
+    }
+  }
+  await saveAutoSnapshot({
+    id,
+    timestamp,
+    dibuatOleh: PENGAMAN_RESTORE_OLEH,
+    ukuranBytes: new Blob([payload]).size,
+    jumlahSiswa,
+    payload,
+  });
+  return id;
 }
 
 // ---------------- ARSIP TAHUN AJARAN (tutup tahun, terkunci) ----------------
@@ -1793,6 +1944,19 @@ export function clearSessionTahunAjaran(): void {
 
 // ---------------- BACKUP & RESTORE ----------------
 
+/** Issue #10 — nilai `dibuatOleh` snapshot pengaman pra-restore. */
+export const PENGAMAN_RESTORE_OLEH = 'pengaman-restore';
+
+/** Issue #10 — snapshot kondisi saat ini yang dibuat otomatis sebelum restore. */
+export interface SnapshotPengaman {
+  id: string;
+  timestamp: string;
+  jumlahSiswa: number;
+  payload: string;
+  /** Token lokal Dapodik untuk memulihkan konfigurasi persis setelah rollback. */
+  tokenDapodikSebelumnya?: string;
+}
+
 /** D3 — Mode restore backup. */
 export type RestoreMode = 'gabung' | 'ganti-total';
 
@@ -1808,6 +1972,33 @@ export interface RestoreOptions {
    *  yang sudah ada ditimpa oleh data dari file backup. Default (false):
    *  administrator yang sudah ada TIDAK PERNAH ditimpa backup. */
   konfirmasiTimpaAdmin?: boolean;
+  /** Issue #10 (internal) — true = lewati pembuatan snapshot pengaman
+   *  (dipakai jalur rollback, yang SUDAH memegang snapshot pengaman). */
+  lewatiSnapshotPengaman?: boolean;
+  /** Issue #10 (internal rollback) — hapus akun hasil restore gagal sebelum replay snapshot. */
+  hapusPenggunaSaatRestore?: boolean;
+}
+
+/** Issue #10 — hasil verifikasi pasca-restore (jumlah/relasi). */
+export interface VerifikasiRestore {
+  ok: boolean;
+  /** Jumlah siswa yang seharusnya ada setelah restore (memperhitungkan
+   *  rekonsiliasi tombstone). */
+  jumlahSiswaDiharapkan: number;
+  /** Jumlah siswa yang benar-benar terbaca dari database setelah restore. */
+  jumlahSiswaAktual: number;
+  /** Id siswa yang diharapkan ada tetapi hilang setelah restore (maks 10). */
+  idHilang: string[];
+  /** true bila profil sekolah hasil restore cocok dengan NPSN file backup. */
+  profilCocok: boolean;
+  pesan: string;
+}
+
+/** Issue #10 — hasil upaya rollback ke snapshot pengaman. */
+export interface RollbackRestore {
+  dilakukan: boolean;
+  berhasil?: boolean;
+  pesan?: string;
 }
 
 /** D3 — Hasil restore yang jelas. Field success/message/count dipertahankan
@@ -1821,12 +2012,22 @@ export interface RestoreResult {
   /** D15 — peringatan non-fatal selama restore (mis. admin dilewati,
    *  record yang tetap dipertahankan terhapus karena tombstone). */
   peringatan?: string[];
+  /** Issue #10 — id snapshot pengaman kondisi sebelum restore (dapat
+   *  dipulihkan manual dari daftar snapshot bila perlu). */
+  snapshotPengamanId?: string;
+  /** Issue #10 — hasil verifikasi jumlah/relasi pasca-restore. */
+  verifikasi?: VerifikasiRestore;
+  /** Issue #10 — hasil rollback otomatis bila restore / verifikasi gagal. */
+  rollback?: RollbackRestore;
 }
 
 export interface BackupPayload {
   app: string;
   version: string;
   exportedAt: string;
+  /** Issue #10 — blok integritas SHA-256 + jumlah record (dibuat saat ekspor).
+   *  Backup lama tidak punya blok ini (diperlakukan sebagai 'tanpa-checksum'). */
+  integritas?: IntegritasBackup;
   sekolah: SekolahProfile;
   dapodikConfig: DapodikConfig;
   siswa: Siswa[];
@@ -1855,7 +2056,8 @@ export async function exportAllData(): Promise<string> {
 
   const payload: BackupPayload = {
     app: 'Buku Induk Siswa Kurikulum Merdeka',
-    version: '1.3.0',
+    // Issue #10 — versi format terpusat di backupIntegrity.BACKUP_FORMAT_VERSION.
+    version: BACKUP_FORMAT_VERSION,
     exportedAt: new Date().toISOString(),
     sekolah,
     // S7: token Web Service Dapodik TIDAK ikut ke file backup. Token tersimpan
@@ -1874,7 +2076,125 @@ export async function exportAllData(): Promise<string> {
     audit
   };
 
-  return JSON.stringify(payload, null, 2);
+  // Issue #10 — tempelkan blok integritas (checksum SHA-256 + jumlah record)
+  // agar restore dapat membuktikan file tidak rusak/diubah. Bila WebCrypto
+  // tidak tersedia, ekspor tetap berjalan tanpa blok (restore akan memberi
+  // peringatan 'tanpa-checksum') — ekspor tidak boleh gagal hanya karena itu.
+  try {
+    return JSON.stringify(await tambahIntegritas(payload), null, 2);
+  } catch {
+    return JSON.stringify(payload, null, 2);
+  }
+}
+
+/**
+ * Issue #10 — verifikasi pasca-restore: baca ulang database dan bandingkan
+ * dengan yang diharapkan (id backup ∪ id sebelumnya, dikurangi yang
+ * dihapus-ulang tombstone). Juga cek profil sekolah cocok dengan NPSN backup.
+ * Mengembalikan ok=false bila ada id hilang, jumlah tidak cocok, atau profil
+ * tidak cocok — pemanggil lalu me-rollback.
+ */
+async function verifikasiPascaRestore(
+  data: BackupPayload,
+  mode: RestoreMode,
+  idSebelumnya: Set<string>,
+  siswaTombDihapus: string[]
+): Promise<VerifikasiRestore> {
+  const sesudah = await getAllSiswa();
+  const idSesudah = new Set(sesudah.map((s) => s.id));
+  const diharapkan = new Set<string>();
+  if (mode !== 'ganti-total') {
+    idSebelumnya.forEach((id) => diharapkan.add(id));
+  }
+  for (const s of data.siswa) {
+    if (s?.id) diharapkan.add(s.id);
+  }
+  for (const id of siswaTombDihapus) diharapkan.delete(id);
+  const idHilang = [...diharapkan].filter((id) => !idSesudah.has(id)).slice(0, 10);
+  let profilCocok = true;
+  const npsnBackup = String(data.sekolah?.npsn || '').trim();
+  if (npsnBackup) {
+    try {
+      profilCocok = String((await getSekolahProfile())?.npsn || '').trim() === npsnBackup;
+    } catch {
+      profilCocok = false;
+    }
+  }
+  const ok = idHilang.length === 0 && sesudah.length === diharapkan.size && profilCocok;
+  const pesan =
+    `Verifikasi: ${sesudah.length}/${diharapkan.size} siswa hadir` +
+    (idHilang.length > 0 ? `; ${idHilang.length} id hilang` : '') +
+    (profilCocok ? '; profil sekolah cocok.' : '; profil sekolah TIDAK cocok dengan file backup.');
+  return {
+    ok,
+    jumlahSiswaDiharapkan: diharapkan.size,
+    jumlahSiswaAktual: sesudah.length,
+    idHilang,
+    profilCocok,
+    pesan,
+  };
+}
+
+/**
+ * Issue #10 — rollback ke snapshot pengaman: pulihkan kondisi sebelum restore
+ * dengan restore 'ganti-total' dari payload pengaman (tanpa membuat snapshot
+ * pengaman baru — jalur ini SUDAH memegang snapshotnya), lalu simpan ulang
+ * record snapshot pengaman (clearDatabase di dalamnya ikut menghapus store
+ * snapshot). Mengembalikan hasil rollback untuk dilaporkan ke user.
+ */
+async function cobaRollback(pengaman: SnapshotPengaman | undefined): Promise<RollbackRestore> {
+  if (!pengaman) {
+    return { dilakukan: false, pesan: 'Tidak ada snapshot pengaman untuk rollback.' };
+  }
+  try {
+    const hasil = await importBackupData(pengaman.payload, {
+      mode: 'ganti-total',
+      lewatiSnapshotPengaman: true,
+      konfirmasiSekolahLain: true,
+      hapusPenggunaSaatRestore: true,
+    });
+    // Token sengaja tidak pernah dimasukkan ke file/snapshot JSON yang dapat
+    // diunduh. Simpan token lokal lama di state rollback dan pulihkan setelah
+    // payload snapshot yang sudah disanitasi selesai direplay.
+    if (hasil.success && pengaman.tokenDapodikSebelumnya !== undefined) {
+      const cfg = await getDapodikConfig();
+      await saveDapodikConfig({ ...cfg, token: pengaman.tokenDapodikSebelumnya });
+    }
+    try {
+      await saveAutoSnapshot({
+        id: pengaman.id,
+        timestamp: pengaman.timestamp,
+        dibuatOleh: PENGAMAN_RESTORE_OLEH,
+        ukuranBytes: new Blob([pengaman.payload]).size,
+        jumlahSiswa: pengaman.jumlahSiswa,
+        payload: pengaman.payload,
+      });
+    } catch {
+      /* record snapshot hilang, tetapi data sudah dipulihkan */
+    }
+    if (hasil.success) {
+      return {
+        dilakukan: true,
+        berhasil: true,
+        pesan: 'Kondisi sebelum restore berhasil dipulihkan dari snapshot pengaman.',
+      };
+    }
+    return {
+      dilakukan: true,
+      berhasil: false,
+      pesan:
+        `Rollback berjalan tetapi verifikasi kondisi tidak cocok (${hasil.message}). ` +
+        'Pulihkan manual dari snapshot pengaman di daftar snapshot bila perlu.',
+    };
+  } catch (e) {
+    return {
+      dilakukan: true,
+      berhasil: false,
+      pesan:
+        `Rollback GAGAL (${e instanceof Error ? e.message : String(e)}). ` +
+        'Data mungkin parsial — pulihkan manual dari snapshot pengaman di daftar snapshot.',
+    };
+  }
 }
 
 /**
@@ -1884,7 +2204,12 @@ export async function exportAllData(): Promise<string> {
  * - Restore DITOLAK bila NPSN di file ≠ NPSN sekolah aktif, kecuali pemanggil
  *   menyetel konfirmasiSekolahLain: true (user mencentang "saya paham ini
  *   data sekolah lain").
- * Mengembalikan { status: 'ditolak' | 'digabung' | 'diganti', alasan? }.
+ * Issue #10 — alur: FASE 1 validasi fail-fast (terenkripsi → JSON →
+ * kompatibilitas → struktur → checksum SHA-256 → NPSN) → FASE 2 snapshot
+ * pengaman kondisi saat ini (fail-closed) → FASE 3 tulis → FASE 4 verifikasi
+ * pasca-restore (jumlah/id/profil) → bila tulis/verifikasi gagal, rollback
+ * otomatis ke snapshot pengaman. Hasil: RestoreResult (+verifikasi, +rollback,
+ * +snapshotPengamanId).
  */
 export async function importBackupData(
   jsonString: string,
@@ -1901,16 +2226,39 @@ export async function importBackupData(
   // D11: kunci operasi panjang — ganti sekolah aktif ditolak selama restore.
   kunciOperasiPanjang();
   const peringatan: string[] = [];
+  // Issue #10 — state untuk rollback: diisi FASE 2/3, dipakai catch + verifikasi.
+  let pengaman: SnapshotPengaman | undefined;
+  let faseTulis = false;
+  let idSebelumnya = new Set<string>();
   try {
-    const data: BackupPayload = JSON.parse(jsonString);
-    if (!data.siswa || !Array.isArray(data.siswa)) {
-      return tolak('Format data cadangan tidak valid (tidak ada array siswa).');
+    // Issue #10 — FASE 1: validasi SEBELUM mutasi apa pun (fail-fast).
+    // Urutan: terenkripsi → JSON → kompatibilitas → struktur → checksum → NPSN.
+    if (deteksiCadanganTerenkripsi(jsonString)) {
+      return tolak('File cadangan terenkripsi (butuh password) — pemulihan file terenkripsi belum didukung di tab ini.');
     }
+    let data: BackupPayload;
+    try {
+      data = JSON.parse(jsonString);
+    } catch {
+      return tolak('File bukan JSON yang valid — kemungkinan rusak atau terpotong saat diunduh.');
+    }
+    const masalahKompat = validasiKompatibilitas(data);
+    if (masalahKompat.length > 0) return tolak(masalahKompat.join(' '));
+    const masalahStruktur = validasiStrukturBackup(data);
+    if (masalahStruktur.length > 0) {
+      return tolak(`Struktur backup tidak valid: ${masalahStruktur.join(' ')}`);
+    }
+    const hasilIntegritas = await periksaIntegritas(data);
+    if (hasilIntegritas.status === 'tidak-cocok' || hasilIntegritas.status === 'tidak-valid') {
+      return tolak(hasilIntegritas.alasan || 'Integritas backup tidak valid — file ditolak.');
+    }
+    if (hasilIntegritas.status === 'tanpa-checksum') {
+      peringatan.push(hasilIntegritas.alasan || 'Backup lama tanpa checksum — integritas isi tidak dapat dibuktikan.');
+    }
+    peringatan.push(...periksaRelasiBackup(data));
 
     // D3: cegah profil/data sekolah lain menimpa sekolah aktif tanpa sadar.
     const npsnBackup = String(data.sekolah?.npsn || '').trim();
-    // Simpan identitas sekolah tujuan SEBELUM restore mengubah profilnya.
-    // Nilai ini juga menjadi dasar isolasi audit untuk entri lawas tanpa sekolahId.
     let npsnSekolahSebelumRestore = '';
     try {
       npsnSekolahSebelumRestore = String((await getSekolahProfile())?.npsn || '').trim();
@@ -1918,7 +2266,7 @@ export async function importBackupData(
       /* profil tak terbaca — hanya entri audit ber-sekolahId cocok yang dapat lolos */
     }
     if (npsnBackup && npsnSekolahSebelumRestore &&
-        npsnBackup !== npsnSekolahSebelumRestore && !opts?.konfirmasiSekolahLain) {
+        npsnBackup !== npsnSekolahSebelumRestore && !opts?.konfirmasiSekolahLain && !opts?.lewatiSnapshotPengaman) {
       return tolak(
         `Restore ditolak: file cadangan milik sekolah lain (NPSN ${npsnBackup}), ` +
         `sedangkan sekolah aktif bernpsn ${npsnSekolahSebelumRestore}. ` +
@@ -1926,9 +2274,51 @@ export async function importBackupData(
       );
     }
 
-    // D3: mode 'ganti-total' — hapus dulu seluruh data sekolah aktif.
+    // Issue #10 — FASE 2: snapshot pengaman kondisi saat ini SEBELUM mutasi.
+    // Fail-closed: bila snapshot pengaman gagal dibuat, restore dibatalkan
+    // agar data saat ini tetap aman (tidak ada mutasi apa pun).
+    const siswaSebelumnya = await getAllSiswa();
+    idSebelumnya = new Set(siswaSebelumnya.map((s) => s.id));
+    if (!opts?.lewatiSnapshotPengaman) {
+      try {
+        const payloadPengaman = await exportAllData();
+        const idPengaman = await simpanSnapshotPengaman(payloadPengaman, siswaSebelumnya.length);
+        const dapodikSebelumnya = await getDapodikConfig();
+        pengaman = {
+          id: idPengaman,
+          timestamp: new Date().toISOString(),
+          jumlahSiswa: siswaSebelumnya.length,
+          payload: payloadPengaman,
+          tokenDapodikSebelumnya: dapodikSebelumnya.token,
+        };
+      } catch (e) {
+        return tolak(
+          `Restore dibatalkan: gagal membuat snapshot pengaman kondisi saat ini ` +
+            `(${e instanceof Error ? e.message : String(e)}). Data saat ini TIDAK diubah.`
+        );
+      }
+    }
+
+    // FASE 3: tulis — mulai dari sini, kegagalan memicu rollback (lihat catch).
+    faseTulis = true;
     if (mode === 'ganti-total') {
       await clearDatabase();
+      // clearDatabase ikut menghapus store snapshot — simpan ulang snapshot
+      // pengaman agar tetap tersedia untuk rollback / pemulihan manual.
+      if (pengaman) {
+        try {
+          await saveAutoSnapshot({
+            id: pengaman.id,
+            timestamp: pengaman.timestamp,
+            dibuatOleh: PENGAMAN_RESTORE_OLEH,
+            ukuranBytes: new Blob([pengaman.payload]).size,
+            jumlahSiswa: pengaman.jumlahSiswa,
+            payload: pengaman.payload,
+          });
+        } catch {
+          /* snapshot pengaman tetap ada di memori untuk rollback */
+        }
+      }
     }
 
     if (data.sekolah) {
@@ -1943,6 +2333,13 @@ export async function importBackupData(
     }
 
     if (data.users && Array.isArray(data.users)) {
+      // Rollback internal harus mengembalikan himpunan akun secara persis,
+      // termasuk menghapus akun baru yang sempat masuk dari backup gagal.
+      if (opts?.hapusPenggunaSaatRestore) {
+        for (const user of await getAllUsers()) {
+          await deleteUser(user.id);
+        }
+      }
       // D15(a): file backup jahat bisa menyisipkan akun administrator.
       // Administrator yang SUDAH ADA tidak pernah ditimpa dari backup kecuali
       // user memberi konfirmasi eksplisit (opts.konfirmasiTimpaAdmin).
@@ -1996,11 +2393,6 @@ export async function importBackupData(
     }
 
     if (data.audit && Array.isArray(data.audit)) {
-      // Issue #9: audit sekolah lain TIDAK BOLEH masuk ke database ini —
-      // entri asing (sekolahId berbeda, atau lawas tanpa sekolahId dengan
-      // NPSN berkas ≠ NPSN aktif) dibuang dan dilaporkan.
-      // Gunakan NPSN sekolah tujuan sebelum restore, bukan profil backup yang
-      // mungkin sudah ditulis di atas; ini mencegah audit sekolah sumber lolos.
       const npsnAktifRestore = npsnSekolahSebelumRestore;
       const sekolahIdAktif = getActiveSchoolId();
       let auditDitolak = 0;
@@ -2012,11 +2404,9 @@ export async function importBackupData(
         }
         await addAuditLog(a as AuditLog);
       }
-      if (auditDitolak > 0) {
-        peringatan.push(
-          `${auditDitolak} entri audit dari sekolah lain tidak diimpor (isolasi audit antar-sekolah).`
-        );
-      }
+      if (auditDitolak > 0) peringatan.push(
+        `${auditDitolak} entri audit dari sekolah lain tidak diimpor (isolasi audit antar-sekolah).`
+      );
     }
 
     // D15(b): rekonsiliasi tombstone — record hasil restore yang masih punya
@@ -2028,6 +2418,9 @@ export async function importBackupData(
     // agar sync berikutnya tidak menghidupkannya lagi.
     // Dipilih dibanding sekadar menandai "dilewati": tanpa hapus-ulang, record
     // hasil restore akan terunggah sebagai "baru" oleh cloudSync.
+    // Issue #10 — id siswa yang dihapus-ulang oleh rekonsiliasi tombstone
+    // (dipakai verifikasi pasca-restore: mereka TIDAK diharapkan hadir).
+    let siswaTombDihapus: string[] = [];
     const tombAktif = muatTombstoneLokal();
     if (tombAktif.length > 0) {
       const kunciTomb = (coll: string, id: string) => `${coll}:${id}`;
@@ -2042,24 +2435,29 @@ export async function importBackupData(
         id: string,
         tsRecord: number,
         hapusLagi: (rid: string) => Promise<void>
-      ): Promise<void> => {
+      ): Promise<boolean> => {
         const tomb = petaTomb.get(kunciTomb(coll, id));
-        if (!tomb) return;
+        if (!tomb) return false;
         if (tsRecord > waktuRecord(tomb.ts)) {
           // Isi backup lebih baru dari penghapusan → tombstone basi, buang.
           petaTomb.delete(kunciTomb(coll, id));
+          return false;
         } else {
           // Penghapusan lebih baru → pertahankan: hapus lagi record restore.
           try {
             await hapusLagi(id);
             dipertahankanHapus++;
+            return true;
           } catch {
             /* biarkan record apa adanya; tombstone tetap melindunginya dari sync */
+            return false;
           }
         }
       };
       for (const s of data.siswa) {
-        if (s?.id) await rekonsiliasi('siswa', s.id, waktuRecord(s.updatedAt), deleteSiswa);
+        if (s?.id && (await rekonsiliasi('siswa', s.id, waktuRecord(s.updatedAt), deleteSiswa))) {
+          siswaTombDihapus.push(s.id);
+        }
       }
       for (const r of data.ptk || []) {
         if (r?.id) await rekonsiliasi('ptk', r.id, waktuRecord(r.updatedAt), deletePtkRef);
@@ -2087,23 +2485,57 @@ export async function importBackupData(
       }
     }
 
+    // Issue #10 — FASE 4: verifikasi pasca-restore (jumlah/relasi).
+    // Verifikasi GAGAL → rollback otomatis ke snapshot pengaman + laporkan.
+    const verifikasi = await verifikasiPascaRestore(data, mode, idSebelumnya, siswaTombDihapus);
+    if (!verifikasi.ok) {
+      const rollback = await cobaRollback(pengaman);
+      const pesanGagal =
+        `Verifikasi pasca-restore GAGAL: ${verifikasi.pesan} ` +
+        `${rollback.pesan || 'Rollback tidak dilakukan.'}`;
+      return {
+        status: 'ditolak',
+        alasan: pesanGagal,
+        success: false,
+        message: pesanGagal,
+        count: 0,
+        peringatan,
+        snapshotPengamanId: pengaman?.id,
+        verifikasi,
+        rollback,
+      };
+    }
+
     return {
       status: mode === 'ganti-total' ? 'diganti' : 'digabung',
       success: true,
-      message: `Berhasil memulihkan data ${data.siswa.length} siswa dan konfigurasi sistem.` +
+      message:
+        `Berhasil memulihkan data ${data.siswa.length} siswa dan konfigurasi sistem. ` +
+        `${verifikasi.pesan}` +
         (peringatan.length > 0 ? ` Perhatian: ${peringatan.join(' ')}` : ''),
       count: data.siswa.length,
-      peringatan
+      peringatan,
+      snapshotPengamanId: pengaman?.id,
+      verifikasi,
     };
   } catch (err: any) {
     const alasan = err.message || 'Gagal memproses file JSON cadangan';
+    // Issue #10 — bila gagal SETELAH mutasi dimulai, jangan tinggalkan data
+    // parsial: rollback otomatis ke snapshot pengaman, lalu laporkan hasilnya.
+    let rollback: RollbackRestore | undefined;
+    if (faseTulis && pengaman) {
+      rollback = await cobaRollback(pengaman);
+    }
+    const pesan = alasan + (rollback?.pesan ? ` ${rollback.pesan}` : '');
     return {
       status: 'ditolak',
-      alasan,
+      alasan: pesan,
       success: false,
-      message: alasan,
+      message: pesan,
       count: 0,
-      peringatan
+      peringatan,
+      snapshotPengamanId: pengaman?.id,
+      rollback,
     };
   } finally {
     // D11: selalu lepas kunci operasi panjang.
