@@ -98,6 +98,29 @@ Fitur-fitur ini didokumentasikan sebagai kebutuhan tambahan P8–P10 di bawah.
 | FR-P4-03 | Distribusi 6 dimensi P5 (SB/BSH/MB/BB) | Menghitung seluruh projek semua siswa pada cakupan akses user |
 | FR-P4-04 | Kop + tanda tangan kepala sekolah & petugas; tombol cetak | Layout cetak rapi |
 
+### P4b — Pusat Laporan (`src/components/LaporanView.tsx`, `src/utils/laporan.ts`)
+
+Satu pusat laporan administratif (Issue #7). Bukan duplikat Rekapitulasi: Rekapitulasi tetap menjadi
+laporan dinas per rombel/agama/PPDB/P5; Pusat Laporan menambahkan filter konsisten, jenis laporan
+yang belum ada (mutasi, belum lengkap, temuan validasi), metadata tercetak, dan ekspor CSV/Excel
+dari SATU builder yang sama dengan pratinjau. Bukan surat — generator dokumen/surat adalah scope
+issue #4 dan tidak diduplikasi di sini.
+
+| ID | Kebutuhan | Kriteria terima |
+|----|-----------|-----------------|
+| FR-P4b-01 | Jenis laporan: Statistik, Daftar Siswa, Mutasi Masuk, Mutasi Keluar, Data Belum Lengkap, Temuan Validasi | 6 jenis tampil di dropdown; tiap jenis punya kolom sendiri |
+| FR-P4b-02 | Filter konsisten: tahun ajaran (periode) + rombel (kelas) + status; rombel memakai rombel PADA tahun filter | Filter yang sama → isi pratinjau = isi cetak = isi Excel = isi CSV |
+| FR-P4b-03 | Metadata tercetak di SETIAP laporan (pratinjau, cetak, Excel, CSV): parameter filter, waktu pembuatan, sumber data (nama + NPSN sekolah), periode | Rekapitulasi & Pusat Laporan menampilkan blok metadata; file Excel/CSV menyertakan baris metadata |
+| FR-P4b-04 | Pratinjau + cetak + ekspor Excel (.xlsx, via `unduhExcel`) + CSV (UTF-8 + BOM, quoting RFC 4180, anti formula injection cermin S11) | Pratinjau berpaginasi; cetak memuat SELURUH baris; tombol ekspor nonaktif saat 0 baris |
+| FR-P4b-05 | PDF = dialog cetak browser (Cetak → Save as PDF); TIDAK ada generator PDF native — diklaim jujur di UI & dokumen | UI menulis keterangan ini; tidak ada klaim dukungan PDF native |
+| FR-P4b-06 | Otorisasi sebelum ekspor: `rombelAkses` diterapkan di `saringLaporan` (cermin `filterSiswaByAccess`); ekspor membaca HANYA daftar tersaring | Operator tidak melihat/mengekspor rombel lain; tes scope lulus |
+| FR-P4b-07 | Privasi: laporan TIDAK memuat NIK, No. KK, alamat lengkap, atau nomor telepon (hanya nama + NISN/NIPD + rombel) | Tes privasi: string sensitif tidak muncul di keluaran semua jenis laporan |
+| FR-P4b-08 | Statistik: agregat atas daftar tersaring tanpa filter tersembunyi; invarian jumlah kelompok = total dicek (`cekKonsistensiStatistik`); dataset kosong & besar (2000 siswa) diuji | Total konsisten; dataset kosong → nol + pesan jelas |
+| FR-P4b-09 | Mutasi masuk = `jenisPendaftaran: 'Pindahan'` ATAU `jalurMasuk: 'Mutasi/Pindahan'` (tanpa duplikasi); mutasi keluar = status `Mutasi Keluar` + sekolah tujuan & surat | Baris sesuai definisi; siswa Lulus tidak masuk laporan mutasi keluar |
+| FR-P4b-10 | Data Belum Lengkap = temuan field kosong; Temuan Validasi = belum lengkap + format salah + duplikat + logika tanggal (memakai `validateIdentitasSiswa` yang sudah ada) | Kategorisasi diuji; siswa lengkap → 0 temuan |
+| FR-P4b-11 | Setiap ekspor tercatat di Log Audit (`laporan_ekspor`, entitas `laporan`, ringkasan jenis + format + jumlah baris + parameter) | Entri audit tampil di tab Log Audit (admin) |
+| FR-P4b-12 | Tata letak cetak: kop + tanda tangan, header tabel berulang per halaman, kolom panjang dipecah kata (`break-words`), baris tidak terpotong antar-halaman (aturan `.print-sheet` yang sudah ada) | Cetak multi-halaman rapi |
+
 ### P5 — Cetak Standar Dinas (`src/components/CetakBukuInduk.tsx`, tab `cetak` di `App.tsx`)
 
 | ID | Kebutuhan | Kriteria terima |

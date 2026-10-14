@@ -94,6 +94,7 @@ const PemetaanKelasView = lazyView(() => import('./components/PemetaanKelasView'
 const PemeriksaDataView = lazyView(() => import('./components/PemeriksaDataView'), 'PemeriksaDataView');
 const SchoolManagerModal = lazyView(() => import('./components/SchoolManagerModal'), 'SchoolManagerModal');
 const CetakKartuMassal = lazyView(() => import('./components/CetakKartuMassal'), 'CetakKartuMassal');
+const LaporanView = lazyView(() => import('./components/LaporanView'), 'LaporanView');
 const ImporSiswaView = lazyView(() => import('./components/ImporSiswaView'), 'ImporSiswaView');
 import type { RencanaRombel } from './components/ArsipView';
 import type { DokumenMutasiKeluar } from './components/MutasiWizard';
@@ -119,6 +120,7 @@ const TAB_META: Record<string, { title: string; subtitle: string; accent: 'blue'
   leger: { title: 'Leger Nilai', subtitle: 'Rekap gabungan nilai per mapel + peringkat per rombel', accent: 'indigo', icon: Table },
   dapodik: { title: 'Sinkron Dapodik', subtitle: 'Tarik peserta didik & profil sekolah dari Web Service lokal', accent: 'amber', icon: RefreshCw },
   rekap: { title: 'Rekapitulasi', subtitle: 'Statistik rombel, agama, PPDB & capaian P5 untuk dinas', accent: 'emerald', icon: BarChart3 },
+  laporan: { title: 'Pusat Laporan', subtitle: 'Laporan administratif siap cetak: statistik, daftar, mutasi, data belum lengkap & temuan validasi', accent: 'emerald', icon: FileText },
   cetak: { title: 'Pusat Cetak', subtitle: 'Lembar buku induk standar dinas & kartu pelajar', accent: 'slate', icon: Printer },
   referensi: { title: 'Data Referensi', subtitle: 'Rombel, PTK & profil sekolah hasil sinkronisasi', accent: 'purple', icon: Layers },
   gtk: { title: 'Data GTK', subtitle: 'Guru & tendik hasil sinkronisasi Dapodik (getGtk/getPTK)', accent: 'indigo', icon: Contact },
@@ -1377,6 +1379,23 @@ export default function App() {
                 filterNonce={siswaPresetNonce}
               />
               </ErrorBoundary>
+            )}
+
+            {/* View: 3b. Pusat Laporan (Issue #7) */}
+            {activeTab === 'laporan' && (
+              <LaporanView
+                siswa={visibleSiswa}
+                sekolah={sekolah}
+                sessionTahun={sessionTahun}
+                currentUser={currentUser}
+                onEkspor={(info) =>
+                  catatAudit('laporan_ekspor', {
+                    entitas: 'laporan',
+                    ringkasan: `Laporan ${info.jenis} diekspor (${info.format}) — ${info.jumlahBaris} baris`,
+                    detail: info.parameter,
+                  })
+                }
+              />
             )}
 
             {/* View: Nilai Raport Kurikulum Merdeka */}
