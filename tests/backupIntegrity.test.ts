@@ -111,6 +111,10 @@ describe('validasiKompatibilitas', () => {
   it('backup versi lebih lama tetap diterima (kompatibel ke belakang)', () => {
     assert.deepEqual(validasiKompatibilitas({ ...backupDasar(), version: '1.1.0' }), []);
   });
+  it('menerima identifier aplikasi dari exporter v1.0 lama', () => {
+    const lama = { ...backupDasar(), app: 'Buku Induk Siswa SMP Kurikulum Merdeka', version: '1.0.0' };
+    assert.deepEqual(validasiKompatibilitas(lama), []);
+  });
 
   it('app bukan SIBISKuMer ditolak', () => {
     const masalah = validasiKompatibilitas({ ...backupDasar(), app: 'Aplikasi Lain' });
