@@ -341,6 +341,7 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
         catatAudit('backup_pulihkan', {
           entitas: 'backup',
           ringkasan: `Restore DITOLAK "${fileRestore.namaFile}": ${res.alasan || res.message}`,
+          hasil: 'gagal',
         });
       } else if (res.status === 'diganti' || res.status === 'digabung') {
         const label = res.status === 'diganti' ? 'DIGANTI TOTAL' : 'DIGABUNG';
@@ -357,6 +358,12 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
         onDataChanged();
       }
     } catch (err: any) {
+      catatAudit('backup_pulihkan', {
+        entitas: 'backup',
+        ringkasan: `Gagal memproses file cadangan lokal "${fileRestore?.namaFile || '-'}"`,
+        hasil: 'gagal',
+        detail: err?.message ? String(err.message) : undefined,
+      });
       showStatus('error', `Gagal memproses file cadangan lokal: ${err.message}`);
     } finally {
       setIsImportingLocal(false);
@@ -422,6 +429,12 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
         });
         onDataChanged();
       } else {
+        catatAudit('backup_pulihkan', {
+          entitas: 'backup',
+          ringkasan: `Gagal memulihkan dari Google Drive "${file.name}"`,
+          hasil: 'gagal',
+          detail: res.message,
+        });
         showStatus('error', `Gagal memulihkan: ${res.message}`);
       }
     } catch (err: any) {
