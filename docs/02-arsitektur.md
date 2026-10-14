@@ -71,11 +71,13 @@ App.tsx (15 tab via TAB_META: dasbor|siswa|raport|leger|rekap|cetak|referensi|gt
  + SchoolSwitcher.tsx (pemilih topbar admin) + SchoolManagerModal.tsx (tambah/aktif/hapus + lencana jumlah siswa)
  + ArsipView.tsx (tahun terkunci + roster + wizard tutup tahun & promosi)
  + PemetaanKelasView.tsx (CRUD rombel resmi per tahun ajaran, khusus admin; saran target di wizard arsip)
+ + PemeriksaDataView.tsx (temuan prioritas + filter/cari + status penanganan + pratinjau impor CSV)
  + PageControl.tsx (pagination bersama) + OfflineIndicator.tsx + PWAInstallButton.tsx + SyncProgressBar.tsx
  + TopProgressBar.tsx (bar atas tiap boot/reload/ganti-tab/simpan) + ToastHost.tsx + ConfirmDialogHost.tsx (sistem umpan balik global)
 Lintas: utils/db.ts (CRUD+authz+multi-sekolah+arsip `tutup_tahun` v4 + audit `audit_logs` & snapshot `auto_backup` v7) · utils/dapodikSync.ts (konversi + flag arsip) · utils/arsip.ts (snapshot/roster/kunci) · utils/raportUtils.ts
         (fase/mapel/predikat/deskripsi) · utils/notify.ts (toast/confirm event bus) · utils/validation.ts
-        (wajib/format per form) · utils/progress.ts (bus progres atas) · utils/pagination.ts
+        (wajib/format per form) · utils/pemeriksaData.ts (mesin pemeriksa
+        Issue #3: aturan terkonfigurasi + status + banding impor, murni/tanpa IO) · utils/progress.ts (bus progres atas) · utils/pagination.ts
         · utils/password.ts (hash PBKDF2 + fallback SHA-256) · utils/security.ts (kunci login)
         · utils/audit.ts (penulis audit) · utils/autoBackup.ts (penjadwal snapshot)
         · utils/firebaseApp.ts (app/auth/Firestore/Storage bersama) · utils/cloudSync.ts
@@ -83,9 +85,9 @@ Lintas: utils/db.ts (CRUD+authz+multi-sekolah+arsip `tutup_tahun` v4 + audit `au
         agar bundel utama ramping)
 ```
 
-Navigasi adalah state `activeTab` di `App.tsx` (bukan router URL). 15 tab terdaftar di
-`TAB_META` (`dasbor, siswa, raport, leger, rekap, cetak, referensi, gtk, arsip` untuk semua
-peran + 6 admin `dapodik, pemetaan, pengaturan, backup, users, audit`); sidebar menampilkan 9 menu utama, 6 menu admin
+Navigasi adalah state `activeTab` di `App.tsx` (bukan router URL). 16 tab terdaftar di
+`TAB_META` (`dasbor, siswa, raport, leger, rekap, cetak, referensi, gtk, arsip, pemeriksa` untuk semua
+peran + 6 admin `dapodik, pemetaan, pengaturan, backup, users, audit`); sidebar menampilkan 10 menu utama, 6 menu admin
 hanya lewat dropdown pengguna topbar dan dijaga
 `handleNavigateTab` + `AccessDeniedNotice`. Tab `cetak` memakai pencarian +
 `PageControl` sendiri (default 9/kartu), tab `siswa` memakai `PageControl` (default 20).
