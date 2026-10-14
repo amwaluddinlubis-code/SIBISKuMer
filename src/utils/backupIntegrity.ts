@@ -189,7 +189,11 @@ export function validasiKompatibilitas(payload: unknown): string[] {
     return ['File cadangan bukan objek JSON yang valid.'];
   }
   const p = payload as Record<string, unknown>;
-  if (p.app !== undefined && p.app !== BACKUP_APP_NAME) {
+  // v1.0 exporter used this exact identifier before the name was normalized.
+  // Continue accepting it for legacy backups; app/version validation still
+  // rejects unrelated applications and unsupported future formats.
+  const namaAplikasiLegacy = 'Buku Induk Siswa SMP Kurikulum Merdeka';
+  if (p.app !== undefined && p.app !== BACKUP_APP_NAME && p.app !== namaAplikasiLegacy) {
     masalah.push(`Bukan cadangan SIBISKuMer (app: ${JSON.stringify(p.app)}). File ditolak.`);
   } else if (p.app === undefined) {
     masalah.push('File cadangan tidak mencantumkan nama aplikasi (app). File ditolak.');
