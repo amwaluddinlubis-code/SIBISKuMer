@@ -1332,28 +1332,7 @@ export async function addAuditLog(entry: AuditLog): Promise<void> {
   }
 }
 
-export async function clearAuditLogs(): Promise<void> {
-  try {
-    const db = await openDB();
-    await new Promise<void>((resolve) => {
-      try {
-        const tx = db.transaction(STORES.AUDIT, 'readwrite');
-        const req = tx.objectStore(STORES.AUDIT).clear();
-        req.onsuccess = () => resolve();
-        req.onerror = () => resolve();
-      } catch {
-        resolve();
-      }
-    });
-  } catch {
-    /* abaikan */
-  }
-  try {
-    localStorage.removeItem(sk(LS_KEYS.AUDIT));
-  } catch {
-    /* abaikan */
-  }
-}
+// Audit log append-only: tidak ada API penghapusan entri individual.
 
 // ---------------- CADANGAN OTOMATIS (snapshot di IndexedDB, maks 5) ----------------
 
