@@ -125,6 +125,40 @@ project sesuai `firebase-applet-config.json`):**
 5. Sinkron Dapodik: Terapkan diblokir bila sesi di bawah tahun aktif database
    (preview & tes koneksi tetap boleh). Pindah sesi tercatat di Log Audit.
 
+## 4e. SOP Pemeriksa Data (Issue #3)
+
+Tab **Pemeriksa Data** (semua peran; operator hanya melihat temuan rombelnya
+karena daftar yang diperiksa adalah `visibleSiswa` yang sudah terfilter hak
+akses). Alur kerja:
+
+1. **Pindai:** buka tab — temuan dihitung dari data saat ini tiap render
+   (tidak ada data turunan yang bisa basi). Ringkasan menampilkan total per
+   prioritas dan per status penanganan.
+2. **Tinjau:** filter per prioritas/kategori/status + cari nama/NISN/judul.
+   Tiap temuan menampilkan prioritas, alasan, sumber (`data lokal`), dan
+   siswa yang terlibat.
+3. **Perbaiki:** tombol "Perbaiki di formulir" membuka formulir siswa
+   bersangkutan (atau "Perbaiki record kedua" untuk pasangan duplikat).
+   Perbaikan dilakukan lewat jalur simpan normal — termasuk validasi
+   `validateIdentitasSiswa` dan kunci field tetap Dapodik.
+4. **Tandai:** setelah diperbaiki, tandai "Diperbaiki" — atau "Abaikan…"
+   dengan **alasan wajib** (mis. "Nama kembar, sudah dikonfirmasi berbeda").
+   Temuan yang sudah tidak muncul pada pemindaian berikutnya berarti datanya
+   sudah benar (temuan hilang = teratasi).
+5. **Aturan:** panel "Lihat & atur aturan" mengaktifkan/menonaktifkan
+   aturan per sekolah aktif (tersimpan di perangkat ini). Daftar aturan
+   lengkap ada di `docs/03-model-data.md` §4a.
+6. **Pratinjau impor:** unggah CSV (`nisn,nama,tanggalLahir,rombel,nik`)
+   untuk melihat status tiap baris — baru / sama / berbeda / konflik /
+   tanpa-kunci — **tanpa mengubah data**. Baris konflik (NIK milik siswa
+   lain) tidak boleh diterapkan tanpa tinjauan manual; penerapan tetap
+   satu per satu lewat formulir. Untuk perbedaan Dapodik, pakai tab
+   Sinkron Dapodik (pratinjau baru/berbeda/sama + konflik NISN) — lihat §5.
+
+Privasi: status penanganan temuan hanya menyimpan ID temuan + status +
+alasan di localStorage; tidak ada nama/NISN/NIK siswa di dalamnya, dan
+temuan tidak pernah ditulis ke log apa pun.
+
 ## 5. SOP Sinkron Dapodik
 
 1. Pastikan aplikasi Dapodik desktop berjalan dan Web Service aktif (default `:5774`).
