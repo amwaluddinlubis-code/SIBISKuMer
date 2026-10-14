@@ -17,6 +17,7 @@ Server Node (`server.ts`) hanya menjadi perantara ke Web Service Dapodik lokal.
 - Rekapitulasi & dashboard statistik
 - Sinkronisasi Dapodik lokal (host/port/token terkonfigurasi) + mode simulasi
 - Multi-pengguna berbasis peran: `administrator` & `operator`
+- Pemeriksa Data: kelengkapan, validitas, inkonsistensi & kemungkinan duplikat siswa (tanpa ubah/hapus otomatis)
 - Cadangan lokal (JSON, opsional **terenkripsi password**) & Google Drive
 - PWA: dapat diinstal & berjalan offline
 - **Baru:** form siswa wizard 5 langkah (mobile-friendly) • dashboard "Perlu Perhatian" • pencarian global (Ctrl+K) • pratinjau cetak WYSIWYG • mode malam + pengaturan ukuran huruf
