@@ -2,6 +2,14 @@
 
 > **Status:** Aktif · **Revisi:** 2026-09-15 · **Sumber kebenaran:** `src/types/index.ts`, `src/utils/db.ts`
 
+> **Catatan Issue #2 (Dasbor pusat kendali):** tidak ada perubahan model
+> data. Dasbor hanya membaca field `Siswa` yang sudah ada
+> (status/rombel/tanggal diterima & keluar/surat/dokumen/raport). Dua
+> batasan model yang sengaja didokumentasikan, bukan ditambal dengan
+> angka karangan: (a) tidak ada antrean persetujuan mutasi — mutasi
+> langsung mengubah status; (b) tidak ada tanggal tenggat laporan yang
+> tersimpan, jadi widget tenggat tidak menampilkan tanggal karangan.
+
 ## 1. ERD (tekstual)
 
 ```text
@@ -35,7 +43,6 @@ Relasi bersifat logis (tanpa foreign key DB): `RaportSemester.siswaId → Siswa.
 | `ptk` | `id` | `nama`, `nip` | `PtkRef[]` |
 | `tutup_tahun` | `tahunAjaran` | — | `TutupTahunAjaran[]` (arsip terkunci per tahun) |
 | `peta_kelas` | `id` | `tahunAjaran`, `rombel` | `PetaKelas[]` (rombel resmi per tahun) |
-| `audit_logs` | `id` | `timestamp`, `aksi` | `AuditLog[]` — append-only, maks 2000 entri terbaru (lihat §3.9) |
 
 Fallback: `localStorage` kunci `bukuinduk_*` (siswa, sekolah, config, logs, users, rombel,
 ptk, current_user, impersonate_from) + registry `bukuinduk_schools` /
@@ -136,9 +143,27 @@ raport, rekapitulasi (logo kartu pelajar ikut logo kiri bila ada).
 
 ### 3.6 Format backup (`BackupPayload`, versi `1.3.0`)
 
-`{ app, version, exportedAt, sekolah, dapodikConfig, siswa[], syncLogs[], users?[], rombel?[], ptk?[], tutupTahun?[], petaKelas?[], audit?[] }`.
-Restore menolak payload tanpa array `siswa` yang valid; `tutupTahun`/`petaKelas` opsional (backup lama tetap terbaca). Entri `audit` saat restore
-difilter isolasi antar-sekolah (lihat §3.9 / `05-operasional.md` §4d).
+`{ app, version, exportedAt, integritas?, sekolah, dapodikConfig, siswa[], syncLogs[], users?[], rombel?[], ptk?[], tutupTahun?[], petaKelas?[] }`.
+
+- **`integritas?`** (Issue #10): `{ algoritma: 'SHA-256', checksum, jumlah, dibuatPada }`.
+  Checksum = SHA-256 (hex) atas string kanonik payload tanpa blok integritas
+  (`src/utils/backupIntegrity.ts`: kunci objek terurut, array tetap berurutan);
+  `jumlah` = jumlah record per koleksi saat ekspor. Backup lama tanpa blok ini
+  tetap terbaca (status `tanpa-checksum` + peringatan).
+- **Restore menolak sebelum mutasi apa pun** (`importBackupData`, fail-fast):
+  file terenkripsi, bukan JSON, `app` bukan SIBISKuMer, `version` hilang /
+  bukan semver / lebih baru dari format yang didukung, struktur tidak valid
+  (tanpa array siswa, duplikat id siswa / username), checksum atau jumlah
+  tercatat tidak cocok, NPSN beda tanpa konfirmasi, atau snapshot pengaman
+  gagal dibuat. `tutupTahun`/`petaKelas` opsional (backup lama tetap terbaca).
+- **Snapshot pengaman & rollback:** sebelum mutasi, kondisi saat ini disimpan
+  sebagai snapshot auto-backup berlabel `pengaman-restore` (hanya yang terbaru
+  dipertahankan; tidak pernah digusur pruning snapshot otomatis). Bila tulis
+  atau verifikasi pasca-restore gagal, rollback otomatis ke snapshot pengaman
+  (`RestoreResult.rollback`); verifikasi membandingkan jumlah siswa, id yang
+  diharapkan hadir, dan kecocokan NPSN profil (`RestoreResult.verifikasi`).
+  Restore selektif (`importSelectiveSiswa`) memakai perlindungan yang sama
+  (checksum bila ada + snapshot pengaman + rollback).
 
 ### 3.7 `TutupTahunAjaran` / `RosterArsip` (arsip terkunci)
 
@@ -156,22 +181,12 @@ difilter isolasi antar-sekolah (lihat §3.9 / `05-operasional.md` §4d).
 `getAllPetaKelas` / `savePetaKelasList` / `savePetaKelas` / `deletePetaKelas`.
 Dipakai wizard arsip sebagai saran target (`ArsipView : saranRombelBaru`).
 
-### 3.9 `AuditLog` (jejak audit, issue #9)
-
-`id`, `timestamp`, `aktor` (username / `'sistem'`), `peran?`, `aksi`
-(`AuditAksi`: login/logout, `login_gagal`, akun, siswa, mutasi, tutup/buka
-tahun, sinkron, backup, cloud, `rombel_ubah`, `dokumen_ekspor`,
-`pengaturan_ubah`, `gtk_ubah`), `entitas`, `entitasId?`, `ringkasan`,
-`detail?`, `sekolahId?` (cap isolasi antar-sekolah), `hasil?`
-(`'berhasil'` default | `'gagal'`), `sebelum?`/`sesudah?` (diff field
-operasional allowlist yang berubah, tersanitasi — tanpa rahasia/data pribadi).
-Penulis tunggal `catatAudit` (`src/utils/audit.ts`, tidak pernah melempar);
-sanitasi + `diffAudit` + filter impor restore di `src/utils/auditSanitasi.ts`;
-baca via `getAuditLogs(limit)`, tulis via `addAuditLog` (dedup per `id`).
-Tidak ada API ubah/hapus entri. Kebijakan akses/retensi/sanitasi:
-`docs/05-operasional.md` §4d.
-
 ## 4. Aturan Validasi (`src/utils/validation.ts`)
+
+Impor Excel/CSV memakai aturan yang sama + aturan berkas (`src/utils/imporSiswa.ts`):
+maks 5 MB / 2000 baris; rombel wajib format `7A`; sel kosong pada perbarui =
+"tidak diubah"; duplikat kunci di dalam berkas ditolak; konflik identitas
+(NISN vs NIK menunjuk siswa berbeda) dilewati.
 
 | Field | Aturan |
 |-------|--------|
@@ -181,6 +196,54 @@ Tidak ada API ubah/hapus entri. Kebijakan akses/retensi/sanitasi:
 | `nipd` | opsional; 3–20 karakter + unik bila diisi |
 | `noKk` | opsional; bila diisi 16 digit angka |
 | Umum | mode edit mengecualikan record sendiri; error tampil inline + toast pertama |
+
+### 4a. Aturan Pemeriksa Data (`src/utils/pemeriksaData.ts`, Issue #3)
+
+Satu-satunya sumber kebenaran aturan adalah konstanta `ATURAN_PEMERIKSA` di
+`src/utils/pemeriksaData.ts` (ID, kategori, prioritas, judul, penjelasan).
+Pengguna dapat menonaktifkan aturan per sekolah aktif dari tab Pemeriksa Data
+(tersimpan di localStorage, kunci `bukuinduk_pemeriksa_konfig_<NPSN>`); tidak
+ada aturan tersembunyi di UI. Cek per-record hanya untuk siswa **Aktif**
+(arsip historis dikecualikan); cek duplikat berlaku untuk **semua** record.
+
+| ID aturan | Kategori | Prioritas | Aturan |
+|-----------|----------|-----------|--------|
+| `nama-kosong` | wajib | tinggi | Nama lengkap kosong |
+| `nisn-kosong` | wajib | tinggi | NISN kosong |
+| `nisn-format` | format | tinggi | NISN bukan tepat 10 digit angka |
+| `nik-format` | format | sedang | NIK bukan 16 digit angka bila diisi |
+| `nokk-format` | format | rendah | No. KK bukan 16 digit angka bila diisi |
+| `nipd-format` | format | rendah | NIPD di luar 3–20 karakter bila diisi |
+| `nik-ortu-format` | format | rendah | NIK ayah/ibu bukan 16 digit angka bila diisi |
+| `tgl-lahir-kosong` | wajib | sedang | Tanggal lahir kosong |
+| `tgl-lahir-format` | format | tinggi | Tanggal lahir tidak valid (YYYY-MM-DD) atau masa depan |
+| `rombel-kosong` | wajib | sedang | Rombel saat ini kosong |
+| `alamat-kosong` | wajib | rendah | Alamat kosong |
+| `kodepos-format` | format | rendah | Kode pos bukan 5 digit angka bila diisi |
+| `lahir-setelah-diterima` | konflik | tinggi | Tanggal lahir setelah tanggal diterima |
+| `usia-diterima-tidak-wajar` | konflik | sedang | Usia saat diterima di luar 4–18 tahun |
+| `tanggal-keluar-aktif` | konflik | sedang | Status Aktif tetapi tanggal keluar terisi |
+| `pindahan-tanpa-asal` | konflik | sedang | Pindahan tetapi asal mutasi kosong |
+| `nik-ortu-sama` | konflik | sedang | NIK ayah sama dengan NIK ibu |
+| `anakke-rentang` | rentang | rendah | Anak ke di luar 1–30 |
+| `fisik-rentang` | rentang | rendah | Tinggi 50–220 cm / berat 5–200 kg |
+| `jarak-rentang` | rentang | rendah | Jarak ke sekolah di luar 0–150 km |
+| `lama-sd-rentang` | rentang | rendah | Lama belajar SD di luar 0–12 tahun |
+| `tahun-lahir-ortu-rentang` | rentang | rendah | Tahun lahir ortu di luar 1900–tahun berjalan |
+| `duplikat-nisn` | duplikat | tinggi | NISN sama persis pada 2 record |
+| `duplikat-nik` | duplikat | tinggi | NIK sama persis pada 2 record |
+| `duplikat-nipd` | duplikat | sedang | NIPD sama persis pada 2 record |
+| `duplikat-kemungkinan` | duplikat | sedang | Nama persis + tanggal lahir sama, NISN berbeda |
+| `duplikat-nama-mirip` | duplikat | sedang | Nama beda ≤2 huruf (Levenshtein) + tanggal lahir sama |
+
+Temuan duplikat selalu berstatus "kemungkinan" — aplikasi tidak pernah
+menggabungkan/menghapus otomatis. Keterbatasan yang diketahui: nama umum
+Indonesia + tanggal lahir sama bisa menandai dua anak berbeda (mis. kembar
+dengan nama mirip); karena itu tanggal lahir wajib sama persis dan nama saja
+tidak pernah cukup untuk temuan duplikat. Status penanganan temuan disimpan
+di localStorage (`bukuinduk_pemeriksa_status_<NPSN>`): hanya ID temuan +
+status + alasan — tanpa nama/NISN/NIK siswa (privasi, lihat §4e
+`docs/05-operasional.md`).
 
 ## 5. Data Seed (`src/data/initialData.ts`) — terverifikasi
 
