@@ -122,8 +122,13 @@ checkbox pilih → `saveSiswa`/`saveSekolahProfile`/`saveRombelRefs`/`savePtkRef
 **5.4 Hapus/konfirmasi:** `confirmDialog(...)` (promise, `ConfirmDialogHost`) → aksi →
 `toast(...)` (`ToastHost`). Tidak ada `alert`/`confirm`/`prompt` native di `src/`.
 
-**5.5 Backup:** `exportAllData` (v`1.2.0`, termasuk `tutupTahun`) → unduh JSON / unggah Drive; restore: pilih file →
-`confirmDialog` danger → `importBackupData` (validasi array `siswa`) → `onDataChanged()`.
+**5.5 Backup:** `exportAllData` (v`1.3.0`, termasuk `tutupTahun` + blok
+`integritas` SHA-256) → unduh JSON / unggah Drive; restore: pilih file →
+pratinjau (`pratinjauBackup`: kompatibilitas + struktur + checksum) →
+`confirmDialog` danger → `importBackupData` (snapshot pengaman pra-restore →
+tulis → verifikasi pasca-restore → rollback otomatis bila gagal) →
+`onDataChanged()`. Snapshot pengaman (`pengaman-restore`) dikecualikan dari
+pruning snapshot otomatis. Detail: `docs/05-operasional.md` §4.
 
 **5.6 Arsip tahun ajaran:** `ArsipView` (wizard: susun rencana per rombel →
 `App.handleTutupTahun`: `buildSnapshot` pra-promosi → `promoteSiswaKenaikanKelas`

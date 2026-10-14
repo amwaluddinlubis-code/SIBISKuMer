@@ -23,7 +23,7 @@ import {
   Play
 } from 'lucide-react';
 import { SekolahProfile, AppUser, AutoBackupSnapshot } from '../types';
-import { exportDatabaseBackup, importDatabaseBackup, resetToInitialData, clearDatabase, deleteAutoSnapshot, parseBackupPayload, importSelectiveSiswa, type BackupPayload, type RestoreMode } from '../utils/db';
+import { exportDatabaseBackup, importDatabaseBackup, resetToInitialData, clearDatabase, deleteAutoSnapshot, parseBackupPayload, pratinjauBackup, importSelectiveSiswa, PENGAMAN_RESTORE_OLEH, type BackupPayload, type RestoreMode } from '../utils/db';
 import { catatAudit } from '../utils/audit';
 import {
   bacaAutoBackupSetting,
@@ -115,6 +115,15 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     npsnBackup: string;
     namaSekolahBackup: string;
     totalSiswa: number;
+    /** Issue #10 — hasil periksa checksum di pratinjau. */
+    integritasStatus: string;
+    integritasAlasan?: string;
+    peringatanRelasi: string[];
+  } | null>(null);
+  /** Issue #10 — laporan restore terakhir (verifikasi + snapshot pengaman). */
+  const [laporanRestore, setLaporanRestore] = useState<{
+    ok: boolean;
+    teks: string;
   } | null>(null);
 
   /** D3: true bila NPSN berkas berbeda dari NPSN sekolah aktif. */
@@ -142,6 +151,9 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     totalSiswa: number;
     rombel: Array<{ rombel: string; jumlah: number }>;
     payload: BackupPayload;
+    /** Issue #10 — false = file backup lama tanpa checksum. */
+    punyaIntegritas: boolean;
+    peringatanRelasi: string[];
   } | null>(null);
   const [selektifPilih, setSelektifPilih] = useState<string[]>([]);
   const [isSelektifBusy, setIsSelektifBusy] = useState(false);
@@ -287,25 +299,31 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
 
   // D3: Langkah 1 — pilih berkas: baca & pratinjau (cek NPSN) TANPA langsung
   // memulihkan. User memilih mode restore & konfirmasi dulu di panel pratinjau.
+  // Issue #10 — pratinjau juga memverifikasi checksum SHA-256, kompatibilitas
+  // versi, dan struktur; file rusak/tidak kompatibel ditolak di sini dengan
+  // pesan jelas, sebelum ada mutasi apa pun.
   const handlePilihBerkasRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
     try {
       const teks = await file.text();
-      const { payload, totalSiswa } = parseBackupPayload(teks);
+      const hasil = await pratinjauBackup(teks);
       setFileRestore({
         namaFile: file.name,
         teks,
-        npsnBackup: (payload.sekolah?.npsn || '').trim(),
-        namaSekolahBackup: payload.sekolah?.nama || '(tanpa nama sekolah)',
-        totalSiswa,
+        npsnBackup: (hasil.payload.sekolah?.npsn || '').trim(),
+        namaSekolahBackup: hasil.payload.sekolah?.nama || '(tanpa nama sekolah)',
+        totalSiswa: hasil.totalSiswa,
+        integritasStatus: hasil.integritas.status,
+        integritasAlasan: hasil.integritas.alasan,
+        peringatanRelasi: hasil.peringatanRelasi,
       });
       setRestoreMode('gabung');
       setAckSekolahLain(false);
     } catch (err: any) {
       setFileRestore(null);
-      showStatus('error', `Berkas cadangan tidak valid: ${err.message}`);
+      showStatus('error', `Berkas cadangan ditolak: ${err.message}`);
     }
   };
 
@@ -336,8 +354,19 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
         konfirmasiSekolahLain: ackSekolahLain,
       });
       // D3: tampilkan hasil restore (ditolak/digabung/diganti + alasan) ke user.
+      // Issue #10 — tampilkan juga verifikasi pasca-restore + info snapshot
+      // pengaman di panel laporan (tidak hilang setelah 6 detik).
+      const infoPengaman = res.snapshotPengamanId
+        ? ` Kondisi sebelum restore tersimpan sebagai snapshot pengaman (lihat daftar snapshot di bawah).`
+        : '';
+      const infoVerifikasi = res.verifikasi ? ` ${res.verifikasi.pesan}` : '';
       if (res.status === 'ditolak') {
-        showStatus('error', `Pemulihan DITOLAK: ${res.alasan || res.message}`);
+        const teksGagal = `Pemulihan DITOLAK: ${res.alasan || res.message}`;
+        showStatus('error', teksGagal);
+        setLaporanRestore({
+          ok: false,
+          teks: `${teksGagal}${res.rollback?.pesan ? ` ${res.rollback.pesan}` : ''}${infoPengaman}`,
+        });
         catatAudit('backup_pulihkan', {
           entitas: 'backup',
           ringkasan: `Restore DITOLAK "${fileRestore.namaFile}": ${res.alasan || res.message}`,
@@ -345,6 +374,10 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
       } else if (res.status === 'diganti' || res.status === 'digabung') {
         const label = res.status === 'diganti' ? 'DIGANTI TOTAL' : 'DIGABUNG';
         showStatus('success', `Pemulihan ${label}: ${res.message}`);
+        setLaporanRestore({
+          ok: true,
+          teks: `Pemulihan ${label} selesai.${infoVerifikasi}${infoPengaman}`,
+        });
         catatAudit('backup_pulihkan', {
           entitas: 'backup',
           ringkasan: `Pulihkan dari file lokal "${fileRestore.namaFile}" mode ${restoreMode} (${res.count} siswa)`,
@@ -416,6 +449,10 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
       const res = await importDatabaseBackup(jsonStr);
       if (res.success) {
         showStatus('success', `Berhasil memulihkan dari Google Drive: ${res.message}`);
+        setLaporanRestore({
+          ok: true,
+          teks: `Dipulihkan dari Google Drive "${file.name}".${res.verifikasi ? ` ${res.verifikasi.pesan}` : ''} Kondisi sebelum restore tersimpan sebagai snapshot pengaman.`,
+        });
         catatAudit('backup_pulihkan', {
           entitas: 'backup',
           ringkasan: `Pulihkan dari Google Drive "${file.name}" (${res.count} siswa)`,
@@ -556,6 +593,10 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
       const res = await importDatabaseBackup(snap.payload);
       if (res.success) {
         showStatus('success', `Dipulihkan dari snapshot: ${res.message}`);
+        setLaporanRestore({
+          ok: true,
+          teks: `Dipulihkan dari snapshot ${formatSnapWaktu(snap.timestamp)}.${res.verifikasi ? ` ${res.verifikasi.pesan}` : ''} Kondisi sebelum restore tersimpan sebagai snapshot pengaman.`,
+        });
         catatAudit('backup_pulihkan', {
           entitas: 'backup',
           ringkasan: `Pulihkan dari snapshot otomatis ${formatSnapWaktu(snap.timestamp)} (${res.count} siswa)`,
@@ -666,9 +707,16 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     try {
       const text = await file.text();
       const hasil = parseBackupPayload(text);
-      setSelektif({ namaFile: file.name, ...hasil });
+      setSelektif({
+        namaFile: file.name,
+        totalSiswa: hasil.totalSiswa,
+        rombel: hasil.rombel,
+        payload: hasil.payload,
+        punyaIntegritas: hasil.punyaIntegritas,
+        peringatanRelasi: hasil.peringatanRelasi,
+      });
       setSelektifPilih([]);
-      showStatus('info', `File "${file.name}" dimuat: ${hasil.totalSiswa} siswa dalam ${hasil.rombel.length} rombel. Centang rombel yang dipulihkan.`);
+      showStatus('info', `File "${file.name}" dimuat: ${hasil.totalSiswa} siswa dalam ${hasil.rombel.length} rombel. Centang rombel yang dipulihkan.${hasil.punyaIntegritas ? '' : ' File backup lama tanpa checksum — integritas isi tidak dapat dibuktikan.'}`);
     } catch (err: unknown) {
       setSelektif(null);
       showStatus('error', `File bukan cadangan valid: ${err instanceof Error ? err.message : String(err)}`);
@@ -693,7 +741,7 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     setIsSelektifBusy(true);
     try {
       const hasil = await importSelectiveSiswa(selektif.payload, selektifPilih);
-      showStatus('success', `Restore selektif selesai: +${hasil.ditambahkan} baru, ~${hasil.diperbarui} diperbarui (${hasil.total} diproses).`);
+      showStatus('success', `Restore selektif selesai: +${hasil.ditambahkan} baru, ~${hasil.diperbarui} diperbarui (${hasil.total} diproses). Kondisi sebelumnya tersimpan sebagai snapshot pengaman.`);
       catatAudit('backup_pulihkan', {
         entitas: 'backup',
         ringkasan: `Restore selektif "${selektif.namaFile}" rombel ${selektifPilih.join(', ')} (+${hasil.ditambahkan}/~${hasil.diperbarui})`,
@@ -860,6 +908,30 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
                         {fileRestore.namaSekolahBackup} • NPSN berkas:{' '}
                         <strong>{fileRestore.npsnBackup || '-'}</strong> vs NPSN aktif:{' '}
                         <strong>{(sekolah.npsn || '').trim() || '-'}</strong> • {fileRestore.totalSiswa} siswa
+                      </div>
+                      {/* Issue #10 — status pemeriksaan integritas file. */}
+                      {fileRestore.integritasStatus === 'terverifikasi' ? (
+                        <div className="mt-1.5 flex items-start gap-1.5 text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5 font-semibold">
+                          <CheckCircle2 className="w-4 h-4 shrink-0 mt-px" />
+                          <span>Integritas terverifikasi — checksum SHA-256 cocok, file tidak rusak/diubah.</span>
+                        </div>
+                      ) : (
+                        <div className="mt-1.5 flex items-start gap-1.5 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 font-semibold">
+                          <ShieldAlert className="w-4 h-4 shrink-0 mt-px" />
+                          <span>Backup lama tanpa checksum — {fileRestore.integritasAlasan || 'integritas isi tidak dapat dibuktikan. Periksa jumlah siswa setelah restore.'}</span>
+                        </div>
+                      )}
+                      {fileRestore.peringatanRelasi.length > 0 && (
+                        <div className="mt-1.5 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                          {fileRestore.peringatanRelasi.map((p, i) => (
+                            <div key={i}>• {p}</div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="mt-1.5 text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5">
+                        Sebelum restore, kondisi saat ini otomatis disimpan sebagai{' '}
+                        <strong>snapshot pengaman</strong> — bila restore gagal, data dikembalikan
+                        otomatis; bila perlu, pulihkan manual dari daftar snapshot di bawah.
                       </div>
                       {npsnBerkasBeda() && (
                         <div className="mt-1.5 flex items-start gap-1.5 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 font-semibold">
@@ -1050,6 +1122,26 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
         </div>
       </div>
 
+      {/* Issue #10 — laporan restore terakhir (verifikasi + snapshot pengaman). */}
+      {laporanRestore && (
+        <div className={`rounded-2xl border p-4 text-xs space-y-1 ${laporanRestore.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900'}`}>
+          <div className="flex items-start justify-between gap-2">
+            <strong className="flex items-center gap-1.5">
+              {laporanRestore.ok ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+              Laporan Pemulihan Terakhir
+            </strong>
+            <button
+              type="button"
+              onClick={() => setLaporanRestore(null)}
+              className="text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
+            >
+              Tutup
+            </button>
+          </div>
+          <p className="leading-relaxed">{laporanRestore.teks}</p>
+        </div>
+      )}
+
       {/* DAFTAR FILE CADANGAN DI GOOGLE DRIVE */}
       {googleUser && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
@@ -1227,6 +1319,12 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
                         <span>{snap.jumlahSiswa} siswa</span>
                         <span>• {formatUkuran(snap.ukuranBytes)}</span>
                         <span className="text-slate-400">• oleh {snap.dibuatOleh}</span>
+                        {/* Issue #10 — tandai snapshot pengaman pra-restore. */}
+                        {snap.dibuatOleh === PENGAMAN_RESTORE_OLEH && (
+                          <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded-md text-[10px] font-bold border border-amber-200">
+                            Pengaman restore — kondisi sebelum restore terakhir
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1293,6 +1391,18 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
             <p className="text-xs text-slate-600">
               File <strong className="font-mono">{selektif.namaFile}</strong>: <strong>{selektif.totalSiswa}</strong> siswa dalam <strong>{selektif.rombel.length}</strong> rombel.
             </p>
+            {!selektif.punyaIntegritas && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                Backup lama tanpa checksum — integritas isi tidak dapat dibuktikan. Kondisi saat ini tetap dilindungi snapshot pengaman sebelum restore.
+              </p>
+            )}
+            {selektif.peringatanRelasi.length > 0 && (
+              <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+                {selektif.peringatanRelasi.map((p, i) => (
+                  <div key={i}>• {p}</div>
+                ))}
+              </div>
+            )}
             <div className="flex flex-wrap gap-2">
               {selektif.rombel.map((r) => {
                 const aktif = selektifPilih.includes(r.rombel);

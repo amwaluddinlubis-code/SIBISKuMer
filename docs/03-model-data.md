@@ -135,8 +135,27 @@ raport, rekapitulasi (logo kartu pelajar ikut logo kiri bila ada).
 
 ### 3.6 Format backup (`BackupPayload`, versi `1.3.0`)
 
-`{ app, version, exportedAt, sekolah, dapodikConfig, siswa[], syncLogs[], users?[], rombel?[], ptk?[], tutupTahun?[], petaKelas?[] }`.
-Restore menolak payload tanpa array `siswa` yang valid; `tutupTahun`/`petaKelas` opsional (backup lama tetap terbaca).
+`{ app, version, exportedAt, integritas?, sekolah, dapodikConfig, siswa[], syncLogs[], users?[], rombel?[], ptk?[], tutupTahun?[], petaKelas?[] }`.
+
+- **`integritas?`** (Issue #10): `{ algoritma: 'SHA-256', checksum, jumlah, dibuatPada }`.
+  Checksum = SHA-256 (hex) atas string kanonik payload tanpa blok integritas
+  (`src/utils/backupIntegrity.ts`: kunci objek terurut, array tetap berurutan);
+  `jumlah` = jumlah record per koleksi saat ekspor. Backup lama tanpa blok ini
+  tetap terbaca (status `tanpa-checksum` + peringatan).
+- **Restore menolak sebelum mutasi apa pun** (`importBackupData`, fail-fast):
+  file terenkripsi, bukan JSON, `app` bukan SIBISKuMer, `version` hilang /
+  bukan semver / lebih baru dari format yang didukung, struktur tidak valid
+  (tanpa array siswa, duplikat id siswa / username), checksum atau jumlah
+  tercatat tidak cocok, NPSN beda tanpa konfirmasi, atau snapshot pengaman
+  gagal dibuat. `tutupTahun`/`petaKelas` opsional (backup lama tetap terbaca).
+- **Snapshot pengaman & rollback:** sebelum mutasi, kondisi saat ini disimpan
+  sebagai snapshot auto-backup berlabel `pengaman-restore` (hanya yang terbaru
+  dipertahankan; tidak pernah digusur pruning snapshot otomatis). Bila tulis
+  atau verifikasi pasca-restore gagal, rollback otomatis ke snapshot pengaman
+  (`RestoreResult.rollback`); verifikasi membandingkan jumlah siswa, id yang
+  diharapkan hadir, dan kecocokan NPSN profil (`RestoreResult.verifikasi`).
+  Restore selektif (`importSelectiveSiswa`) memakai perlindungan yang sama
+  (checksum bila ada + snapshot pengaman + rollback).
 
 ### 3.7 `TutupTahunAjaran` / `RosterArsip` (arsip terkunci)
 
