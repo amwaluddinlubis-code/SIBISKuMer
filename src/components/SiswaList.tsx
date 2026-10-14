@@ -21,6 +21,7 @@ import { siswaTerlibatTahun, tahunSiswa } from '../utils/sesi';
 import { PageControl } from './PageControl';
 import { toast } from '../utils/notify';
 import { unduhExcel } from '../utils/excel';
+import { catatAudit } from '../utils/audit';
 import { processStudentPhoto, formatKb, MAX_PHOTO_BYTES } from '../utils/photo';
 
 interface SiswaListProps {
@@ -278,6 +279,10 @@ export const SiswaList: React.FC<SiswaListProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    catatAudit('dokumen_ekspor', {
+      entitas: 'dokumen',
+      ringkasan: `Ekspor daftar siswa ke CSV (${filtered.length} baris)`,
+    });
     toast(`Berhasil mengekspor ${filtered.length} data siswa ke CSV.`, 'success');
   };
 
@@ -313,6 +318,10 @@ export const SiswaList: React.FC<SiswaListProps> = ({
       await unduhExcel(`Buku_Induk_Siswa_${sekolah.nama || jenjang}_${new Date().toISOString().slice(0, 10)}`, [
         { nama: 'Master Siswa', baris: [header, ...baris] },
       ]);
+      catatAudit('dokumen_ekspor', {
+        entitas: 'dokumen',
+        ringkasan: `Ekspor daftar siswa ke Excel (${filtered.length} baris)`,
+      });
       toast(`Berhasil mengekspor ${filtered.length} data siswa ke Excel.`, 'success');
     } catch (err: unknown) {
       toast(`Gagal mengekspor Excel: ${err instanceof Error ? err.message : String(err)}`, 'error');
