@@ -29,7 +29,7 @@ import { normalizeTahunAkses, isValidTahun } from '../utils/tahunAjaran';
 import { toast, confirmDialog } from '../utils/notify';
 import { validateAppUserInput } from '../utils/validation';
 import { startTopProgress, doneTopProgress } from '../utils/progress';
-import { catatAudit } from '../utils/audit';
+import { catatAudit, diffAudit } from '../utils/audit';
 import { bukaKunciLogin } from '../utils/security';
 import { catatHapusCloud } from '../utils/tombstone';
 
@@ -179,10 +179,18 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         await saveUser(updated);
       }
       await refreshUsers();
+      const diffAkun = diffAudit(editingUser, updated, [
+        'role',
+        'status',
+        'jabatan',
+        'rombelAkses',
+        'tahunAkses',
+      ]);
       catatAudit('akun_ubah', {
         entitas: 'akun',
         entitasId: updated.id,
         ringkasan: `Ubah akun @${updated.username}${pwInput ? ' (+ password baru)' : ''}`,
+        ...(diffAkun || {}),
       });
     } else {
       // Create

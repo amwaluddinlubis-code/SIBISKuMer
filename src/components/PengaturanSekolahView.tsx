@@ -32,6 +32,20 @@ import { resolveTemaEfektif, TEMA_LABEL } from '../utils/tema';
 import { processLogoImage, formatKb, MAX_LOGO_BYTES } from '../utils/photo';
 import { KopSuratView } from './KopSuratView';
 import { startTopProgress, doneTopProgress } from '../utils/progress';
+import { catatAudit, diffAudit } from '../utils/audit';
+
+const PROFIL_AUDIT_ALLOWLIST = [
+  'nama',
+  'npsn',
+  'nss',
+  'jenjang',
+  'bentukPendidikan',
+  'statusSekolah',
+  'tahunAjaran',
+  'semesterAktif',
+  'kepalaSekolah',
+  'petugasBukuInduk',
+] as const;
 
 interface PengaturanSekolahViewProps {
   sekolah: SekolahProfile;
@@ -136,7 +150,13 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
     }
     startTopProgress();
     try {
+      const diffProfil = diffAudit(sekolah, profile, PROFIL_AUDIT_ALLOWLIST);
       await saveSekolahProfile(profile);
+      catatAudit('pengaturan_ubah', {
+        entitas: 'pengaturan',
+        ringkasan: `Ubah profil sekolah "${profile.nama}" (NPSN ${profile.npsn || '-'})`,
+        ...(diffProfil || {}),
+      });
       onUpdateSekolah(profile);
       // Jaga registry multi-sekolah tetap selaras (nama/NPSN/jenjang untuk pemilih sekolah).
       const active = getActiveSchool();
@@ -202,7 +222,13 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
         }
       }
       setProfile(finalProfile);
+      const diffDapodik = diffAudit(profile, finalProfile, PROFIL_AUDIT_ALLOWLIST);
       await saveSekolahProfile(finalProfile);
+      catatAudit('pengaturan_ubah', {
+        entitas: 'pengaturan',
+        ringkasan: `Profil sekolah diperbarui dari Dapodik "${finalProfile.nama}" (NPSN ${finalProfile.npsn || '-'})`,
+        ...(diffDapodik || {}),
+      });
       onUpdateSekolah(finalProfile);
 
       const active = getActiveSchool();
