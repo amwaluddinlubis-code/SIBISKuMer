@@ -41,6 +41,7 @@ IndexedDB per laptop; sinkron antar-laptop via Sinkron Cloud (§4b), bukan via e
 |-----------|:---:|:---:|
 | Dasbor Operasional, Master Siswa, Nilai Raport, Rekap, Cetak, Referensi + GTK (lihat; GTK manual hanya admin) | ✅ semua rombel | ✅ hanya rombel X |
 | Tambah/ubah/hapus siswa + wizard mutasi masuk/keluar + leger nilai | ✅ | ✅ hanya rombel X (`canUserAccessRombel`) |
+| Impor Excel/CSV siswa (pemetaan + pratinjau + rekonsiliasi) | ✅ semua rombel | ✅ hanya rombel X (baris di luar kewenangan dilewati) |
 | Sinkron Dapodik, Profil Sekolah, Backup, Manajemen Pengguna, Pemetaan Kelas, Tutup Tahun, Tema Tampilan, Log Audit | ✅ (via dropdown pengguna topbar) | ❌ (notice `AccessDeniedNotice` + redirect Dasbor) |
 | Arsip tahun ajaran (lihat roster terkunci) | ✅ | ✅ (sebatas rombel kewenangan) |
 | Impersonate (lihat sebagai operator) | ✅ | ❌ |
@@ -137,6 +138,61 @@ project sesuai `firebase-applet-config.json`):**
    - Bila tahun ajaran/semester dari Dapodik berbeda dengan profil aktif, aplikasi
      meminta konfirmasi eksplisit sebelum mengubah (bawaan: tidak diubah).
 5. Bila respons kosong untuk rombel/PTK, coba alias method (`getGtk` ↔ `getPTK`) via `wsMethod`.
+
+## 5b. SOP Impor Excel/CSV Siswa (alternatif Dapodik offline, Issue #11)
+
+Tombol **Impor Excel/CSV** di toolbar Master Siswa (administrator + operator).
+Alur: Pilih berkas → Pemetaan kolom → Pratinjau & rekonsiliasi → Konfirmasi → Hasil.
+
+1. **Template:** unduh Template CSV / Excel (.xlsx, sheet Template + Panduan) dari
+   langkah 1, atau salin `docs/contoh-impor-siswa.csv` (2 baris contoh fiktif).
+   Baris pertama WAJIB header. Field wajib: **Nama Lengkap, NISN, Rombel Saat Ini**.
+2. **Batasan berkas:** hanya `.csv` / `.xlsx`, maks **5 MB**, maks **2000 baris**
+   per berkas (bagi berkas bila lebih). CSV harus **UTF-8** (Excel: Save As →
+   CSV UTF-8), delimiter `;` atau `,` (terdeteksi otomatis). Excel: hanya sheet
+   pertama yang dibaca.
+3. **Pemetaan:** header dikenali otomatis dari label/alias (cth. `Nama`, `Rombel`,
+   `NIK Ayah`). Kolom yang tidak dikenal ditandai **kolom asing** — petakan
+   manual ke field yang dikenal atau biarkan "Abaikan". Dua kolom tidak boleh
+   memetakan ke field yang sama.
+4. **Validasi per baris:** NISN 10 digit, NIK/No.KK 16 digit bila diisi,
+   enum (jenis kelamin, agama, jalur, status, dst.), angka, tanggal, format
+   rombel (`7A`). Duplikat NISN/NIK/NIPD **di dalam berkas** ditandai error.
+   Tanggal diterima: `YYYY-MM-DD` (juga diterima `DD/MM/YYYY`, `DD-MM-YYYY`,
+   dan tanggal Excel). Tahun 2 digit ditolak.
+5. **Rekonsiliasi:** tiap baris diklasifikasikan `baru` / `sama` / `beda` /
+   `konflik` / `error` / `ditolak-akses`. Pencocokan: NISN → NIK → NIPD.
+   Bila NISN menunjuk siswa A tetapi NIK menunjuk siswa B = **konflik**,
+   baris dilewati (perbaiki kunci identitas, impor ulang baris itu).
+   Baris `beda` menampilkan perbedaan lama → baru; default **lewati**
+   (tidak ada penggabungan otomatis). Pengguna memilih massal (lewati /
+   perbarui semua yang berbeda) + override per baris, lalu mencentang
+   persetujuan. **Sel kosong pada baris perbarui = "tidak diubah"** — tidak
+   pernah mengosongkan data lama.
+6. **Hak akses:** operator hanya dapat menambah/mengubah siswa pada rombel
+   dalam `rombelAkses`-nya (`canUserAccessRombel`). Baris di luar kewenangan
+   dilewati dan nilai lamanya tidak ditampilkan di pratinjau.
+7. **Keamanan penerapan:** sebelum tulis dibuat **snapshot pengaman**
+   (auto-backup; dapat dipulihkan dari menu Backup). Tulis memakai satu
+   transaksi (`saveSiswaBulk`) — bila gagal, tidak ada data yang berubah.
+   Tercatat di Log Audit sebagai `impor_siswa` (hanya hitungan, tanpa data
+   siswa). Siswa baru hasil impor memiliki P5/ekskul/prestasi/riwayat KOSONG
+   (tidak dibuatkan data karangan) — lengkapi lewat form/raport seperti biasa.
+8. **Cegah unggah ulang:** sidik jari (SHA-256) berkas yang sudah diterapkan
+   disimpan per database (maks 50 catatan, kunci `bukuinduk_impor_sidik`).
+   Mengunggah berkas yang sama lagi menampilkan peringatan + wajib mencentang
+   "impor ulang" untuk melanjutkan.
+9. **Laporan error:** tombol "Unduh Laporan Error (.csv)" berisi baris
+   konflik / error / di luar kewenangan beserta alasannya — perbaiki di
+   berkas, lalu impor ulang (baris yang sudah masuk akan terklasifikasi
+   `sama` / `beda`, tidak ganda).
+10. **Batasan jujur — otorisasi:** aplikasi ini offline-first tanpa backend,
+    sehingga tidak ada "otorisasi server" dalam arti server memvalidasi
+    tiap tulis. Penegakan impor dilakukan di lapisan aplikasi (UI +
+    rekonsiliasi + tulis), sama seperti seluruh penegakan peran yang sudah
+    ada (`canUserAccessRombel`, `filterSiswaByAccess`). Jangan anggap berkas
+    impor sebagai jalur yang melewati hak akses — ia memakai aturan yang
+    sama dengan input manual.
 
 ## 5a. Multi-Sekolah (satu laptop, banyak DB) — khusus Administrator
 
