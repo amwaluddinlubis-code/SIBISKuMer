@@ -349,7 +349,9 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
           catatAudit('siswa_ubah', {
             entitas: 'siswa',
             entitasId: siswaAktual.id,
-            ringkasan: `Status "${siswaAktual.namaLengkap}" → Lulus (keputusan raport TP ${toSave.tahunAjaran} Semester ${toSave.semester})`
+            ringkasan: `Status "${siswaAktual.namaLengkap}" → Lulus (keputusan raport TP ${toSave.tahunAjaran} Semester ${toSave.semester})`,
+            sebelum: { statusSiswa: siswaAktual.statusSiswa },
+            sesudah: { statusSiswa: 'Lulus' },
           });
           toast(`Status "${siswaAktual.namaLengkap}" diperbarui menjadi Lulus.`, 'success');
         }
