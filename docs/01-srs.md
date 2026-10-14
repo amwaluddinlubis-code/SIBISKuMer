@@ -67,6 +67,7 @@ Fitur-fitur ini didokumentasikan sebagai kebutuhan tambahan P8–P10 di bawah.
 | FR-P1-04 | Pagination 10/20/50 (default 20), nomor urut berkelanjutan, empty-state ganda (DB kosong vs filter kosong) | Navigasi halaman tidak me-reset filter |
 | FR-P1-05 | Ekspor CSV daftar tersaring | File terunduh berisi baris sesuai filter |
 | FR-P1-06 | Upload foto langsung dari kolom aksi (`SiswaList.tsx` tombol kamera + `src/utils/photo.ts`): crop tengah rasio 4:6 (maks 480×720 JPEG), kompres hingga ≤ 500 KB; hormati batas rombel operator; toast sukses/gagal | Foto tampil 4:6 di tabel/cetak; file mentah bukan gambar atau > 8 MB ditolak dengan pesan |
+| FR-P1-07 | Pemeriksa Data (Issue #3, tab `pemeriksa`, `src/utils/pemeriksaData.ts` + `src/components/PemeriksaDataView.tsx`): periksa kelengkapan, format, rentang, konflik antarkolom, dan kemungkinan duplikat pada data siswa dalam lingkup akses; daftar temuan berprioritas (tinggi/sedang/rendah) + alasan + sumber + tautan ke formulir perbaikan; filter, pencarian, status belum-diperiksa/diperbaiki/diabaikan (alasan wajib saat mengabaikan); aturan dapat diaktifkan/nonaktifkan; pratinjau perbedaan data impor CSV vs data saat ini | Pemeriksa TIDAK mengubah/menghapus data; duplikat hanya "kemungkinan" (tidak ada gabung/hapus otomatis); tes positif + negatif duplikat; status penanganan hanya menyimpan ID + alasan |
 
 ### P2 — Nilai Raport Kumer (`src/components/NilaiRaportView.tsx`, `src/utils/raportUtils.ts`, `src/utils/db.ts`)
 
