@@ -152,6 +152,24 @@ Rumah cloud `cloud/{NPSN-penuh-atau-nama-DB}`; konflik last-write-wins per recor
 | FR-P15-04 | Foto data-URL dikecilkan jadi mini JPEG ≤60KB (`fotoMini`, tanpa Storage); dokumen >900KB dilewati + peringatan | Foto asli penuh tetap di perangkat; perangkat tanpa foto memakai mini sebagai fallback tampil |
 | FR-P15-05 | TIDAK ikut sinkron: config Dapodik (per-mesin), sync_logs, audit_logs, snapshot, kunci login | Tercantum di UI + tercatat di audit (`cloud_unggah/unduh/sinkron`) |
 
+### P16 — Impor Excel/CSV Siswa (`src/utils/imporSiswa.ts`, `src/components/ImporSiswaView.tsx`, tombol "Impor Excel/CSV" di `SiswaList.tsx`)
+
+Alternatif Dapodik offline: unggah `.csv` / `.xlsx` berisi data siswa, petakan kolom ke field yang dikenal, periksa pratinjau + rekonsiliasi, lalu terapkan setelah konfirmasi eksplisit. Logika murni di `imporSiswa.ts` (dapat diuji di Node); komponen hanya menangani berkas, UI, dan tulis akhir.
+
+| ID | Kebutuhan | Kriteria terima |
+|----|-----------|-----------------|
+| FR-P16-01 | Unggah `.csv` / `.xlsx` (maks 5 MB, maks 2000 baris); format lain / berkas kosong / rusak ditolak dengan pesan | Pesan menyebut format/batas yang benar; tidak ada data tertulis |
+| FR-P16-02 | Pemetaan kolom: otomatis via label/alias; kolom asing ditandai + dapat dipetakan manual / diabaikan; field wajib (Nama, NISN, Rombel) hilang = tidak bisa lanjut | Kolom asing berlabel jelas; duplikat pemetaan dibatalkan |
+| FR-P16-03 | Parsing CSV: delimiter `,` / `;` otomatis, kutip + baris baru dalam kutip; encoding bukan UTF-8 ditolak. Excel: sheet pertama saja, sel tanggal (Date / nomor seri) dinormalisasi ke YYYY-MM-DD | Tanggal `DD/MM/YYYY`, `DD-MM-YYYY`, nomor seri Excel diterima; `2026-02-30` / tahun 2 digit ditolak |
+| FR-P16-04 | Validasi per baris: format NISN/NIK/NIPD/No.KK, pilihan enum, angka, tanggal, rombel; duplikat NISN/NIK/NIPD di dalam berkas ditandai | Baris invalid = klasifikasi `error` + alasan; laporan error CSV dapat diunduh |
+| FR-P16-05 | Rekonsiliasi vs data lama: `baru` / `sama` / `beda` (daftar perbedaan lama → baru) / `konflik` (NISN vs NIK menunjuk siswa berbeda) / `ditolak-akses` | Baris `beda` default `lewati` (tidak ada merge otomatis); nilai lama baris di luar kewenangan tidak ditampilkan |
+| FR-P16-06 | Keputusan eksplisit: pilihan massal untuk baris `beda` (lewati / perbarui) + override per baris; checkbox persetujuan; sel kosong pada perbarui = "tidak diubah" | Tombol Terapkan nonaktif sampai pilihan massal + persetujuan terisi |
+| FR-P16-07 | Penerapan aman: snapshot pengaman (auto-backup) sebelum tulis; tulis via `saveSiswaBulk` = satu transaksi (gagal = tidak ada perubahan); tercatat di audit (`impor_siswa`) | Snapshot dapat dipulihkan dari menu Backup; ringkasan hasil (+baru / ~diperbarui / dilewati) ditampilkan |
+| FR-P16-08 | Cegah unggah ulang: sidik jari SHA-256 berkas yang sudah diterapkan disimpan (`bukuinduk_impor_sidik`, maks 50); unggah ulang diblokir kecuali centang impor ulang | Peringatan menyebut tanggal penerapan sebelumnya |
+| FR-P16-09 | Otorisasi: impor untuk administrator + operator; baris di luar `rombelAkses` operator dilewati (`canUserAccessRombel`) | Operator tidak dapat menambah/mengubah siswa di luar rombelnya |
+| FR-P16-10 | Template + contoh: unduh Template CSV / Excel (sheet Template + Panduan, 2 baris contoh fiktif); `docs/contoh-impor-siswa.csv` di repo | Contoh baris lolos validasi (dibuktikan tes) |
+| FR-P16-11 | Batasan jujur: tidak ada backend — "otorisasi server" pada issue diterjemahkan menjadi penegakan di lapisan aplikasi (UI + rekonsiliasi + tulis), sama seperti seluruh penegakan peran di aplikasi offline-first ini | Didokumentasikan di `05-operasional.md` §5b |
+
 ### P7 — Offline-First & Backup (`src/utils/db.ts`, `BackupRestoreModule.tsx`, `PengaturanSekolahView.tsx`)
 
 | ID | Kebutuhan | Kriteria terima |

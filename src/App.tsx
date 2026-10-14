@@ -94,6 +94,7 @@ const PemetaanKelasView = lazyView(() => import('./components/PemetaanKelasView'
 const PemeriksaDataView = lazyView(() => import('./components/PemeriksaDataView'), 'PemeriksaDataView');
 const SchoolManagerModal = lazyView(() => import('./components/SchoolManagerModal'), 'SchoolManagerModal');
 const CetakKartuMassal = lazyView(() => import('./components/CetakKartuMassal'), 'CetakKartuMassal');
+const ImporSiswaView = lazyView(() => import('./components/ImporSiswaView'), 'ImporSiswaView');
 import type { RencanaRombel } from './components/ArsipView';
 import type { DokumenMutasiKeluar } from './components/MutasiWizard';
 import { ToastHost } from './components/ToastHost';
@@ -174,6 +175,7 @@ export default function App() {
   const [detailSiswa, setDetailSiswa] = useState<Siswa | null>(null);
   const [printSiswa, setPrintSiswa] = useState<Siswa | null>(null);
   const [mutasiOpen, setMutasiOpen] = useState(false);
+  const [imporSiswaOpen, setImporSiswaOpen] = useState(false);
 
   // Search + pagination state for 'cetak' tab student selector
   const [cetakSearch, setCetakSearch] = useState('');
@@ -1367,6 +1369,7 @@ export default function App() {
                 onOpenSync={() => handleNavigateTab('dapodik')}
                 onResetSampleData={handleResetSample}
                 onOpenMutasi={() => setMutasiOpen(true)}
+                onOpenImpor={() => setImporSiswaOpen(true)}
                 isAdmin={isAdmin}
                 sessionTahun={sessionTahun}
                 tahunOptions={daftarTahunAjaran}
@@ -1783,6 +1786,16 @@ export default function App() {
           onApplyMasuk={handleApplyMutasiMasuk}
           onApplyKeluar={handleApplyMutasiKeluar}
           onClose={() => setMutasiOpen(false)}
+        />
+      )}
+
+      {imporSiswaOpen && (
+        <ImporSiswaView
+          siswa={siswaList}
+          currentUser={currentUser}
+          sekolah={sekolah}
+          onDataChanged={loadData}
+          onClose={() => setImporSiswaOpen(false)}
         />
       )}
 

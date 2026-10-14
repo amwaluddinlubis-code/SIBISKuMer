@@ -46,7 +46,7 @@ Tersisa backlog kecil (bukan penahan rilis):
 |---|------|-----------------|
 | 2.3c | Dashboard: filter tahun ajaran + ringkas per-rombel | Angka konsisten dengan Rekap |
 | 2.4b | Skeleton loading semua tab + pintasan keyboard | Tidak ada layar putih kosong |
-| 2.5 | Impor Excel/CSV siswa (alternatif Dapodik offline) | Baris invalid dilaporkan per-baris, valid tetap masuk |
+| 2.5 | Impor Excel/CSV siswa (alternatif Dapodik offline) | SELESAI (Issue #11): wizard pemetaan + pratinjau + rekonsiliasi, laporan error CSV, snapshot + transaksi atomik, cegah unggah ulang |
 
 ## Tahap 3 — Sinkron Dapodik Tangguh (SEBAGIAN SELESAI — fondasi sudah ada)
 
