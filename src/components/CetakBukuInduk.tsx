@@ -7,6 +7,7 @@ import { KopSuratView } from './KopSuratView';
 import { KartuPelajar, TemplateKartu, TEMPLATE_KARTU } from './KartuPelajar';
 import { unduhIndukExcel, unduhIndukWord } from '../utils/dokumenInduk';
 import { toast } from '../utils/notify';
+import { catatAudit } from '../utils/audit';
 
 interface CetakBukuIndukProps {
   siswa: Siswa;
@@ -36,6 +37,11 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
       } else {
         await unduhIndukWord(siswa, sekolah);
       }
+      catatAudit('dokumen_ekspor', {
+        entitas: 'dokumen',
+        entitasId: siswa.id,
+        ringkasan: `Ekspor lembar induk "${siswa.namaLengkap}" (${format === 'excel' ? '.xlsx' : '.docx'})`,
+      });
       toast(`Lembar induk "${siswa.namaLengkap}" diunduh (${format === 'excel' ? '.xlsx' : '.docx'}).`, 'success');
     } catch (err: unknown) {
       toast(`Gagal mengekspor: ${err instanceof Error ? err.message : String(err)}`, 'error');

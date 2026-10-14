@@ -618,8 +618,11 @@ export interface SchoolEntry {
 
 // ---------------- AUDIT LOG (jejak siapa-ubah-apa) ----------------
 // Ditulis otomatis pada aksi penting (login, kelola akun, data siswa,
-// tutup tahun, sinkron, backup). Hanya administrator yang dapat melihat
-// (tab Log Audit) & menghapus. Dibatasi 2000 entri terbaru per database.
+// tutup tahun, sinkron, backup, rombel, ekspor dokumen, pengaturan,
+// GTK). Hanya administrator yang dapat melihat (tab Log Audit).
+// APPEND-ONLY: entri tidak dapat diubah/dihapus pengguna (lihat
+// `docs/05-operasional.md` § Kebijakan Audit). Dibatasi 2000 entri
+// terbaru per database (retensi bergulir, entri tertua terhapus).
 
 export type AuditAksi =
   | 'login'
@@ -649,7 +652,11 @@ export type AuditAksi =
   | 'backup_reset'
   | 'cloud_unggah'
   | 'cloud_unduh'
-  | 'cloud_sinkron';
+  | 'cloud_sinkron'
+  | 'rombel_ubah'
+  | 'dokumen_ekspor'
+  | 'pengaturan_ubah'
+  | 'gtk_ubah';
 
 export interface AuditLog {
   id: string;
@@ -663,6 +670,14 @@ export interface AuditLog {
   entitasId?: string;
   ringkasan: string;
   detail?: string;
+  /** ID sekolah pemilik entri (isolasi antar-sekolah saat restore). */
+  sekolahId?: string;
+  /** Hasil tindakan: 'berhasil' (default) atau 'gagal'. */
+  hasil?: 'berhasil' | 'gagal';
+  /** Nilai SEBELUM perubahan (hanya field operasional allowlist, tersanitasi). */
+  sebelum?: Record<string, unknown>;
+  /** Nilai SESUDAH perubahan (hanya field operasional allowlist, tersanitasi). */
+  sesudah?: Record<string, unknown>;
 }
 
 // ---------------- CADANGAN OTOMATIS (auto-backup terjadwal) ----------------
