@@ -14,7 +14,7 @@ Server Node (`server.ts`) hanya menjadi perantara ke Web Service Dapodik lokal.
 - Master data siswa (biodata lengkap, NISN/NIPD, rombel, status)
 - Nilai raport per semester + riwayat semester & kenaikan kelas multi-tahun
 - Cetak Lembar Buku Induk & Kartu Pelajar standar dinas
-- Rekapitulasi & dashboard statistik
+- Rekapitulasi & dashboard pusat kendali: filter tahun/rombel/status, widget pekerjaan tertunda, arus siswa per rentang tanggal, tenggat laporan — setiap angka dapat dibuka ke daftar data sumbernya (drill-down)
 - Sinkronisasi Dapodik lokal (host/port/token terkonfigurasi) + mode simulasi
 - Multi-pengguna berbasis peran: `administrator` & `operator`
 - Cadangan lokal (JSON, opsional **terenkripsi password**) & Google Drive
