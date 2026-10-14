@@ -35,6 +35,8 @@ interface SiswaListProps {
   onOpenSync: () => void;
   onResetSampleData: () => void;
   onOpenMutasi?: () => void;
+  /** Buka wizard impor Excel/CSV (Issue #11). */
+  onOpenImpor?: () => void;
   isAdmin?: boolean;
   /** Sesi tahun ajaran login (fondasi sesi; roster lingkup sekolah). */
   sessionTahun?: string | null;
@@ -87,6 +89,7 @@ export const SiswaList: React.FC<SiswaListProps> = ({
   onOpenSync,
   onResetSampleData,
   onOpenMutasi,
+  onOpenImpor,
   isAdmin = false,
   sessionTahun,
   tahunOptions
@@ -368,6 +371,17 @@ export const SiswaList: React.FC<SiswaListProps> = ({
           >
             <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600" />
             Mutasi
+          </button>
+        )}
+
+        {onOpenImpor && (
+          <button
+            onClick={onOpenImpor}
+            className="ui-btn ui-btn-outline"
+            title="Impor siswa dari Excel (.xlsx) / CSV dengan pemetaan kolom + pratinjau"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+            Impor Excel/CSV
           </button>
         )}
 
