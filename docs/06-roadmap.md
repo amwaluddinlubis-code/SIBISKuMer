@@ -238,3 +238,22 @@ Lima fitur baru atas masukan pengguna, dikerjakan 5 worker paralel + wiring koor
 | 5 | **Mode malam + ukuran huruf** — `ThemeProvider` (`terang`/`gelap`, font `normal`/`besar`/`sangat-besar`), tersimpan per perangkat (`sibiskumer_tema`), dark mode class strategy Tailwind v4, seksi "Tampilan" di Pengaturan. | `ThemeContext.tsx` (baru), `index.css`, `PengaturanSekolahView.tsx` |
 
 Verifikasi: `npx tsc --noEmit` — nol error baru di file yang disentuh.
+
+## Tahap 7 — Pemeriksa Data Siswa (Issue #3, 2026-10-15)
+
+Yang **sudah ada** di main dan tidak dibangun duplikat: validasi identitas di
+form (`validateIdentitasSiswa` — wajib/format/duplikat eksak NISN/NIK/NIPD,
+blokir simpan) dan pratinjau perbedaan Dapodik (`compareDapodikWithExisting` —
+baru/berbeda/sama + konflik NISN, tanpa timpa otomatis). Yang dibangun di
+tahap ini melengkapi keduanya menjadi pemeriksa terpadu:
+
+| Item | Realisasi (file) |
+|------|------------------|
+| Mesin pemeriksa murni: 27 aturan (wajib/format/rentang/konflik/duplikat), prioritas, konfigurasi on/off, status penanganan, banding impor CSV | `src/utils/pemeriksaData.ts` (baru) |
+| Tab Pemeriksa Data: ringkasan, filter + pencarian, daftar temuan + tautan ke formulir perbaikan, abaikan wajib alasan, panel aturan, pratinjau impor CSV tanpa mengubah data | `src/components/PemeriksaDataView.tsx` (baru), `App.tsx`, `Navbar.tsx` |
+| Tes regresi: kosong/valid/wajib/format/konflik/rentang, duplikat positif + negatif, konfigurasi, status, banding impor, parser CSV (39 tes baru; total 69 lolos) | `tests/pemeriksa-data.test.ts` (baru) |
+| Dokumentasi: FR-P1-07, daftar aturan §4a, SOP §4e, arsitektur | `docs/01-srs.md`, `docs/03-model-data.md`, `docs/05-operasional.md`, `docs/02-arsitektur.md` |
+
+Keputusan: pemeriksa tidak pernah mengubah/menghapus data; duplikat hanya
+"kemungkinan" (tanpa gabung/hapus otomatis); cek per-record hanya siswa
+Aktif; status penanganan hanya menyimpan ID + alasan (tanpa data pribadi).
