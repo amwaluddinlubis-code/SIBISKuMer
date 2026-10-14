@@ -67,6 +67,15 @@ tabel mengulang thead + baris/tanda tangan anti-terpotong. Sisa: cetak massal
 per-rombel + nomor halaman, ekspor Excel rekap + PDF raport, kartu pelajar
 bolak-balik + QR NISN. Terima: 1 siswa = 1 lembar induk utuh di Chrome/Edge.
 
+**Pusat Laporan (Issue #7, `LaporanView.tsx` + `utils/laporan.ts`):** 6 laporan
+administratif (Statistik, Daftar Siswa, Mutasi Masuk/Keluar, Data Belum Lengkap,
+Temuan Validasi) dengan filter tahun/rombel/status, metadata tercetak
+(parameter + waktu pembuatan + sumber/periode), pratinjau berpaginasi,
+cetak (seluruh baris), ekspor Excel/CSV, otorisasi rombel sebelum ekspor,
+tanpa NIK/No. KK/alamat/telepon, dan audit `laporan_ekspor`. PDF = dialog cetak
+browser (Save as PDF), bukan generator native. Daftar laporan & format ekspor:
+`docs/01-srs.md` §P4b, SOP: `docs/05-operasional.md` §4a2.
+
 ## Tahap 5 — Keamanan & Skala
 
 Hash password ✅ SELESAI (2026-09-16): PBKDF2-HMAC-SHA256 + fallback SHA-256
