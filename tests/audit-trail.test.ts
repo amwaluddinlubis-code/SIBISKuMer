@@ -32,7 +32,8 @@ const {
   bolehImporEntriAudit,
 } = await import('../src/utils/auditSanitasi.ts');
 const { catatAudit, bolehMelihatAuditLog } = await import('../src/utils/audit.ts');
-const { addAuditLog, getAuditLogs } = await import('../src/utils/db.ts');
+const { getSekolahProfile } = await import('../src/utils/db.ts');
+const { addAuditLog, getAuditLogs, saveSekolahProfile, importBackupData } = await import('../src/utils/db.ts');
 
 const KUNCI_AKTIF = 'bukuinduk_active_school';
 
@@ -192,6 +193,24 @@ describe('isolasi antar-sekolah saat restore', () => {
 
   it('menolak entri lawas tanpa sekolahId bila NPSN berbeda', () => {
     assert.equal(bolehImporEntriAudit({}, 'sekolah-uji', '999', '123'), false);
+  });
+  it('menolak audit lawas sekolah sumber saat restore mengganti profil NPSN tujuan', async () => {
+    await saveSekolahProfile({ npsn: '123' } as never);
+    const result = await importBackupData(JSON.stringify({
+      sekolah: { npsn: '999' },
+      siswa: [],
+      audit: [{
+        id: 'legacy-audit-sumber',
+        timestamp: new Date().toISOString(),
+        aksi: 'login',
+        entitas: 'sesi',
+        ringkasan: 'log lama sekolah sumber',
+      }],
+    }), { konfirmasiSekolahLain: true });
+    assert.equal(result.success, true);
+    assert.equal((await getSekolahProfile()).npsn, '999');
+    const logs = await getAuditLogs(100);
+    assert.equal(logs.some((log) => log.id === 'legacy-audit-sumber'), false);
   });
 
   it('menolak entri kosong', () => {
