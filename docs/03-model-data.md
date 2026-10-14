@@ -104,6 +104,8 @@ telepon/email/website, kepala sekolah + NIP, petugas buku induk + NIP, `logoUrl?
 `semesterAktif`, `tahunAjaran`, `lastSyncedWithDapodik?`, `syncSource?`,
 `kop?` (`KopSurat` — ikut backup/restore & multi-sekolah per-DB; profil lama tanpa
 kop memakai bawaan `resolveKop`),
+`penomoran?` (`PenomoranDokumen` — aturan penomoran dokumen surat per template,
+Issue #4; lihat §3.4b),
 `tema?` (`TemaKustom { mode: otomatis|biru|maroon }` — hanya administrator yang
 mengubah; resolver `resolveTemaEfektif` di `utils/tema.ts`).
 
@@ -121,6 +123,21 @@ ala kop dinas) + `logoKananUrl?`,
 `NPSN : … Email : … Kode Pos. …`), `garis` (`ganda|tunggal|tanpa`),
 `ukuranNama` (`normal|besar`). Dipakai: lembar induk, transkrip raport, cetak
 raport, rekapitulasi (logo kartu pelajar ikut logo kiri bila ada).
+
+### 3.4b `PenomoranDokumen` (aturan penomoran surat — Issue #4)
+
+`SekolahProfile.penomoran?`: per template surat (`keterangan-aktif` |
+`pindah-keluar` | `panggilan-ortu` | `daftar-rombel`) berisi
+`PenomoranTemplate { pola, nomorTerakhir }`. `pola` memakai placeholder
+`{no}` (nomor urut apa adanya), `{no3}` (nomor urut 3 digit),
+`{bulan}` (2 digit), `{bulanRomawi}`, `{tahun}` (dari tanggal surat).
+Pola bawaan (contoh awal, wajib disesuaikan sekolah):
+`{no}/SK-AKTIF/{bulanRomawi}/{tahun}`, `{no}/SK-PINDAH/{bulanRomawi}/{tahun}`,
+`{no}/SP-ORTU/{bulanRomawi}/{tahun}`, `{no}/DAFTAR-ROMBEL/{bulanRomawi}/{tahun}`.
+Saran nomor = `nomorTerakhir + 1`; tombol “Tandai nomor terpakai” (khusus
+administrator) menaikkan `nomorTerakhir` dan tidak pernah menurunkannya.
+Selain pola, operator dapat menulis nomor lengkap manual (untuk cetak ulang
+dengan nomor tercatat). Profil lama tanpa `penomoran` memakai bawaan.
 
 ### 3.5 `AppUser` / `DapodikConfig` / `DapodikSyncLog` / Referensi / Multi-Sekolah
 
