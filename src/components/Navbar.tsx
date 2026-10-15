@@ -23,9 +23,8 @@ import {
   Archive,
   LayoutGrid,
   ScrollText,
-  ShieldCheck,
   Table,
-  FileText,
+  CalendarDays,
   Sun,
   Moon,
   Monitor
@@ -43,6 +42,8 @@ interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   siswaCount: number;
+  /** Tugas terbuka yang terlambat / jatuh tempo hari ini (lencana menu Kalender). */
+  tenggatCount?: number;
   currentUser: AppUser | null;
   impersonator: AppUser | null;
   onLogout: () => void;
@@ -70,6 +71,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
   siswaCount,
+  tenggatCount = 0,
   currentUser,
   impersonator,
   onLogout,
@@ -107,13 +109,11 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'raport', label: 'Nilai Raport', icon: Award, badge: undefined },
     { id: 'leger', label: 'Leger Nilai', icon: Table, badge: undefined },
     { id: 'rekap', label: 'Rekapitulasi', icon: BarChart3, badge: undefined },
-    { id: 'laporan', label: 'Pusat Laporan', icon: FileText, badge: undefined },
     { id: 'cetak', label: 'Cetak Lembar Induk', icon: Printer, badge: undefined },
-    { id: 'dokumen', label: 'Generator Dokumen', icon: FileText, badge: undefined },
     { id: 'referensi', label: 'Data Referensi', icon: Layers, badge: undefined },
     { id: 'gtk', label: 'Data GTK', icon: Contact, badge: undefined },
     { id: 'arsip', label: 'Arsip Tahun Ajaran', icon: Archive, badge: undefined },
-    { id: 'pemeriksa', label: 'Pemeriksa Data', icon: ShieldCheck, badge: undefined },
+    { id: 'kalender', label: 'Kalender & Tenggat', icon: CalendarDays, badge: tenggatCount > 0 ? tenggatCount : undefined },
   ];
 
   // Menu admin hanya lewat dropdown pengguna di topbar (tidak di sidebar)
