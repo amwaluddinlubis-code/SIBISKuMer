@@ -1,4 +1,4 @@
-import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RaportSemester, TingkatKelas, RiwayatSemester, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, PetaKelas, AuditLog, AutoBackupSnapshot } from '../types';
+import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RaportSemester, TingkatKelas, RiwayatSemester, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, PetaKelas, AuditLog, AutoBackupSnapshot, TugasAdministrasi, PengaturanKalender, PengingatTerkirim } from '../types';
 import { defaultSekolahProfile, defaultDapodikConfig, initialSiswaList, initialUsersList, presetSekolahSD } from '../data/initialData';
 import { hashPassword, isHashedPassword, withHashedPasswords } from './password';
 import { toast } from './notify';
@@ -24,7 +24,7 @@ const DB_NAME = 'BukuInduk_Merdeka_DB';
 // Naikkan versi setiap kali ada store baru agar database lama di browser
 // pengguna ikut ter-upgrade (onupgradeneeded). v7 = store audit_logs &
 // auto_backup (Tahap 5: audit log + cadangan otomatis).
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 
 const STORES = {
   SISWA: 'siswa',
@@ -37,7 +37,8 @@ const STORES = {
   TUTUP: 'tutup_tahun',
   PETA: 'peta_kelas',
   AUDIT: 'audit_logs',
-  AUTOBACKUP: 'auto_backup'
+  AUTOBACKUP: 'auto_backup',
+  TENGGAT: 'tenggat_tugas'
 };
 
 // ---------------- Konteks sekolah aktif (multi-sekolah) ----------------
@@ -133,6 +134,11 @@ function openDB(name?: string): Promise<IDBDatabase> {
         const snapStore = db.createObjectStore(STORES.AUTOBACKUP, { keyPath: 'id' });
         snapStore.createIndex('timestamp', 'timestamp', { unique: false });
       }
+      if (!db.objectStoreNames.contains(STORES.TENGGAT)) {
+        const tugasStore = db.createObjectStore(STORES.TENGGAT, { keyPath: 'id' });
+        tugasStore.createIndex('tanggalJatuhTempo', 'tanggalJatuhTempo', { unique: false });
+        tugasStore.createIndex('status', 'status', { unique: false });
+      }
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -155,6 +161,9 @@ const LS_KEYS = {
   AUTOBACKUP: 'bukuinduk_autobackup_snap',
   LOCKOUT: 'bukuinduk_login_lock',
   AUTOBACKUP_CFG: 'bukuinduk_autobackup_cfg',
+  TENGGAT: 'bukuinduk_tenggat',
+  KALENDER_CFG: 'bukuinduk_kalender_cfg',
+  PENGINGAT_TERKIRIM: 'bukuinduk_pengingat_terkirim',
   TOMBSTONE: 'bukuinduk_tombstone',
   /** Sidik jari (SHA-256) berkas impor Excel/CSV yang sudah diterapkan (Issue #11). */
   IMPOR_SIDIK: 'bukuinduk_impor_sidik',
@@ -1438,6 +1447,148 @@ export async function simpanSnapshotPengaman(payload: string, jumlahSiswa: numbe
     payload,
   });
   return id;
+}
+
+// ---------------- KALENDER & PENGINGAT TENGGAT (Issue #8) ----------------
+// Tugas: IndexedDB store `tenggat_tugas` + cermin localStorage ter-scope
+// (pola yang sama dengan audit). Pengaturan kalender & kunci pengingat yang
+// sudah disampaikan disimpan di localStorage ter-scope (preferensi
+// per-perangkat, bukan data sekolah — tidak ikut backup JSON).
+
+const PENGINGAT_TERKIRIM_MAKS = 500;
+
+export async function getAllTenggat(): Promise<TugasAdministrasi[]> {
+  try {
+    const db = await openDB();
+    const rows: TugasAdministrasi[] = await new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORES.TENGGAT, 'readonly');
+        const req = tx.objectStore(STORES.TENGGAT).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => resolve([]);
+      } catch {
+        resolve([]);
+      }
+    });
+    return rows.sort((a, b) => (a.tanggalJatuhTempo || '9999').localeCompare(b.tanggalJatuhTempo || '9999'));
+  } catch {
+    try {
+      const raw = localStorage.getItem(sk(LS_KEYS.TENGGAT));
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+}
+
+export async function saveTenggat(tugas: TugasAdministrasi): Promise<void> {
+  if (!tugas || typeof tugas.id !== 'string' || !tugas.id.trim()) {
+    throw new Error('saveTenggat dibatalkan: tugas tanpa id yang valid.');
+  }
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      try {
+        const tx = db.transaction(STORES.TENGGAT, 'readwrite');
+        const req = tx.objectStore(STORES.TENGGAT).put(tugas);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  } catch {
+    /* lanjut ke cermin LS */
+  }
+  try {
+    const list = await getAllTenggat();
+    const idx = list.findIndex((t) => t.id === tugas.id);
+    if (idx >= 0) list[idx] = tugas;
+    else list.push(tugas);
+    localStorage.setItem(sk(LS_KEYS.TENGGAT), JSON.stringify(list));
+  } catch {
+    /* abaikan */
+  }
+}
+
+export async function deleteTenggat(id: string): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve) => {
+      try {
+        const tx = db.transaction(STORES.TENGGAT, 'readwrite');
+        const req = tx.objectStore(STORES.TENGGAT).delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  } catch {
+    /* lanjut ke cermin LS */
+  }
+  try {
+    const list = (await getAllTenggat()).filter((t) => t.id !== id);
+    localStorage.setItem(sk(LS_KEYS.TENGGAT), JSON.stringify(list));
+  } catch {
+    /* abaikan */
+  }
+}
+
+/** Pengaturan kalender per-perangkat (localStorage ter-scope per database). */
+export function getPengaturanKalender(): PengaturanKalender {
+  try {
+    const raw = localStorage.getItem(sk(LS_KEYS.KALENDER_CFG));
+    if (!raw) return { zonaWaktu: 'Asia/Jakarta', ingatkanHariSebelum: 3, ingatkanTerlambat: true, kanal: 'dalam_aplikasi' };
+    const parsed = JSON.parse(raw) as Partial<PengaturanKalender>;
+    // Normalisasi ringan di sini; validasi penuh ada di utils/kalender.ts.
+    return {
+      zonaWaktu: typeof parsed.zonaWaktu === 'string' && parsed.zonaWaktu ? parsed.zonaWaktu : 'Asia/Jakarta',
+      ingatkanHariSebelum: Number.isFinite(Number(parsed.ingatkanHariSebelum))
+        ? Math.min(30, Math.max(0, Math.floor(Number(parsed.ingatkanHariSebelum))))
+        : 3,
+      ingatkanTerlambat: parsed.ingatkanTerlambat !== false,
+      kanal: 'dalam_aplikasi',
+    };
+  } catch {
+    return { zonaWaktu: 'Asia/Jakarta', ingatkanHariSebelum: 3, ingatkanTerlambat: true, kanal: 'dalam_aplikasi' };
+  }
+}
+
+export function savePengaturanKalender(pengaturan: PengaturanKalender): void {
+  try {
+    localStorage.setItem(sk(LS_KEYS.KALENDER_CFG), JSON.stringify(pengaturan));
+  } catch {
+    /* abaikan */
+  }
+}
+
+/** Kunci pengingat yang sudah disampaikan (anti-duplikat, maks 500 terbaru). */
+export function getPengingatTerkirim(): PengingatTerkirim[] {
+  try {
+    const raw = localStorage.getItem(sk(LS_KEYS.PENGINGAT_TERKIRIM));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Catat kunci pengingat sebagai sudah disampaikan. Idempoten: kunci yang
+ * sudah ada tidak ditulis ganda. Mengembalikan true bila kunci baru.
+ */
+export function tambahPengingatTerkirim(kunci: string, tugasId: string): boolean {
+  try {
+    const list = getPengingatTerkirim();
+    if (list.some((p) => p.kunci === kunci)) return false;
+    list.unshift({ kunci, tugasId, disampaikanPada: new Date().toISOString() });
+    localStorage.setItem(sk(LS_KEYS.PENGINGAT_TERKIRIM), JSON.stringify(list.slice(0, PENGINGAT_TERKIRIM_MAKS)));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------- ARSIP TAHUN AJARAN (tutup tahun, terkunci) ----------------
