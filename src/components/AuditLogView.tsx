@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Download, RefreshCw } from 'lucide-react';
+import { Search, Download, Trash2, RefreshCw } from 'lucide-react';
 import { AuditLog, AuditAksi } from '../types';
-import { getAuditLogs } from '../utils/db';
-import { catatAudit } from '../utils/audit';
+import { getAuditLogs, clearAuditLogs } from '../utils/db';
 import { PageControl } from './PageControl';
-import { toast } from '../utils/notify';
+import { toast, confirmDialog } from '../utils/notify';
 
 const AKSI_LABEL: Record<AuditAksi, string> = {
   login: 'Masuk',
@@ -27,19 +26,18 @@ const AKSI_LABEL: Record<AuditAksi, string> = {
   tutup_tahun: 'Tutup tahun',
   buka_tahun: 'Buka kunci tahun',
   sinkron_terapkan: 'Sinkron diterapkan',
-  // Issue #11: label untuk aksi impor siswa (wajib — AKSI_LABEL exhaustive atas AuditAksi).
-  impor_siswa: 'Impor siswa (Excel/CSV)',
   backup_buat: 'Backup dibuat',
   backup_pulihkan: 'Backup dipulihkan',
   backup_reset: 'Reset database',
-  laporan_ekspor: 'Laporan diekspor',
   cloud_unggah: 'Cloud diunggah',
   cloud_unduh: 'Cloud diunduh',
   cloud_sinkron: 'Sinkron cloud',
-  rombel_ubah: 'Rombel diubah',
-  dokumen_ekspor: 'Dokumen diekspor',
-  pengaturan_ubah: 'Pengaturan diubah',
-  gtk_ubah: 'GTK diubah',
+  tenggat_buat: 'Tugas dibuat',
+  tenggat_ubah: 'Tugas diubah',
+  tenggat_selesai: 'Tugas selesai',
+  tenggat_batal: 'Tugas dibatalkan',
+  tenggat_hapus: 'Tugas dihapus',
+  tenggat_pengaturan_ubah: 'Pengaturan pengingat diubah',
 };
 
 const AKSI_BADGE: Partial<Record<AuditAksi, string>> = {
@@ -58,7 +56,7 @@ const AKSI_BADGE: Partial<Record<AuditAksi, string>> = {
   password_reset: 'ui-badge-indigo',
 };
 
-const ENTITAS_OPTIONS = ['semua', 'sesi', 'akun', 'siswa', 'tahun', 'sinkron', 'backup', 'laporan', 'rombel', 'dokumen', 'pengaturan', 'gtk'];
+const ENTITAS_OPTIONS = ['semua', 'sesi', 'akun', 'siswa', 'tahun', 'sinkron', 'backup', 'tenggat'];
 const AKSI_OPTIONS: Array<'semua' | AuditAksi> = ['semua', ...(Object.keys(AKSI_LABEL) as AuditAksi[])];
 
 function formatWaktu(iso: string): string {
@@ -82,7 +80,6 @@ export const AuditLogView: React.FC = () => {
   const [q, setQ] = useState('');
   const [fAksi, setFAksi] = useState<'semua' | AuditAksi>('semua');
   const [fEntitas, setFEntitas] = useState('semua');
-  const [fHasil, setFHasil] = useState<'semua' | 'berhasil' | 'gagal'>('semua');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -103,14 +100,13 @@ export const AuditLogView: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [q, fAksi, fEntitas, fHasil]);
+  }, [q, fAksi, fEntitas]);
 
   const tersaring = useMemo(() => {
     const k = q.trim().toLowerCase();
     return (logs || []).filter((l) => {
       if (fAksi !== 'semua' && l.aksi !== fAksi) return false;
       if (fEntitas !== 'semua' && l.entitas !== fEntitas) return false;
-      if (fHasil !== 'semua' && (l.hasil || 'berhasil') !== fHasil) return false;
       if (!k) return true;
       return (
         l.aktor.toLowerCase().includes(k) ||
@@ -119,7 +115,7 @@ export const AuditLogView: React.FC = () => {
         (l.detail || '').toLowerCase().includes(k)
       );
     });
-  }, [logs, q, fAksi, fEntitas, fHasil]);
+  }, [logs, q, fAksi, fEntitas]);
 
   const totalPages = Math.max(1, Math.ceil(tersaring.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -138,10 +134,6 @@ export const AuditLogView: React.FC = () => {
           .join(',')
       );
     }
-    catatAudit('dokumen_ekspor', {
-      entitas: 'dokumen',
-      ringkasan: `Ekspor log audit ke CSV (${tersaring.length} baris)`,
-    });
     const blob = new Blob([baris.join('\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -151,9 +143,20 @@ export const AuditLogView: React.FC = () => {
     toast(`${tersaring.length} baris log audit diekspor ke CSV.`, 'success');
   };
 
-  // NOTE (issue #9, append-only): tombol "Kosongkan" SENGAJA DIHAPUS.
-  // Log audit tidak dapat dihapus pengguna; retensi bergulir (maks 2000
-  // entri) dan reset total database adalah satu-satunya penghapusan.
+  const handleClear = async () => {
+    const ok = await confirmDialog(
+      'Hapus SELURUH log audit di database ini? Jejak aktivitas akan hilang dan tidak dapat dikembalikan.',
+      { confirmLabel: 'Ya, Hapus Semua', danger: true }
+    );
+    if (!ok) return;
+    try {
+      await clearAuditLogs();
+      await muat();
+      toast('Log audit dikosongkan.', 'success');
+    } catch (err: unknown) {
+      toast(`Gagal mengosongkan log: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -167,9 +170,10 @@ export const AuditLogView: React.FC = () => {
           <Download className="w-4 h-4" />
           <span className="hidden sm:inline">Ekspor CSV</span>
         </button>
-        <span className="text-[11px] text-slate-500" title="Log audit bersifat append-only dan tidak dapat dihapus pengguna.">
-          Log append-only
-        </span>
+        <button onClick={() => void handleClear()} className="ui-btn ui-btn-danger" title="Kosongkan log">
+          <Trash2 className="w-4 h-4" />
+          <span className="hidden sm:inline">Kosongkan</span>
+        </button>
       </div>
 
       <div className="ui-card p-4 flex flex-wrap gap-2 items-center">
@@ -192,11 +196,6 @@ export const AuditLogView: React.FC = () => {
           {ENTITAS_OPTIONS.map((e) => (
             <option key={e} value={e}>{e === 'semua' ? 'Semua entitas' : e}</option>
           ))}
-        </select>
-        <select value={fHasil} onChange={(e) => setFHasil(e.target.value as 'semua' | 'berhasil' | 'gagal')} className="ui-select !w-auto" aria-label="Filter hasil">
-          <option value="semua">Semua hasil</option>
-          <option value="berhasil">Berhasil</option>
-          <option value="gagal">Gagal</option>
         </select>
       </div>
 
@@ -232,15 +231,6 @@ export const AuditLogView: React.FC = () => {
                     <td>
                       <div className="text-xs">{l.ringkasan}</div>
                       {l.detail && <div className="text-[11px] text-slate-500 mt-0.5">{l.detail}</div>}
-                      {l.hasil === 'gagal' && (
-                        <span className="ui-badge ui-badge-rose mt-1">Gagal</span>
-                      )}
-                      {(l.sebelum || l.sesudah) && (
-                        <div className="text-[11px] text-slate-500 mt-0.5 font-mono break-all">
-                          {l.sebelum ? `Sebelum: ${JSON.stringify(l.sebelum)} ` : ''}
-                          {l.sesudah ? `→ Sesudah: ${JSON.stringify(l.sesudah)}` : ''}
-                        </div>
-                      )}
                     </td>
                   </tr>
                 ))
