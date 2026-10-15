@@ -298,23 +298,6 @@ export interface KopSurat {
   ukuranNama: KopUkuranNama;
 }
 
-// ---------------- PENOMORAN DOKUMEN SURAT (Issue #4) ----------------
-// Aturan penomoran per template surat, dikonfigurasi sekolah di Generator
-// Dokumen (khusus administrator). Nomor TIDAK PERNAH dikarang: berasal dari
-// pola + nomorTerakhir ini, atau ditulis manual oleh operator.
-
-/** ID template surat — definisi template lengkap di src/utils/suratDokumen.ts. */
-export type TemplateSuratId = 'keterangan-aktif' | 'pindah-keluar' | 'panggilan-ortu' | 'daftar-rombel';
-
-export interface PenomoranTemplate {
-  /** Pola nomor, placeholder {no} {no3} {bulan} {bulanRomawi} {tahun}. */
-  pola: string;
-  /** Nomor urut terakhir yang dipakai; saran berikutnya = +1. */
-  nomorTerakhir: number;
-}
-
-export type PenomoranDokumen = Partial<Record<TemplateSuratId, PenomoranTemplate>>;
-
 // ---------------- TEMA TAMPILAN ----------------
 // Aksen biru untuk SMP, maroon untuk SD. Otomatis mengikuti jenjang,
 // dapat dikunci manual. Hanya administrator yang dapat mengubah.
@@ -355,8 +338,6 @@ export interface SekolahProfile {  nama: string;
   syncSource?: string;
   /** Pengaturan kop surat cetakan (lembar induk, raport, rekap). */
   kop?: KopSurat;
-  /** Aturan penomoran dokumen surat per template (Issue #4). */
-  penomoran?: PenomoranDokumen;
   /** Tema warna tampilan (khusus administrator). */
   tema?: TemaKustom;
 }
@@ -618,11 +599,8 @@ export interface SchoolEntry {
 
 // ---------------- AUDIT LOG (jejak siapa-ubah-apa) ----------------
 // Ditulis otomatis pada aksi penting (login, kelola akun, data siswa,
-// tutup tahun, sinkron, backup, rombel, ekspor dokumen, pengaturan,
-// GTK). Hanya administrator yang dapat melihat (tab Log Audit).
-// APPEND-ONLY: entri tidak dapat diubah/dihapus pengguna (lihat
-// `docs/05-operasional.md` § Kebijakan Audit). Dibatasi 2000 entri
-// terbaru per database (retensi bergulir, entri tertua terhapus).
+// tutup tahun, sinkron, backup). Hanya administrator yang dapat melihat
+// (tab Log Audit) & menghapus. Dibatasi 2000 entri terbaru per database.
 
 export type AuditAksi =
   | 'login'
@@ -646,18 +624,18 @@ export type AuditAksi =
   | 'tutup_tahun'
   | 'buka_tahun'
   | 'sinkron_terapkan'
-  | 'impor_siswa'
   | 'backup_buat'
   | 'backup_pulihkan'
   | 'backup_reset'
-  | 'laporan_ekspor'
+  | 'tenggat_buat'
+  | 'tenggat_ubah'
+  | 'tenggat_selesai'
+  | 'tenggat_batal'
+  | 'tenggat_hapus'
+  | 'tenggat_pengaturan_ubah'
   | 'cloud_unggah'
   | 'cloud_unduh'
-  | 'cloud_sinkron'
-  | 'rombel_ubah'
-  | 'dokumen_ekspor'
-  | 'pengaturan_ubah'
-  | 'gtk_ubah';
+  | 'cloud_sinkron';
 
 export interface AuditLog {
   id: string;
@@ -666,19 +644,11 @@ export interface AuditLog {
   aktor: string;
   peran?: string;
   aksi: AuditAksi;
-  /** Kelompok entitas: 'akun' | 'siswa' | 'tahun' | 'sinkron' | 'backup' | 'sesi'. */
+  /** Kelompok entitas: 'akun' | 'siswa' | 'tahun' | 'sinkron' | 'backup' | 'sesi' | 'tenggat'. */
   entitas: string;
   entitasId?: string;
   ringkasan: string;
   detail?: string;
-  /** ID sekolah pemilik entri (isolasi antar-sekolah saat restore). */
-  sekolahId?: string;
-  /** Hasil tindakan: 'berhasil' (default) atau 'gagal'. */
-  hasil?: 'berhasil' | 'gagal';
-  /** Nilai SEBELUM perubahan (hanya field operasional allowlist, tersanitasi). */
-  sebelum?: Record<string, unknown>;
-  /** Nilai SESUDAH perubahan (hanya field operasional allowlist, tersanitasi). */
-  sesudah?: Record<string, unknown>;
 }
 
 // ---------------- CADANGAN OTOMATIS (auto-backup terjadwal) ----------------
@@ -701,4 +671,83 @@ export interface AutoBackupSnapshot {
   jumlahSiswa: number;
   /** Isi JSON BackupPayload (string) agar hemat parse saat listing. */
   payload: string;
+}
+
+// ---------------- KALENDER & TENGGAT ADMINISTRASI (Issue #8) ----------------
+// Tugas/tenggat yang dapat dikonfigurasi — terpisah dari antrean turunan di
+// OperatorDashboard (yang dihitung dari data siswa, tanpa tanggal tenggat).
+// Sengaja TIDAK ada field data siswa (NISN/NIK/nama siswa): pengingat tidak
+// boleh membawa data pribadi siswa ke log/notifikasi.
+
+export type TugasStatus = 'terbuka' | 'selesai' | 'dibatalkan';
+
+export type TugasKategori = 'laporan' | 'verifikasi-data' | 'administrasi' | 'lainnya';
+
+/** Tab tujuan tautan tindakan — harus cocok dengan tab yang ada di App.tsx. */
+export type TugasTabTujuan =
+  | 'dasbor'
+  | 'siswa'
+  | 'raport'
+  | 'leger'
+  | 'dapodik'
+  | 'rekap'
+  | 'cetak'
+  | 'referensi'
+  | 'gtk'
+  | 'arsip'
+  | 'pemetaan'
+  | 'pengaturan'
+  | 'users'
+  | 'backup'
+  | 'audit'
+  | 'kalender';
+
+export interface TugasTenggat {
+  id: string;
+  /** Judul tugas, maks 120 karakter. */
+  judul: string;
+  /** Catatan bebas, maks 500 karakter. Bukan tempat data siswa. */
+  deskripsi?: string;
+  kategori: TugasKategori;
+  status: TugasStatus;
+  /** Prioritas: 1 = rendah, 2 = normal, 3 = tinggi. */
+  prioritas: 1 | 2 | 3;
+  /** Tanggal jatuh tempo kalender (YYYY-MM-DD) di zona waktu sekolah. */
+  tanggalJatuhTempo: string;
+  /** Username penanggung jawab (AppUser.username) — kosong = belum ditentukan. */
+  penanggungJawab?: string;
+  /** Tautan langsung ke tindakan di dalam aplikasi. */
+  tautanTindakan?: { tab: TugasTabTujuan; label?: string } | null;
+  dibuatOleh: string;
+  dibuatPada: string;
+  diubahPada: string;
+  /** Diisi saat status menjadi 'selesai'. */
+  selesaiPada?: string | null;
+  selesaiOleh?: string | null;
+}
+
+/**
+ * Pengaturan pengingat per database sekolah (hanya administrator yang mengubah).
+ * Kanal SELALU 'in-app': tidak ada kanal eksternal (email/WA/dll.) yang
+ * dikonfigurasi, sehingga aplikasi tidak pernah mengklaim pengiriman eksternal.
+ */
+export interface PengaturanPengingat {
+  /** Zona waktu IANA, mis. 'Asia/Jakarta'. */
+  zonaWaktu: string;
+  /** Kanal pengingat — satu-satunya nilai yang didukung: 'in-app'. */
+  kanal: 'in-app';
+  /** Aktifkan/mematikan seluruh pengingat (tanpa menghapus tugas). */
+  aktif: boolean;
+  /** H-minus pengingat sebelum tenggat, mis. [7, 3, 1, 0] (0 = hari-H). */
+  hariSebelum: number[];
+  /** Kirim satu pengingat harian selama tugas terlambat (didup per hari). */
+  pengingatTerlambatHarian: boolean;
+}
+
+/** Satu kunci pengingat yang sudah dikirim — pencegahan duplikat. */
+export interface PengingatTerkirim {
+  /** Kunci dedup: `<tugasId>:H<offset>` atau `<tugasId>:terlambat:<YYYY-MM-DD>`. */
+  kunci: string;
+  tugasId: string;
+  terkirimPada: string;
 }
