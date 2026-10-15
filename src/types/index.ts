@@ -666,7 +666,12 @@ export type AuditAksi =
   | 'rombel_ubah'
   | 'dokumen_ekspor'
   | 'pengaturan_ubah'
-  | 'gtk_ubah';
+  | 'gtk_ubah'
+  | 'tenggat_buat'
+  | 'tenggat_ubah'
+  | 'tenggat_selesai'
+  | 'tenggat_hapus'
+  | 'pengingat_kirim';
 
 export interface AuditLog {
   id: string;
@@ -710,4 +715,110 @@ export interface AutoBackupSnapshot {
   jumlahSiswa: number;
   /** Isi JSON BackupPayload (string) agar hemat parse saat listing. */
   payload: string;
+}
+
+// ---------------- KALENDER & PENGINGAT TENGGAT (Issue #8) ----------------
+// Tenggat disimpan di store IndexedDB `tenggat_tugas` (DB v8). Tanggal jatuh
+// tempo disimpan sebagai tanggal kalender lokal `YYYY-MM-DD` (bukan
+// timestamp) agar tidak bergeser saat zona waktu diubah; interpretasi
+// tanggal selalu memakai zona waktu di PengaturanKalender.
+
+/** Status pengerjaan tenggat. */
+export type TugasStatus = 'belum' | 'selesai';
+
+/** Tautan langsung ke tindakan: id tab internal yang sudah ada di App. */
+export type TautanAksiKalender =
+  | ''
+  | 'dasbor'
+  | 'siswa'
+  | 'raport'
+  | 'leger'
+  | 'dapodik'
+  | 'rekap'
+  | 'laporan'
+  | 'cetak'
+  | 'dokumen'
+  | 'referensi'
+  | 'gtk'
+  | 'arsip'
+  | 'pemeriksa'
+  | 'pemetaan'
+  | 'pengaturan'
+  | 'users'
+  | 'backup'
+  | 'audit';
+
+export const TAUTAN_AKSI_KALENDER: Array<{ id: TautanAksiKalender; label: string }> = [
+  { id: '', label: 'Tanpa tautan' },
+  { id: 'dasbor', label: 'Dasbor Operasional' },
+  { id: 'siswa', label: 'Master Siswa' },
+  { id: 'raport', label: 'Nilai Raport' },
+  { id: 'leger', label: 'Leger Nilai' },
+  { id: 'dapodik', label: 'Sinkron Dapodik' },
+  { id: 'rekap', label: 'Rekapitulasi' },
+  { id: 'laporan', label: 'Pusat Laporan' },
+  { id: 'cetak', label: 'Pusat Cetak' },
+  { id: 'dokumen', label: 'Generator Dokumen' },
+  { id: 'referensi', label: 'Data Referensi' },
+  { id: 'gtk', label: 'Data GTK' },
+  { id: 'arsip', label: 'Arsip Tahun Ajaran' },
+  { id: 'pemeriksa', label: 'Pemeriksa Data' },
+  { id: 'pemetaan', label: 'Pemetaan Kelas' },
+  { id: 'pengaturan', label: 'Profil Sekolah' },
+  { id: 'users', label: 'Manajemen Pengguna' },
+  { id: 'backup', label: 'Backup & Restore' },
+  { id: 'audit', label: 'Log Audit' },
+];
+
+export interface TugasAdministrasi {
+  id: string;
+  /** Judul tugas, maks 120 karakter. */
+  judul: string;
+  /** Deskripsi bebas (opsional). Jangan isi data pribadi siswa. */
+  deskripsi?: string;
+  /** Tanggal jatuh tempo kalender `YYYY-MM-DD`. '' = tanpa tenggat. */
+  tanggalJatuhTempo: string;
+  /** Kategori bebas, mis. 'Laporan', 'Verifikasi', 'Rapat'. */
+  kategori?: string;
+  status: TugasStatus;
+  /** Username penanggung jawab (AppUser.username). '' = umum / belum ditugaskan. */
+  penanggungJawab?: string;
+  /** Rombel terkait (opsional, untuk visibilitas operator). */
+  rombel?: string;
+  /** Tautan langsung ke tab tindakan. */
+  tautanAksi?: TautanAksiKalender;
+  /** Urgensi manual: dipakai sebagai pengingat bila tenggat belum diisi. */
+  prioritas?: 'rendah' | 'normal' | 'tinggi';
+  dibuatOleh: string;
+  dibuatPada: string;
+  diubahPada: string;
+  /** Waktu penyelesaian (ISO) bila status = 'selesai'. */
+  selesaiPada?: string | null;
+  selesaiOleh?: string | null;
+}
+
+/**
+ * Kanal notifikasi. JUJUR: satu-satunya kanal yang benar-benar tersedia
+ * adalah `dalam_aplikasi` (lencana + toast di dalam aplikasi saat dibuka).
+ * Email / WhatsApp / push TIDAK diklaim — tidak ada layanan eksternal yang
+ * terkonfigurasi, dan aplikasi tidak pernah mengirim ke luar.
+ */
+export type KanalNotifikasi = 'dalam_aplikasi';
+
+export interface PengaturanKalender {
+  /** Zona waktu IANA, mis. 'Asia/Jakarta'. */
+  zonaWaktu: string;
+  /** Pengingat muncul HARI SEBELUM jatuh tempo (0 = hanya di hari-H). 0–30. */
+  ingatkanHariSebelum: number;
+  /** Sertakan tugas yang sudah lewat tenggat dalam pengingat. */
+  ingatkanTerlambat: boolean;
+  /** Kanal aktif — selalu 'dalam_aplikasi' (lihat catatan di atas). */
+  kanal: KanalNotifikasi;
+}
+
+/** Satu kunci pengingat yang sudah disampaikan (anti-duplikat). */
+export interface PengingatTerkirim {
+  kunci: string;
+  tugasId: string;
+  disampaikanPada: string;
 }

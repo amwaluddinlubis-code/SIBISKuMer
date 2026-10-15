@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   Table,
   FileText,
+  CalendarDays,
   Sun,
   Moon,
   Monitor
@@ -43,6 +44,8 @@ interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   siswaCount: number;
+  /** Jumlah tenggat yang perlu perhatian (lencana menu Kalender). */
+  kalenderBadge?: number;
   currentUser: AppUser | null;
   impersonator: AppUser | null;
   onLogout: () => void;
@@ -70,6 +73,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
   siswaCount,
+  kalenderBadge = 0,
   currentUser,
   impersonator,
   onLogout,
@@ -114,6 +118,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'gtk', label: 'Data GTK', icon: Contact, badge: undefined },
     { id: 'arsip', label: 'Arsip', icon: Archive, badge: undefined },
     { id: 'pemeriksa', label: 'Pemeriksa Data', icon: ShieldCheck, badge: undefined },
+    { id: 'kalender', label: 'Kalender & Pengingat', icon: CalendarDays, badge: kalenderBadge > 0 ? kalenderBadge : undefined },
   ];
 
   // Menu admin hanya lewat dropdown pengguna di topbar (tidak di sidebar)

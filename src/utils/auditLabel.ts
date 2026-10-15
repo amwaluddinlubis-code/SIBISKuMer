@@ -38,6 +38,11 @@ export const AKSI_LABEL: Record<AuditAksi, string> = {
   dokumen_ekspor: 'Dokumen diekspor',
   pengaturan_ubah: 'Pengaturan diubah',
   gtk_ubah: 'GTK diubah',
+  tenggat_buat: 'Tenggat dibuat',
+  tenggat_ubah: 'Tenggat diubah',
+  tenggat_selesai: 'Tenggat diselesaikan',
+  tenggat_hapus: 'Tenggat dihapus',
+  pengingat_kirim: 'Pengingat disampaikan',
 };
 
 /** Label aksi; fallback merapikan snake_case menjadi kalimat terbaca. */

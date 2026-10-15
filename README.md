@@ -21,6 +21,7 @@ Server Node (`server.ts`) hanya menjadi perantara ke Web Service Dapodik lokal.
 - Cadangan lokal (JSON, opsional **terenkripsi password**) & Google Drive
 - **Impor siswa dari Excel (.xlsx) / CSV**: pemetaan kolom (label/alias, kolom asing ditandai), pratinjau + rekonsiliasi (baru/sama/beda/konflik/error/di luar kewenangan), laporan error CSV, snapshot pengaman + satu transaksi, cegah unggah ulang (sidik jari SHA-256) — maks 5 MB / 2000 baris; template dapat diunduh dari wizard impor, contoh di `docs/contoh-impor-siswa.csv`
 - PWA: dapat diinstal & berjalan offline
+- Kalender & pengingat tenggat administrasi (zona waktu dapat diatur; pengingat hanya dalam aplikasi — tidak ada klaim pengiriman email/WhatsApp/push)
 - **Baru:** form siswa wizard 5 langkah (mobile-friendly) • dashboard "Perlu Perhatian" • pencarian global (Ctrl+K) • pratinjau cetak WYSIWYG • mode malam + pengaturan ukuran huruf
 
 ## Menjalankan Lokal

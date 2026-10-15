@@ -45,9 +45,13 @@ import {
   getTahunAjaranTerakhirSiswa,
   getAllPetaKelas,
   resetToSingleMainDatabase,
-  eksporDataLokalSaja
+  eksporDataLokalSaja,
+  getAllTenggat,
+  getPengaturanKalender,
+  getPengingatTerkirim,
+  tambahPengingatTerkirim
 } from './utils/db';
-import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, PetaKelas, ModeTampilan, RiwayatTahunAjaran } from './types';
+import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, PetaKelas, ModeTampilan, RiwayatTahunAjaran, TugasAdministrasi, PengaturanKalender } from './types';
 import { buildSnapshot } from './utils/arsip';
 import {
   DEFAULT_DASHBOARD_FILTER,
@@ -100,6 +104,7 @@ const CetakKartuMassal = lazyView(() => import('./components/CetakKartuMassal'),
 const LaporanView = lazyView(() => import('./components/LaporanView'), 'LaporanView');
 const GeneratorDokumen = lazyView(() => import('./components/GeneratorDokumen'), 'GeneratorDokumen');
 const ImporSiswaView = lazyView(() => import('./components/ImporSiswaView'), 'ImporSiswaView');
+const KalenderTugasView = lazyView(() => import('./components/KalenderTugasView'), 'KalenderTugasView');
 import type { RencanaRombel } from './components/ArsipView';
 import type { DokumenMutasiKeluar } from './components/MutasiWizard';
 import { ToastHost } from './components/ToastHost';
@@ -108,7 +113,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { toast, confirmDialog } from './utils/notify';
 import { keluarDariServer, mulaiImpersonateServer, berhentiImpersonateServer, ambilSesiServer, imporKeServer } from './utils/dataApi';
 import { pakaiServer } from './utils/modeData';
-import { FileText, Search, User, Printer, Eye, Lock, Users, Award, RefreshCw, BarChart3, Layers, Settings, UserCog, Database, GraduationCap, Contact, LayoutDashboard, Archive, LayoutGrid, ScrollText, Table } from 'lucide-react';
+import { FileText, Search, User, Printer, Eye, Lock, Users, Award, RefreshCw, BarChart3, Layers, Settings, UserCog, Database, GraduationCap, Contact, LayoutDashboard, Archive, LayoutGrid, ScrollText, Table, CalendarDays } from 'lucide-react';
 import { PageHeader } from './components/PageHeader';
 import { PageControl } from './components/PageControl';
 import { SchoolSwitcher } from './components/SchoolSwitcher';
@@ -117,6 +122,7 @@ import { startTopProgress, doneTopProgress } from './utils/progress';
 import { catatAudit, diffAudit } from './utils/audit';
 import { catatHapusCloud } from './utils/tombstone';
 import { centangAutoBackup } from './utils/autoBackup';
+import { hitungJumlahPengingatAktif, hitungPengingat, tugasTerlihat } from './utils/kalender';
 import { validateSchoolEntryInput } from './utils/validation';
 
 const TAB_META: Record<string, { title: string; subtitle: string; accent: 'blue' | 'indigo' | 'emerald' | 'amber' | 'rose' | 'purple' | 'slate'; icon: typeof Users }> = {
@@ -138,6 +144,7 @@ const TAB_META: Record<string, { title: string; subtitle: string; accent: 'blue'
   users: { title: 'Manajemen Pengguna', subtitle: 'Akun administrator & operator beserta batas rombel', accent: 'purple', icon: UserCog },
   backup: { title: 'Backup & Restore', subtitle: 'Cadangan JSON lokal & Google Drive', accent: 'rose', icon: Database },
   audit: { title: 'Log Audit', subtitle: 'Jejak siapa-ubah-apa di database ini', accent: 'slate', icon: ScrollText },
+  kalender: { title: 'Kalender & Pengingat', subtitle: 'Tenggat tugas administrasi, jadwal & pengingat dalam aplikasi', accent: 'amber', icon: CalendarDays },
 };
 
 /** Fallback saat chunk tab/modal diunduh — Fase 3 §15: SKELETON halaman
@@ -197,6 +204,8 @@ export default function App() {
   const [ptkRefs, setPtkRefs] = useState<PtkRef[]>([]);
   const [tutupTahun, setTutupTahun] = useState<TutupTahunAjaran[]>([]);
   const [petaKelas, setPetaKelas] = useState<PetaKelas[]>([]);
+  const [tugasList, setTugasList] = useState<TugasAdministrasi[]>([]);
+  const [pengaturanKalender, setPengaturanKalender] = useState<PengaturanKalender>(() => getPengaturanKalender());
   const [loading, setLoading] = useState(true);
 
   // Active navigation tab: 'dasbor' | 'siswa' | 'dapodik' | 'rekap' | 'cetak' | 'pengaturan' | 'users'
@@ -454,6 +463,51 @@ export default function App() {
     };
   }, []);
 
+  // Pengingat tenggat (Issue #8): centang tiap menit + saat data berubah.
+  // Hanya dalam aplikasi (toast + lencana): satu pengingat per kunci hanya
+  // disampaikan sekali (anti-duplikat via tambahPengingatTerkirim).
+  // Tidak ada pengiriman ke luar aplikasi.
+  const tugasYangTerlihat = useMemo(
+    () => tugasList.filter((t) => tugasTerlihat(currentUser, t)),
+    [tugasList, currentUser]
+  );
+  useEffect(() => {
+    if (!currentUser) return;
+    let berhenti = false;
+    const centang = () => {
+      if (berhenti) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+      try {
+        const terkirim = new Set(getPengingatTerkirim().map((p) => p.kunci));
+        const jatuhTempo = hitungPengingat(tugasYangTerlihat, pengaturanKalender, terkirim);
+        for (const p of jatuhTempo) {
+          if (!tambahPengingatTerkirim(p.kunci, p.tugas.id)) continue;
+          catatAudit('pengingat_kirim', {
+            entitas: 'tenggat',
+            entitasId: p.tugas.id,
+            ringkasan: `Pengingat (dalam aplikasi): "${p.tugas.judul}" — ${p.urgensi === 'terlambat' ? 'terlambat' : p.urgensi === 'hari_ini' ? 'jatuh tempo hari ini' : `jatuh tempo dalam ${p.selisihHari} hari`}`,
+          });
+          toast(
+            p.urgensi === 'terlambat'
+              ? `Pengingat: "${p.tugas.judul}" sudah terlambat.`
+              : p.urgensi === 'hari_ini'
+                ? `Pengingat: "${p.tugas.judul}" jatuh tempo hari ini.`
+                : `Pengingat: "${p.tugas.judul}" jatuh tempo dalam ${p.selisihHari} hari.`,
+            p.urgensi === 'terlambat' ? 'error' : 'warning'
+          );
+        }
+      } catch {
+        /* pengingat tidak boleh merusak alur utama */
+      }
+    };
+    centang();
+    const timer = window.setInterval(centang, 60000);
+    return () => {
+      berhenti = true;
+      window.clearInterval(timer);
+    };
+  }, [tugasYangTerlihat, pengaturanKalender, currentUser]);
+
   // Load initial data from IndexedDB (sekolah aktif)
   const loadData = useCallback(async () => {
     startTopProgress();
@@ -461,7 +515,7 @@ export default function App() {
       setLoading(true);
       await ensureSchoolsInit().catch(() => null);
       await initStorage();
-      const [siswa, sek, cfg, logs, rombel, ptk, tutup, peta] = await Promise.all([
+      const [siswa, sek, cfg, logs, rombel, ptk, tutup, peta, tugas] = await Promise.all([
         getAllSiswa(),
         getSekolahProfile(),
         getDapodikConfig(),
@@ -469,7 +523,8 @@ export default function App() {
         getAllRombelRefs(),
         getAllPtkRefs(),
         getTutupTahun(),
-        getAllPetaKelas()
+        getAllPetaKelas(),
+        getAllTenggat()
       ]);
       setSiswaList(siswa);
       setSekolah(sek);
@@ -479,6 +534,8 @@ export default function App() {
       setPtkRefs(ptk);
       setTutupTahun(tutup);
       setPetaKelas(peta);
+      setTugasList(tugas);
+      setPengaturanKalender(getPengaturanKalender());
       try {
         setSchools(getSchools());
         setActiveSchoolId(getActiveSchoolId());
@@ -1347,6 +1404,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={handleNavigateTab}
         siswaCount={visibleSiswa.length}
+        kalenderBadge={hitungJumlahPengingatAktif(tugasYangTerlihat, pengaturanKalender)}
         currentUser={currentUser}
         impersonator={impersonator}
         onLogout={handleLogout}
@@ -1827,6 +1885,20 @@ export default function App() {
                 onDataChanged={loadData}
               />
               ) : AccessDeniedNotice
+            )}
+
+            {/* View: Kalender & Pengingat Tenggat (semua peran, sesuai visibilitas tugas) */}
+            {activeTab === 'kalender' && (
+              <ErrorBoundary>
+                <KalenderTugasView
+                  tugas={tugasYangTerlihat}
+                  currentUser={currentUser}
+                  pengaturan={pengaturanKalender}
+                  onPengaturanChanged={setPengaturanKalender}
+                  onDataChanged={loadData}
+                  onNavigate={handleNavigateTab}
+                />
+              </ErrorBoundary>
             )}
 
             {/* View: 8. Log Audit (Administrator Only) */}

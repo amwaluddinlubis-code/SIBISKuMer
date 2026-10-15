@@ -43,6 +43,11 @@ Relasi bersifat logis (tanpa foreign key DB): `RaportSemester.siswaId → Siswa.
 | `ptk` | `id` | `nama`, `nip` | `PtkRef[]` |
 | `tutup_tahun` | `tahunAjaran` | — | `TutupTahunAjaran[]` (arsip terkunci per tahun) |
 | `peta_kelas` | `id` | `tahunAjaran`, `rombel` | `PetaKelas[]` (rombel resmi per tahun) |
+| `tenggat_tugas` (DB v8) | `id` | `tanggalJatuhTempo`, `status` | `TugasAdministrasi[]` (kalender tenggat) |
+
+> Catatan versi: judul §2 di atas masih menyebut "versi 5" (stale); store
+> `audit_logs` + `auto_backup` masuk di v7, `tenggat_tugas` di v8. Upgrade
+> IndexedDB menambah store baru tanpa menghapus store lama.
 
 Fallback: `localStorage` kunci `bukuinduk_*` (siswa, sekolah, config, logs, users, rombel,
 ptk, current_user, impersonate_from) + registry `bukuinduk_schools` /
@@ -241,6 +246,23 @@ dengan nomor tercatat). Profil lama tanpa `penomoran` memakai bawaan.
 `waliKelas?`, `updatedAt`, `source` (`manual|generate`). CRUD:
 `getAllPetaKelas` / `savePetaKelasList` / `savePetaKelas` / `deletePetaKelas`.
 Dipakai wizard arsip sebagai saran target (`ArsipView : saranRombelBaru`).
+
+### 3.9 `TugasAdministrasi` / `PengaturanKalender` (kalender tenggat — Issue #8)
+
+`TugasAdministrasi`: `id`, `judul` (≤120), `deskripsi?` (tanpa data pribadi
+siswa), `tanggalJatuhTempo` (`YYYY-MM-DD`; `''` = tanpa tenggat),
+`kategori?`, `status` (`belum|selesai`), `penanggungJawab?` (username),
+`rombel?`, `tautanAksi?` (id tab internal), `prioritas?`, `dibuatOleh`,
+`dibuatPada`, `diubahPada`, `selesaiPada?`, `selesaiOleh?`. CRUD:
+`getAllTenggat` / `saveTenggat` / `deleteTenggat` (store `tenggat_tugas`,
+DB v8 + cermin localStorage ter-scope). Logika murni di
+`src/utils/kalender.ts` (status, pengingat, otorisasi, anti-duplikat).
+
+`PengaturanKalender` (per perangkat, localStorage ter-scope, bukan backup):
+`zonaWaktu` (IANA), `ingatkanHariSebelum` (0–30), `ingatkanTerlambat`,
+`kanal` (selalu `'dalam_aplikasi'`). Kunci pengingat terkirim
+(`PengingatTerkirim`, maks 500): `getPengingatTerkirim` /
+`tambahPengingatTerkirim` (idempoten).
 
 ## 4. Aturan Validasi (`src/utils/validation.ts`)
 
