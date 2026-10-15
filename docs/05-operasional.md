@@ -84,12 +84,15 @@ satu sekolah adalah konfigurasi yang didukung resmi.
 | Impor Excel/CSV siswa (pemetaan + pratinjau + rekonsiliasi) | ✅ semua rombel | ✅ hanya rombel X (baris di luar kewenangan dilewati) |
 | Sinkron Dapodik, Profil Sekolah, Backup, Manajemen Pengguna, Pemetaan Kelas, Tutup Tahun, Tema Tampilan, Log Audit | ✅ (via dropdown pengguna topbar) | ❌ (notice `AccessDeniedNotice` + redirect Dasbor) |
 | Arsip tahun ajaran (lihat roster terkunci) | ✅ | ✅ (sebatas rombel kewenangan) |
+| Kalender & pengingat tenggat: buat/ubah/hapus tenggat | ✅ | ❌ |
+| Kalender & pengingat tenggat: tandai selesai, lihat tugas | ✅ semua tugas | ✅ tugas yang ditugaskan kepadanya + tugas umum |
 | Impersonate (lihat sebagai operator) | ✅ | ❌ |
 | Ganti password sendiri (dropdown topbar) | ✅ | ✅ |
 
-Sidebar memuat 9 menu utama (`dasbor, siswa, raport, leger, rekap, cetak,
-referensi, gtk, arsip`); 6 menu admin disembunyikan dari sidebar dan hanya ada di
-dropdown pengguna (`src/components/Navbar.tsx : adminMenu`).
+Sidebar memuat 10 menu utama (`dasbor, siswa, raport, leger, rekap, cetak,
+referensi, gtk, arsip, kalender`); 6 menu admin disembunyikan dari sidebar dan hanya ada di
+dropdown pengguna (`src/components/Navbar.tsx : adminMenu`). Lencana angka di menu
+Kalender = jumlah tenggat yang perlu perhatian (terlambat / hari ini / segera).
 
 Akun bawaan (seed `src/data/initialData.ts : initialUsersList`):
 `administrator / administrator` (penuh),
@@ -386,6 +389,41 @@ integritas SHA-256 — lihat §4.3) berlaku per-DB aktif. SOP:
    (default fisik: IDB + cache lokal ter-scope + memori). Sekolah terakhir tidak
    dapat dihapus. Bila yang dihapus adalah sekolah aktif, aplikasi beralih ke
    sekolah pertama dan memvalidasi ulang sesi.
+
+## 4d. SOP Kalender & Pengingat Tenggat (menu **Kalender & Pengingat**)
+
+1. **Buat tenggat (administrator):** judul, tanggal jatuh tempo
+   (`YYYY-MM-DD`, tanggal kalender nyata), kategori, penanggung jawab
+   (username akun), rombel terkait, dan tautan langsung ke tindakan (tab
+   tujuan). Tugas tanpa tenggat tidak memicu pengingat.
+2. **Status:** administrator dapat mengubah status tugas apa pun; operator
+   hanya dapat menandai selesai tugas yang ditugaskan kepadanya. Operator
+   melihat tugasnya + tugas umum, bukan tugas operator lain.
+3. **Operasi massal:** centang beberapa tugas → "Selesaikan terpilih" →
+   pratinjau jumlah → konfirmasi → ringkasan berhasil/gagal per tugas.
+   Tugas yang tidak berwenang dilewati (tidak ikut diproses). Kegagalan satu
+   tugas tidak membatalkan yang lain.
+4. **Pengaturan (per perangkat, tersimpan di localStorage ter-scope):**
+   zona waktu (bawaan = zona perangkat; pilihan WIB/WITA/WIT/UTC),
+   ingatkan H hari sebelum tenggat (0–30; 0 = hanya hari-H), ingatkan juga
+   tugas terlambat (ya/tidak). Tanggal jatuh tempo selalu dihitung di zona
+   yang dipilih — mengubah zona tidak menggeser tanggal yang tersimpan.
+5. **Kanal notifikasi — jujur:** satu-satunya kanal yang tersedia adalah
+   **dalam aplikasi** (lencana jumlah di menu Kalender + toast saat aplikasi
+   dibuka; centang tiap menit). Email / WhatsApp / push **belum
+   terkonfigurasi** dan tidak pernah dikirim. Pengingat tidak berjalan saat
+   aplikasi tertutup.
+6. **Pencegahan duplikat:** satu pengingat per tugas + tenggat + ambang hanya
+   disampaikan sekali (kunci `tugasId|tanggal|ambang`, maks 500 kunci
+   terbaru). Mengubah tenggat membuat kunci baru; menyelesaikan tugas
+   menghentikan pengingatnya. Membuat tugas dengan judul + tenggat +
+   penanggung jawab yang sama dengan tugas aktif yang ada memunculkan
+   peringatan konfirmasi (bukan blokir keras).
+7. **Batasan:** tenggat & pengaturan kalender **tidak ikut file backup JSON**
+   (pengaturan bersifat per-perangkat; pencadangan tenggat menjadi tindak
+   lanjut). Jangan isi data pribadi siswa di deskripsi tugas. Semua
+   perubahan tenggat tercatat di **Log Audit** (`tenggat_buat/ubah/selesai/hapus`,
+   `pengingat_kirim`).
 
 ## 6. Troubleshooting
 
