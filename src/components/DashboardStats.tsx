@@ -4,6 +4,7 @@ import { Siswa, DapodikSyncLog, JenjangSekolah } from '../types';
 import { getTingkatOptions, getRaportList } from '../utils/raportUtils';
 import { getTingkatAktifSiswa } from '../utils/db';
 import { statusBackupTerakhir, type StatusBackupTerakhir } from '../utils/autoBackup';
+import { useSiswaLayar } from '../hooks/useSiswaLayar';
 import {
   KondisiDrillDown,
   dataWajibKosong,
@@ -42,7 +43,7 @@ interface KartuPerhatian {
 }
 
 export const DashboardStats: React.FC<DashboardStatsProps> = ({
-  siswa,
+  siswa: siswaProp,
   jenjang: jenjangProp = 'SMP',
   lastSyncLog,
   isAdmin = false,
@@ -52,6 +53,8 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
   onLihat,
   onDrillDown,
 }) => {
+  // S2 migrasi SQLite: mode server membaca daftar dari API (saklar modeData).
+  const siswa = useSiswaLayar('dasbor', siswaProp);
   const jenjang = (jenjangProp || 'SMP') as JenjangSekolah;
   const total = siswa.length;
   const laki = siswa.filter((s) => s.jenisKelamin === 'L').length;

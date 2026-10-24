@@ -32,6 +32,7 @@ import { processLogoImage, formatKb, MAX_LOGO_BYTES } from '../utils/photo';
 import { KopSuratView } from './KopSuratView';
 import { startTopProgress, doneTopProgress } from '../utils/progress';
 import { catatAudit, diffAudit } from '../utils/audit';
+import { daftarLayarPilot, modeLayar, aturModeLayar, type ModeData } from '../utils/modeData';
 
 const PROFIL_AUDIT_ALLOWLIST = [
   'nama',
@@ -78,6 +79,8 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
 }) => {
   const [profile, setProfile] = useState<SekolahProfile>(sekolah);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  // S2: pemicu render ulang kartu saklar sumber data (nilainya di localStorage).
+  const [, setModeTick] = useState(0);
   const [importing, setImporting] = useState(false);
   const [syncingDapodik, setSyncingDapodik] = useState(false);
   const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
@@ -1117,6 +1120,38 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* S2 migrasi SQLite: saklar sumber data per layar pilot. Nilai hidup
+          di localStorage (bukan profil sekolah) dan berlaku seketika saat
+          layar dibuka kembali; mode server = BACA dari API SQLite untuk
+          pengujian paritas, penulisan tetap lokal sampai Fase S3. */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3 print:hidden">
+        <div>
+          <h4 className="text-xs font-extrabold text-navy-950">Sumber Data Layar (Uji Migrasi SQLite)</h4>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            Mode <strong>Server (SQLite)</strong> membuat layar membaca data dari server lokal sebagai
+            bahan perbandingan selama migrasi bertahap. Perubahan data tetap tersimpan secara lokal
+            sampai penukaran jalur tulis (Fase S3). Berlaku untuk perangkat ini saja.
+          </p>
+        </div>
+        {daftarLayarPilot().map(({ layar, label }) => (
+          <div key={layar} className="flex items-center justify-between gap-3">
+            <span className="text-xs font-semibold text-slate-600">{label}</span>
+            <select
+              value={modeLayar(layar)}
+              onChange={(e) => {
+                aturModeLayar(layar, e.target.value as ModeData);
+                setModeTick((t) => t + 1);
+                toast(`Sumber data ${label}: ${e.target.value === 'server' ? 'Server (SQLite)' : 'Lokal'}. Buka kembali layarnya untuk menerapkan.`, 'info');
+              }}
+              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold"
+            >
+              <option value="lokal">Lokal (bawaan)</option>
+              <option value="server">Server (SQLite)</option>
+            </select>
+          </div>
+        ))}
       </div>
 
       {/* Fase 2 §14: bilah simpan MENEMPEL di bawah layar — halaman ini

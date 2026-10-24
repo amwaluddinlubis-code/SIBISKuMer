@@ -33,6 +33,7 @@ import { toast } from '../utils/notify';
 import { unduhExcel } from '../utils/excel';
 import { catatAudit } from '../utils/audit';
 import { processStudentPhoto, formatKb, MAX_PHOTO_BYTES } from '../utils/photo';
+import { useSiswaLayar } from '../hooks/useSiswaLayar';
 
 interface SiswaListProps {
   siswa: Siswa[];
@@ -93,7 +94,7 @@ function statusBadgeClass(status: StatusSiswa): string {
 const STATUS_OPTIONS: StatusSiswa[] = ['Aktif', 'Lulus', 'Mutasi Keluar', 'Mengundurkan Diri', 'Meninggal Dunia'];
 
 export const SiswaList: React.FC<SiswaListProps> = ({
-  siswa,
+  siswa: siswaProp,
   sekolah,
   onAddSiswa,
   onEditSiswa,
@@ -111,6 +112,8 @@ export const SiswaList: React.FC<SiswaListProps> = ({
   filterAwal,
   filterNonce,
 }) => {
+  // S2 migrasi SQLite: mode server membaca daftar dari API (saklar modeData).
+  const siswa = useSiswaLayar('siswa', siswaProp);
   // Fase 2 §12: filter & pencarian DILESTARIKAN di sessionStorage (per
   // database sekolah) agar tidak ter-reset saat komponen dipasang ulang —
   // terutama setelah mengedit siswa. Preset drill-down dasbor tetap menang

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Shield, KeyRound, UserCheck, AlertCircle, LogIn, Sparkles, School, Users, Award, RefreshCw, BarChart3, Printer, Database, WifiOff, CalendarRange, ArrowLeft } from 'lucide-react';
 import { AppUser } from '../types';
 import { getAllUsers, saveUser, getSekolahProfile, getTutupTahun, getAllPetaKelas, setSessionTahunAjaran, getSessionTahunAjaran } from '../utils/db';
@@ -7,6 +7,8 @@ import { cekKunciLoginAsync, catatGagalLoginAsync, catatSuksesLoginAsync, LOGIN_
 import { catatAudit } from '../utils/audit';
 import { getDaftarTahunAjaran, getTahunDiizinkan } from '../utils/tahunAjaran';
 import { toast } from '../utils/notify';
+import { adaLayarServer } from '../utils/modeData';
+import { loginKeServer } from '../utils/dataApi';
 import { initialUsersList } from '../data/initialData';
 
 interface LoginModalProps {
@@ -90,8 +92,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
 
+  // S2 migrasi SQLite: kata sandi final (hasil ketik / hasil ganti paksa)
+  // disimpan sesaat di ref agar sesi server dapat dibuka dengan kredensial
+  // yang sama persis; dibersihkan begitu dipakai.
+  const kataSandiFinalRef = useRef('');
+
   /** Bangun daftar TA sesi setelah kredensial terverifikasi. */
   const masukKePilihTahun = async (user: AppUser) => {
+    if (adaLayarServer() && kataSandiFinalRef.current) {
+      // Sesi server untuk layar mode server; gagal tidak menggagalkan
+      // login lokal (layar jatuh kembali ke data lokal).
+      await loginKeServer(user.username, kataSandiFinalRef.current);
+      kataSandiFinalRef.current = '';
+    }
     setLoadingTA(true);
     try {
       const [profil, tutup, peta] = await Promise.all([
@@ -210,6 +223,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           return;
         }
         await catatSuksesLoginAsync(cleanUser); // S12: hapus hitungan di kedua lapisan
+        kataSandiFinalRef.current = cleanPass; // S2: untuk sesi server
         if (hasil.legacy || hasil.perluRehash) {
           // Migrasi transparan: plaintext lama ATAU hash lama (format trim, S10)
           // yang cocok langsung di-hash ulang ke format baru (tanpa trim).
@@ -265,6 +279,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         updatedAt: new Date().toISOString(),
       };
       await saveUser(updated);
+      kataSandiFinalRef.current = p1; // S2: sandi BARU untuk sesi server
       setInternalUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
       setWajibGanti(null);
       setPassBaru('');

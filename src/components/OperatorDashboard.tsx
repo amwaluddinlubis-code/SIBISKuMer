@@ -21,6 +21,7 @@ import {
 import { Siswa, SekolahProfile, DapodikSyncLog, AppUser, RombelRef } from '../types';
 import { tahunSesiEfektif } from '../utils/sesi';
 import { statusBackupTerakhir } from '../utils/autoBackup';
+import { useSiswaLayar } from '../hooks/useSiswaLayar';
 import {
   DashboardFilter,
   DEFAULT_DASHBOARD_FILTER,
@@ -79,7 +80,7 @@ function activeSemester(sekolah: SekolahProfile): '1' | '2' {
 }
 
 export const OperatorDashboard: React.FC<OperatorDashboardProps> = ({
-  siswa,
+  siswa: siswaProp,
   jumlahSebelumFilter,
   sekolah,
   syncLogs,
@@ -99,6 +100,8 @@ export const OperatorDashboard: React.FC<OperatorDashboardProps> = ({
   onViewSiswa,
   onPrintLembar,
 }) => {
+  // S2 migrasi SQLite: mode server membaca daftar dari API (saklar modeData).
+  const siswa = useSiswaLayar('dasbor', siswaProp);
   // Fondasi sesi: antrean raport selalu merujuk tahun sesi, bukan tahun profil.
   const tahunAktif = tahunSesiEfektif(sessionTahun, sekolah.tahunAjaran) || '2026/2027';
   const sesiBedaAktif = !!sessionTahun && !!sekolah.tahunAjaran && sessionTahun.trim() !== sekolah.tahunAjaran.trim();

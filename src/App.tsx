@@ -105,6 +105,7 @@ import { ToastHost } from './components/ToastHost';
 import { ConfirmDialogHost } from './components/ConfirmDialogHost';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { toast, confirmDialog } from './utils/notify';
+import { keluarDariServer } from './utils/dataApi';
 import { FileText, Search, User, Printer, Eye, Lock, Users, Award, RefreshCw, BarChart3, Layers, Settings, UserCog, Database, GraduationCap, Contact, LayoutDashboard, Archive, LayoutGrid, ScrollText, Table } from 'lucide-react';
 import { PageHeader } from './components/PageHeader';
 import { PageControl } from './components/PageControl';
@@ -892,6 +893,8 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    // S2 migrasi SQLite: akhiri juga sesi server (bila ada).
+    void keluarDariServer();
     if (currentUser) {
       catatAudit('logout', {
         entitas: 'sesi',
