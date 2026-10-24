@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bersihkan Data Browser — Buku Induk (Alat QA/Pemulihan)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #0b1220; color: #e2e8f0; }
+  .kotak { max-width: 560px; margin: 8vh auto; background: #111c33; border: 1px solid #1e3a5f; border-radius: 16px; padding: 24px; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { font-size: 14px; line-height: 1.55; color: #b6c2d9; }
+  .peringatan { background: #3f1d1d; border: 1px solid #7f2d2d; color: #fecaca; border-radius: 12px; padding: 12px; font-size: 13px; }
+  input { width: 100%; box-sizing: border-box; padding: 12px; font-size: 16px; border-radius: 10px; border: 1px solid #334155; background: #0b1220; color: #fff; margin: 12px 0; }
+  button { width: 100%; padding: 14px; font-size: 16px; font-weight: 700; border: 0; border-radius: 10px; background: #dc2626; color: #fff; cursor: pointer; }
+  button:disabled { background: #475569; cursor: not-allowed; }
+  a.buka { display: none; text-align: center; margin-top: 14px; padding: 14px; background: #2563eb; color: #fff; border-radius: 10px; font-weight: 700; text-decoration: none; }
+  #status { white-space: pre-wrap; font-size: 13px; margin-top: 14px; color: #a5f3fc; }
+</style>
+</head>
+<body>
+<div class="kotak">
+  <h1>Bersihkan Data Browser Aplikasi Ini</h1>
+  <p>Halaman alat QA/pemulihan. Tombol di bawah menghapus <strong>seluruh data aplikasi yang tersimpan di browser INI</strong> (IndexedDB, localStorage, cache, service worker) untuk alamat ini — sama seperti "Clear site data". Data di server (SQLite) dan di browser/perangkat lain <strong>tidak</strong> terpengaruh.</p>
+  <div class="peringatan">⚠️ Hanya gunakan pada browser uji/QA atau bila memang ingin memulai dari data contoh bawaan. Pada instalasi berisi data asli, gunakan menu Backup &amp; Restore di dalam aplikasi.</div>
+  <p>Ketik <strong>BERSIHKAN</strong> untuk mengaktifkan tombol:</p>
+  <input id="konfirmasi" placeholder="Ketik BERSIHKAN" autocomplete="off" />
+  <button id="tombol" disabled>Bersihkan Data Browser Ini</button>
+  <div id="status"></div>
+  <a class="buka" id="buka" href="/">Buka Aplikasi (data contoh segar)</a>
+</div>
+<script>
+  var input = document.getElementById('konfirmasi');
+  var tombol = document.getElementById('tombol');
+  var status = document.getElementById('status');
+  input.addEventListener('input', function () {
+    tombol.disabled = input.value.trim() !== 'BERSIHKAN';
+  });
+  function hapusDb(nama) {
+    return new Promise(function (resolve) {
+      var req = indexedDB.deleteDatabase(nama);
+      req.onsuccess = req.onerror = function () { resolve(); };
+      req.onblocked = function () { setTimeout(resolve, 1500); };
+      setTimeout(resolve, 4000);
+    });
+  }
+  tombol.addEventListener('click', async function () {
+    tombol.disabled = true;
+    status.textContent = 'Membersihkan...';
+    try { localStorage.clear(); } catch (e) {}
+    try { sessionStorage.clear(); } catch (e) {}
+    try {
+      var daftar = (await indexedDB.databases()) || [];
+      for (var i = 0; i < daftar.length; i++) {
+        if (daftar[i].name) await hapusDb(daftar[i].name);
+      }
+    } catch (e) {}
+    try {
+      var kunci = await caches.keys();
+      for (var j = 0; j < kunci.length; j++) await caches.delete(kunci[j]);
+    } catch (e) {}
+    try {
+      var regs = await navigator.serviceWorker.getRegistrations();
+      for (var k = 0; k < regs.length; k++) await regs[k].unregister();
+    } catch (e) {}
+    status.textContent = 'SELESAI. Data browser untuk alamat ini sudah dibersihkan.\nBuka aplikasi — ia akan menanam ulang data contoh dan login administrator/administrator berlaku lagi.';
+    document.getElementById('buka').style.display = 'block';
+  });
+</script>
+</body>
+</html>
