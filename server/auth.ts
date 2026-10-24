@@ -92,6 +92,14 @@ export function pastikanSiap(): Promise<void> {
   return janjiSiap;
 }
 
+/** True bila basis data sekolah masih berstatus benih awal (baru
+ *  ter-seed & belum pernah menerima impor data nyata) — gerbang
+ *  penawaran migrasi otomatis Fase S4 di klien. */
+export function apakahBenihAwal(sekolahId: string): boolean {
+  const db = dbSekolah(sekolahId);
+  return !!ambilMeta(db, 'seed_awal') && !ambilMeta(db, 'data_nyata');
+}
+
 // ---------------- Kunci login ----------------
 
 export function statusKunci(sekolahId: string, username: string): { terkunci: boolean; sisaMenit: number } {

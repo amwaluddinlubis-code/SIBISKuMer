@@ -286,6 +286,172 @@ export function hapusSnapshot(db: DatabaseSync, id: string): boolean {
 // ---------------- Transaksi ----------------
 
 /** Jalankan fungsi dalam satu transaksi SQLite (rollback bila melempar). */
+// ---------------- Snapshot berkas (Fase S4) ----------------
+
+/** Tutup & keluarkan koneksi satu sekolah dari cache (untuk penggantian
+ *  berkas saat pemulihan). Dibuka lagi secara malas pada akses berikut. */
+export function tutupDbSekolah(sekolahId: string): void {
+  const kunci = berkasUntuk(`bukuinduk-${idSekolahAman(sekolahId)}.db`);
+  const db = tangani.get(kunci);
+  if (db) {
+    try { db.close(); } catch { /* sudah tertutup */ }
+    tangani.delete(kunci);
+  }
+}
+
+export interface MetaSnapshotBerkas {
+  nama: string;
+  label: string;
+  dibuatPada: string;
+  ukuran: number;
+  hitungan: { siswa: number; users: number } | null;
+}
+
+function folderSnapshot(sekolahId: string): string {
+  return path.join(folderData(), 'snapshots', idSekolahAman(sekolahId));
+}
+
+function stempelNama(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+function slugLabel(label: string): string {
+  const s = (label || 'manual').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return s || 'manual';
+}
+
+function hitunganBerkasDb(lokasi: string): { siswa: number; users: number } | null {
+  let db: DatabaseSync | null = null;
+  try {
+    db = new DatabaseSync(lokasi, { readOnly: true });
+    const siswa = (db.prepare('SELECT COUNT(*) AS n FROM siswa').get() as any)?.n ?? 0;
+    const users = (db.prepare('SELECT COUNT(*) AS n FROM users').get() as any)?.n ?? 0;
+    return { siswa: Number(siswa), users: Number(users) };
+  } catch {
+    return null;
+  } finally {
+    try { db?.close(); } catch { /* abaikan */ }
+  }
+}
+
+/** Buat snapshot berkas utuh (VACUUM INTO — salinan konsisten walau WAL
+ *  aktif) di folder snapshots/<sekolah>/. */
+export function buatSnapshotBerkas(sekolahId: string, label: string): MetaSnapshotBerkas {
+  const db = dbSekolah(sekolahId);
+  const folder = folderSnapshot(sekolahId);
+  fs.mkdirSync(folder, { recursive: true });
+  const sekarang = new Date();
+  const nama = `snap-${stempelNama(sekarang)}-${slugLabel(label)}.db`;
+  const tujuan = path.join(folder, nama);
+  db.exec(`VACUUM INTO '${tujuan.replace(/'/g, "''")}'`);
+  return {
+    nama,
+    label: label || 'manual',
+    dibuatPada: sekarang.toISOString(),
+    ukuran: fs.statSync(tujuan).size,
+    hitungan: hitunganBerkasDb(tujuan),
+  };
+}
+
+function parseNamaSnapshot(nama: string): { label: string; dibuatPada: string } | null {
+  const m = /^snap-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-(.+)\.db$/.exec(nama);
+  if (!m) return null;
+  const d = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`);
+  return { label: m[7], dibuatPada: d.toISOString() };
+}
+
+export function daftarSnapshotBerkas(sekolahId: string): MetaSnapshotBerkas[] {
+  const folder = folderSnapshot(sekolahId);
+  if (!fs.existsSync(folder)) return [];
+  const hasil: MetaSnapshotBerkas[] = [];
+  for (const nama of fs.readdirSync(folder)) {
+    if (!nama.endsWith('.db')) continue;
+    const info = parseNamaSnapshot(nama);
+    if (!info) continue;
+    const lokasi = path.join(folder, nama);
+    let ukuran = 0;
+    try { ukuran = fs.statSync(lokasi).size; } catch { /* abaikan */ }
+    hasil.push({ nama, label: info.label, dibuatPada: info.dibuatPada, ukuran, hitungan: hitunganBerkasDb(lokasi) });
+  }
+  return hasil.sort((a, b) => b.nama.localeCompare(a.nama));
+}
+
+function lokasiSnapshotValid(sekolahId: string, nama: string): string {
+  if (!nama || nama !== path.basename(nama) || !nama.endsWith('.db')) {
+    throw new Error('Nama snapshot tidak valid.');
+  }
+  const lokasi = path.join(folderSnapshot(sekolahId), nama);
+  if (!fs.existsSync(lokasi)) throw new Error('Berkas snapshot tidak ditemukan.');
+  return lokasi;
+}
+
+export function lokasiSnapshotBerkas(sekolahId: string, nama: string): string {
+  return lokasiSnapshotValid(sekolahId, nama);
+}
+
+/** Pulihkan basis data sekolah dari snapshot berkas: snapshot pengaman
+ *  dibuat dulu, koneksi ditutup, berkas diganti, semua sesi sekolah
+ *  dibatalkan (pengguna masuk kembali). */
+export function pulihkanSnapshotBerkas(
+  sekolahId: string,
+  nama: string
+): { siswa: number; users: number; pengaman: string } {
+  const sumber = lokasiSnapshotValid(sekolahId, nama);
+  const pengaman = buatSnapshotBerkas(sekolahId, 'pra-pulih');
+  tutupDbSekolah(sekolahId);
+  const tujuan = berkasUntuk(`bukuinduk-${idSekolahAman(sekolahId)}.db`);
+  fs.copyFileSync(sumber, tujuan);
+  for (const suf of ['-wal', '-shm']) {
+    try { fs.unlinkSync(tujuan + suf); } catch { /* tidak ada */ }
+  }
+  dbRegistry().prepare('DELETE FROM sesi WHERE sekolah_id = ?').run(sekolahId);
+  const db = dbSekolah(sekolahId);
+  const hit = (db.prepare('SELECT COUNT(*) AS n FROM users').get() as any)?.n ?? 0;
+  return { siswa: jumlahSiswa(db), users: Number(hit), pengaman: pengaman.nama };
+}
+
+export function hapusSnapshotBerkas(sekolahId: string, nama: string): void {
+  fs.unlinkSync(lokasiSnapshotValid(sekolahId, nama));
+}
+
+/** Salin basis data aktif ke berkas unduhan sementara (konsisten via
+ *  VACUUM INTO); penganggil menghapusnya setelah terkirim. */
+export function berkasUnduhDb(sekolahId: string): string {
+  const db = dbSekolah(sekolahId);
+  const folder = path.join(folderData(), 'unduhan');
+  fs.mkdirSync(folder, { recursive: true });
+  const lokasi = path.join(folder, `bukuinduk-${idSekolahAman(sekolahId)}-${stempelNama(new Date())}.db`);
+  db.exec(`VACUUM INTO '${lokasi.replace(/'/g, "''")}'`);
+  return lokasi;
+}
+
+/** Snapshot otomatis harian per sekolah (maks. 10 berkas 'otomatis'
+ *  dipertahankan). Aman dipanggil berulang. */
+export function snapshotOtomatisHarian(): string[] {
+  const dibuat: string[] = [];
+  const hariIni = stempelNama(new Date()).slice(0, 8);
+  for (const s of daftarSekolah()) {
+    try {
+      const daftar = daftarSnapshotBerkas(s.id);
+      const adaHariIni = daftar.some(
+        (x) => x.label === 'otomatis' && stempelNama(new Date(x.dibuatPada)).slice(0, 8) === hariIni
+      );
+      if (!adaHariIni) {
+        buatSnapshotBerkas(s.id, 'otomatis');
+        dibuat.push(s.id);
+      }
+      const otomatis = daftarSnapshotBerkas(s.id).filter((x) => x.label === 'otomatis');
+      for (const lama of otomatis.slice(10)) {
+        try { hapusSnapshotBerkas(s.id, lama.nama); } catch { /* abaikan */ }
+      }
+    } catch {
+      /* sekolah bermasalah tidak menghentikan yang lain */
+    }
+  }
+  return dibuat;
+}
+
 export function dalamTransaksi<T>(db: DatabaseSync, fn: () => T): T {
   db.exec('BEGIN');
   try {

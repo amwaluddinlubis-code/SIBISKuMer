@@ -5,6 +5,8 @@
 // 'sibis_sesi'); otorisasi peran + rombel ditegakkan DI SINI, di server,
 // meniru aturan klien (filterSiswaByAccess / canUserAccessRombel).
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   dbSekolah,
   daftarSekolah,
@@ -28,6 +30,12 @@ import {
   simpanSnapshot,
   ambilSnapshot,
   hapusSnapshot,
+  buatSnapshotBerkas,
+  daftarSnapshotBerkas,
+  pulihkanSnapshotBerkas,
+  hapusSnapshotBerkas,
+  lokasiSnapshotBerkas,
+  berkasUnduhDb,
   dalamTransaksi,
   idSekolahAman,
   ENTITAS_KOLEKSI,
@@ -41,6 +49,7 @@ import {
   gantiSandiSesi,
   buatSesiImpersonate,
   akhiriImpersonate,
+  apakahBenihAwal,
   userPublik,
   bolehAksesRombel,
   siswaTerlihat,
@@ -155,6 +164,15 @@ export async function rakitPayloadBackup(sekolahId: string): Promise<any> {
  *  dipertahankan bila payload tidak membawanya (ekspor memang
  *  mengosongkannya). */
 export function tulisPayloadBackup(sekolahId: string, payload: any): Record<string, number> {
+  // Impor menandai basis data sebagai berisi data nyata (gerbang
+  // migrasi otomatis Fase S4 berhenti menawarkan). Penanda seed_awal
+  // TIDAK dihapus — pastikanSiap memakainya agar benih tidak ditanam
+  // ulang; status benih-awal dihitung dari kedua penanda ini.
+  try {
+    simpanMeta(dbSekolah(sekolahId), 'data_nyata', { pada: new Date().toISOString() });
+  } catch {
+    /* abaikan */
+  }
   const db = dbSekolah(sekolahId);
   const hitungan: Record<string, number> = {};
   dalamTransaksi(db, () => {
@@ -243,6 +261,7 @@ export function buatRouterV1(): Router {
       user: userPublik(hasil.user),
       sekolahId: hasil.sesi.sekolahId,
       mustChangePassword: !!hasil.user.mustChangePassword,
+      benihAwal: apakahBenihAwal(hasil.sesi.sekolahId),
     });
   });
 
@@ -263,6 +282,7 @@ export function buatRouterV1(): Router {
       sekolahId: req.sesi!.sekolahId,
       impersonatorId: req.sesi!.impersonatorId,
       impersonator,
+      benihAwal: apakahBenihAwal(req.sesi!.sekolahId),
     });
   });
 
@@ -475,6 +495,60 @@ export function buatRouterV1(): Router {
     }
     hapusUser(db, req.params.id);
     kirimOk(res, { terhapus: true });
+  });
+
+  // ---------- Snapshot berkas (Fase S4) ----------
+  // Daftar boleh dibaca semua sesi (dasbor operator menampilkan status
+  // backup); buat/pulih/hapus/unduh khusus admin.
+  r.get('/snapshot/berkas', perluSesi, (req: ReqBersesi, res) => {
+    kirimOk(res, daftarSnapshotBerkas(req.sesi!.sekolahId));
+  });
+
+  r.post('/snapshot/berkas', perluSesi, perluAdmin, (req: ReqBersesi, res) => {
+    try {
+      const meta = buatSnapshotBerkas(req.sesi!.sekolahId, String(req.body?.label || 'manual'));
+      kirimOk(res, meta);
+    } catch (e: any) {
+      kirimGagal(res, 500, e?.message || 'Gagal membuat snapshot berkas.');
+    }
+  });
+
+  r.post('/snapshot/berkas/:nama/pulihkan', perluSesi, perluAdmin, (req: ReqBersesi, res) => {
+    try {
+      const hasil = pulihkanSnapshotBerkas(req.sesi!.sekolahId, req.params.nama);
+      kirimOk(res, hasil);
+    } catch (e: any) {
+      kirimGagal(res, 400, e?.message || 'Gagal memulihkan snapshot berkas.');
+    }
+  });
+
+  r.delete('/snapshot/berkas/:nama', perluSesi, perluAdmin, (req: ReqBersesi, res) => {
+    try {
+      hapusSnapshotBerkas(req.sesi!.sekolahId, req.params.nama);
+      kirimOk(res, { terhapus: true });
+    } catch (e: any) {
+      kirimGagal(res, 400, e?.message || 'Gagal menghapus snapshot berkas.');
+    }
+  });
+
+  r.get('/snapshot/berkas/:nama/unduh', perluSesi, perluAdmin, (req: ReqBersesi, res) => {
+    try {
+      const lokasi = lokasiSnapshotBerkas(req.sesi!.sekolahId, req.params.nama);
+      res.download(lokasi, req.params.nama);
+    } catch (e: any) {
+      kirimGagal(res, 404, e?.message || 'Berkas snapshot tidak ditemukan.');
+    }
+  });
+
+  r.get('/backup/unduh-db', perluSesi, perluAdmin, (req: ReqBersesi, res) => {
+    try {
+      const lokasi = berkasUnduhDb(req.sesi!.sekolahId);
+      res.download(lokasi, path.basename(lokasi), () => {
+        try { fs.unlinkSync(lokasi); } catch { /* abaikan */ }
+      });
+    } catch (e: any) {
+      kirimGagal(res, 500, e?.message || 'Gagal menyiapkan berkas basis data.');
+    }
   });
 
   // ---------- Snapshot ----------

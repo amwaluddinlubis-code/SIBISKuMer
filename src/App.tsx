@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense, lazy } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import GlobalSearch from './components/GlobalSearch';
 import {
@@ -44,7 +44,8 @@ import {
   getTingkatAktifSiswa,
   getTahunAjaranTerakhirSiswa,
   getAllPetaKelas,
-  resetToSingleMainDatabase
+  resetToSingleMainDatabase,
+  eksporDataLokalSaja
 } from './utils/db';
 import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, PetaKelas, ModeTampilan, RiwayatTahunAjaran } from './types';
 import { buildSnapshot } from './utils/arsip';
@@ -105,7 +106,7 @@ import { ToastHost } from './components/ToastHost';
 import { ConfirmDialogHost } from './components/ConfirmDialogHost';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { toast, confirmDialog } from './utils/notify';
-import { keluarDariServer, mulaiImpersonateServer, berhentiImpersonateServer } from './utils/dataApi';
+import { keluarDariServer, mulaiImpersonateServer, berhentiImpersonateServer, ambilSesiServer, imporKeServer } from './utils/dataApi';
 import { pakaiServer } from './utils/modeData';
 import { FileText, Search, User, Printer, Eye, Lock, Users, Award, RefreshCw, BarChart3, Layers, Settings, UserCog, Database, GraduationCap, Contact, LayoutDashboard, Archive, LayoutGrid, ScrollText, Table } from 'lucide-react';
 import { PageHeader } from './components/PageHeader';
@@ -507,6 +508,45 @@ export default function App() {
   useEffect(() => {
     if (schools.length > 0) void refreshSchoolCounts(schools);
   }, [schools, siswaList.length, refreshSchoolCounts]);
+
+  // Fase S4 — penawaran migrasi otomatis instalasi lama: bila basis data
+  // server masih benih awal dan IndexedDB perangkat ini berisi data,
+  // tawarkan impor sekali kepada administrator (keputusan disimpan per
+  // perangkat agar tidak menagih berulang).
+  const migrasiDicekRef = useRef(false);
+  useEffect(() => {
+    if (!currentUser || !pakaiServer() || migrasiDicekRef.current) return;
+    if (!isAdministrator(currentUser)) return;
+    migrasiDicekRef.current = true;
+    (async () => {
+      try {
+        if (localStorage.getItem('bukuinduk_migrasi_server')) return;
+        const sesi = await ambilSesiServer().catch(() => null);
+        if (!sesi?.benihAwal) return;
+        const lokal = await eksporDataLokalSaja();
+        const jumlahLokal = lokal.siswa?.length || 0;
+        if (jumlahLokal === 0) return;
+        const ok = await confirmDialog(
+          `Basis data server masih berisi data contoh, sedangkan perangkat ini menyimpan ${jumlahLokal} siswa dari instalasi sebelumnya. Impor data perangkat ini ke server sekarang? Data contoh di server akan digantikan (snapshot pengaman dibuat otomatis di server).`,
+          { confirmLabel: 'Ya, Impor ke Server', cancelLabel: 'Nanti Saja' }
+        );
+        try {
+          localStorage.setItem('bukuinduk_migrasi_server', ok ? 'selesai' : 'ditolak');
+        } catch {
+          /* abaikan */
+        }
+        if (!ok) return;
+        const hasil = await imporKeServer(lokal);
+        toast(
+          `Migrasi selesai: ${hasil?.hitungan?.siswa ?? jumlahLokal} siswa kini tersimpan di server.`,
+          'success'
+        );
+        await loadData();
+      } catch {
+        /* penawaran migrasi tidak boleh mengganggu pemakaian aplikasi */
+      }
+    })();
+  }, [currentUser, loadData]);
 
   const handleSwitchSchool = useCallback(async (id: string) => {
     if (switchingSchoolId) return;

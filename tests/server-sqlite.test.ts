@@ -339,6 +339,65 @@ test('kunci login: 5x salah -> terkunci, sandi benar pun ditolak', async () => {
   assert.equal(benar.status, 423);
 });
 
+test('snapshot berkas S4: buat, daftar, pulihkan mengembalikan keadaan, sesi dibatalkan', async () => {
+  // Keadaan awal dibaca dulu (test impor sebelumnya mengganti isi DB).
+  const awal = await panggil('GET', '/data/siswa', { cookie: cookieAdmin });
+  const jumlahAwal = awal.body.data.length;
+  assert.ok(jumlahAwal >= 1);
+
+  const buat = await panggil('POST', '/snapshot/berkas', {
+    cookie: cookieAdmin,
+    body: { label: 'uji-s4' },
+  });
+  assert.equal(buat.status, 200);
+  const namaSnap = buat.body.data.nama as string;
+  assert.ok(namaSnap.endsWith('.db'));
+  assert.equal(buat.body.data.hitungan.siswa, jumlahAwal);
+
+  const daftar = await panggil('GET', '/snapshot/berkas', { cookie: cookieAdmin });
+  assert.ok(daftar.body.data.some((s: any) => s.nama === namaSnap));
+
+  // Ubah keadaan: hapus satu siswa.
+  const korban = awal.body.data[0];
+  await panggil('DELETE', `/data/siswa/${korban.id}`, { cookie: cookieAdmin });
+  const sesudahHapus = await panggil('GET', '/data/siswa', { cookie: cookieAdmin });
+  assert.equal(sesudahHapus.body.data.length, jumlahAwal - 1);
+
+  // Pulihkan -> siswa kembali & sesudah pulih memakai cookie BARU.
+  const pulih = await panggil('POST', `/snapshot/berkas/${namaSnap}/pulihkan`, {
+    cookie: cookieAdmin,
+    body: {},
+  });
+  assert.equal(pulih.status, 200);
+  assert.equal(pulih.body.data.siswa, jumlahAwal);
+  assert.ok(String(pulih.body.data.pengaman).includes('pra-pulih'));
+
+  // Sesi lama dibatalkan oleh pemulihan.
+  const sesiLama = await panggil('GET', '/auth/sesi', { cookie: cookieAdmin });
+  assert.equal(sesiLama.status, 401);
+
+  const masuk = await login('administrator', 'administrator');
+  assert.equal(masuk.status, 200);
+  cookieAdmin = masuk.cookie!;
+  const utuh = await panggil('GET', '/data/siswa', { cookie: cookieAdmin });
+  assert.equal(utuh.body.data.length, jumlahAwal);
+
+  // Unduh .db live mengembalikan header lampiran.
+  const mentah = await fetch(`${dasar}/backup/unduh-db`, { headers: { Cookie: cookieAdmin } });
+  assert.equal(mentah.status, 200);
+  assert.match(mentah.headers.get('content-disposition') || '', /\.db/);
+  await mentah.arrayBuffer();
+
+  // Hapus berkas snapshot uji.
+  const daftar2 = await panggil('GET', '/snapshot/berkas', { cookie: cookieAdmin });
+  for (const s of daftar2.body.data as any[]) {
+    const h = await panggil('DELETE', `/snapshot/berkas/${s.nama}`, { cookie: cookieAdmin });
+    assert.equal(h.status, 200);
+  }
+  const kosong = await panggil('GET', '/snapshot/berkas', { cookie: cookieAdmin });
+  assert.equal(kosong.body.data.length, 0);
+});
+
 test('logout mengakhiri sesi', async () => {
   // Login segar (akun op-uji sah terhapus oleh pemulihan snapshot di atas —
   // perilaku restore yang benar), lalu logout dan pastikan sesi mati.

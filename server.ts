@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'path';
 import { createDapodikProxyGuard, validateDapodikProxyConfig } from './server/dapodikProxyConfig';
 import { buatRouterV1 } from './server/api';
+import { snapshotOtomatisHarian } from './server/db';
 // Catatan: 'vite' diimpor dinamis hanya saat development agar bundel produksi
 // (dist/server.cjs, dipakai aplikasi desktop Electron) tidak butuh vite runtime.
 import { mockDapodikPesertaDidik, mockDapodikSekolah, mockDapodikRombel, mockDapodikPtk, mockDapodikPengguna } from './src/data/initialData';
@@ -311,6 +312,18 @@ async function startServer() {
   const server = app.listen(PORT, LISTEN_HOST, () => {
     console.log(`Server running on http://${LISTEN_HOST}:${PORT}`);
   });
+
+  // Fase S4: snapshot berkas otomatis harian per sekolah (diperiksa
+  // saat server menyala lalu tiap 6 jam; kegagalan tidak mematikan server).
+  const jalankanSnapshotOtomatis = () => {
+    try {
+      snapshotOtomatisHarian();
+    } catch (e) {
+      console.warn('[snapshot-otomatis]', e);
+    }
+  };
+  setTimeout(jalankanSnapshotOtomatis, 5000).unref?.();
+  setInterval(jalankanSnapshotOtomatis, 6 * 3600 * 1000).unref?.();
 
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {

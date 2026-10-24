@@ -149,6 +149,24 @@ test('masukServer: memetakan user + mustChangePassword dari amplop (S3)', async 
   assert.equal(body.sekolahId, 'utama');
 });
 
+test('snapshot berkas S4: jalur & metode benar', async () => {
+  responBerikut = { status: 200, body: { ok: true, data: [] } };
+  await dataApi.daftarSnapshotBerkasServer();
+  await dataApi.buatSnapshotBerkasServer('manual');
+  await dataApi.pulihkanSnapshotBerkasServer('snap-20261025-010203-manual.db');
+  await dataApi.hapusSnapshotBerkasServer('snap-20261025-010203-manual.db');
+  assert.deepEqual(
+    panggilan.map((p) => `${p.init.method} ${p.url}`),
+    [
+      'GET /api/v1/snapshot/berkas',
+      'POST /api/v1/snapshot/berkas',
+      'POST /api/v1/snapshot/berkas/snap-20261025-010203-manual.db/pulihkan',
+      'DELETE /api/v1/snapshot/berkas/snap-20261025-010203-manual.db',
+    ]
+  );
+  assert.equal(dataApi.urlUnduhDbServer(), '/api/v1/backup/unduh-db');
+});
+
 test('metode tulis S3: jalur & metode benar, id ter-encode (S3)', async () => {
   responBerikut = { status: 200, body: { ok: true, data: {} } };
   await dataApi.simpanSiswaKeServer({ id: 'sis-001' } as any);

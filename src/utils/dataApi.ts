@@ -57,6 +57,8 @@ export interface HasilMasukServer {
   user: any;
   sekolahId: string;
   mustChangePassword: boolean;
+  /** True bila basis data server masih benih awal (gerbang migrasi S4). */
+  benihAwal?: boolean;
 }
 
 /** Masuk ke server dan kembalikan sesi + user. Melempar Error berpesan
@@ -194,6 +196,38 @@ export async function ambilSesiServer(): Promise<any> {
 
 export async function mulaiImpersonateServer(userId: string): Promise<any> {
   return panggil('POST', '/auth/impersonate', { userId });
+}
+
+// ---------------- Snapshot berkas (Fase S4) ----------------
+
+export interface MetaSnapshotBerkasApi {
+  nama: string;
+  label: string;
+  dibuatPada: string;
+  ukuran: number;
+  hitungan: { siswa: number; users: number } | null;
+}
+
+export async function daftarSnapshotBerkasServer(): Promise<MetaSnapshotBerkasApi[]> {
+  return panggil<MetaSnapshotBerkasApi[]>('GET', '/snapshot/berkas');
+}
+
+export async function buatSnapshotBerkasServer(label: string): Promise<MetaSnapshotBerkasApi> {
+  return panggil<MetaSnapshotBerkasApi>('POST', '/snapshot/berkas', { label });
+}
+
+export async function pulihkanSnapshotBerkasServer(nama: string): Promise<any> {
+  return panggil('POST', `/snapshot/berkas/${seg(nama)}/pulihkan`, {});
+}
+
+export async function hapusSnapshotBerkasServer(nama: string): Promise<void> {
+  await panggil('DELETE', `/snapshot/berkas/${seg(nama)}`);
+}
+
+/** URL unduh berkas basis data aktif (.db) — dipakai sebagai href
+ *  tautan unduh (cookie sesi same-origin ikut terkirim). */
+export function urlUnduhDbServer(): string {
+  return '/api/v1/backup/unduh-db';
 }
 
 export async function berhentiImpersonateServer(): Promise<any> {

@@ -65,6 +65,8 @@ import {
 } from '../utils/googleDriveService';
 import { User } from 'firebase/auth';
 import { toast, confirmDialog } from '../utils/notify';
+import { pakaiServer } from '../utils/modeData';
+import { pulihkanSnapshotBerkasServer, urlUnduhDbServer } from '../utils/dataApi';
 
 interface BackupRestoreModuleProps {
   sekolah: SekolahProfile;
@@ -631,6 +633,23 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     if (!ok) return;
     setRestoringSnapId(snap.id);
     try {
+      if (pakaiServer() && !snap.payload) {
+        // S4: snapshot berkas server — pulihkan lewat endpoint berkas.
+        // Server membatalkan semua sesi, jadi aplikasi dimuat ulang ke
+        // layar masuk setelah berhasil.
+        const hasil = await pulihkanSnapshotBerkasServer(snap.id);
+        showStatus(
+          'success',
+          `Dipulihkan dari snapshot berkas server (${hasil?.siswa ?? snap.jumlahSiswa} siswa). Anda akan diarahkan untuk masuk kembali…`
+        );
+        catatAudit('backup_pulihkan', {
+          entitas: 'backup',
+          ringkasan: `Pulihkan dari snapshot berkas server ${snap.id} (${hasil?.siswa ?? snap.jumlahSiswa} siswa)`,
+        });
+        setRestoringSnapId(null);
+        setTimeout(() => window.location.reload(), 1500);
+        return;
+      }
       const res = await importDatabaseBackup(snap.payload);
       if (res.success) {
         showStatus('success', `Dipulihkan dari snapshot: ${res.message}`);
@@ -721,6 +740,11 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
     aksi: 'unggah' | 'unduh' | 'sinkron',
     fn: (prog: (tahap: string, persen: number) => void) => Promise<HasilCloud>
   ) => {
+    if (pakaiServer()) {
+      // D4: dibekukan pada mode server — cegah dua sumber kebenaran.
+      showStatus('error', 'Sinkron Cloud dibekukan pada Mode Server. Matikan Mode Server di Pengaturan untuk memakainya.');
+      return;
+    }
     setIsCloudBusy(true);
     setCloudProg({ tahap: 'Memulai…', persen: 0 });
     try {
@@ -913,6 +937,16 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
                     <Download className="w-3.5 h-3.5" />
                     <span>{isExportingLocal ? 'Menyiapkan...' : 'Unduh File'}</span>
                   </button>
+                  {pakaiServer() && (
+                    <a
+                      href={urlUnduhDbServer()}
+                      className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+                      title="Unduh salinan berkas basis data SQLite (.db) dari server — setara isi cadangan JSON, siap disimpan sebagai arsip darurat."
+                    >
+                      <Database className="w-3.5 h-3.5" />
+                      <span>Unduh .db</span>
+                    </a>
+                  )}
                 </div>
               </div>
 
@@ -1513,6 +1547,16 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
             Tier Gratis
           </span>
         </div>
+
+        {pakaiServer() && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-[11px] text-amber-900">
+            <strong>Sinkron Cloud dibekukan pada Mode Server (Fase S4/D4).</strong> Pada mode ini
+            sumber data resmi adalah basis data SQLite di server; sinkron cloud bekerja atas
+            salinan lokal perangkat dan berisiko menimbulkan dua sumber kebenaran. Gunakan
+            cadangan berkas (.json / .db) dan snapshot server untuk memindahkan data antar-laptop,
+            atau matikan Mode Server untuk kembali memakai Sinkron Cloud.
+          </div>
+        )}
 
         {/* Langkah 1: Google */}
         <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2">

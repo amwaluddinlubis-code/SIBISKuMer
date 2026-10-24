@@ -1392,6 +1392,20 @@ export async function addAuditLog(entry: AuditLog): Promise<void> {
 const AUTOBACKUP_KEEP = 5;
 
 export async function getAutoSnapshots(): Promise<AutoBackupSnapshot[]> {
+  if (pakaiServer()) {
+    // S4: snapshot adalah BERKAS .db di server. payload dikosongkan —
+    // pemulihan berjalan lewat endpoint pulihkan berkas (lihat modul
+    // Backup), bukan lewat impor payload.
+    const daftar = await api.daftarSnapshotBerkasServer();
+    return daftar.map((s) => ({
+      id: s.nama,
+      timestamp: s.dibuatPada,
+      dibuatOleh: s.label,
+      ukuranBytes: s.ukuran,
+      jumlahSiswa: s.hitungan?.siswa ?? 0,
+      payload: '',
+    }));
+  }
   try {
     const db = await openDB();
     const rows: AutoBackupSnapshot[] = await new Promise((resolve) => {
@@ -1411,6 +1425,10 @@ export async function getAutoSnapshots(): Promise<AutoBackupSnapshot[]> {
 }
 
 export async function saveAutoSnapshot(snap: AutoBackupSnapshot): Promise<void> {
+  if (pakaiServer()) {
+    await api.buatSnapshotBerkasServer(snap.dibuatOleh || 'manual');
+    return;
+  }
   const db = await openDB();
   await new Promise<void>((resolve, reject) => {
     try {
@@ -1452,6 +1470,10 @@ export async function saveAutoSnapshot(snap: AutoBackupSnapshot): Promise<void> 
 }
 
 export async function deleteAutoSnapshot(id: string): Promise<void> {
+  if (pakaiServer()) {
+    await api.hapusSnapshotBerkasServer(id);
+    return;
+  }
   const db = await openDB();
   await new Promise<void>((resolve) => {
     try {
@@ -2107,6 +2129,63 @@ export interface BackupPayload {
   tutupTahun?: TutupTahunAjaran[];
   petaKelas?: PetaKelas[];
   audit?: AuditLog[];
+}
+
+/** Baca satu store IndexedDB apa adanya (TANPA perutean server) — dipakai
+ *  migrasi otomatis Fase S4 untuk membaca data lokal lama. */
+async function bacaStoreMentah<T>(store: string): Promise<T[]> {
+  try {
+    const db = await openDB();
+    return await new Promise<T[]>((resolve) => {
+      try {
+        const tx = db.transaction(store, 'readonly');
+        const req = tx.objectStore(store).getAll();
+        req.onsuccess = () => resolve((req.result || []) as T[]);
+        req.onerror = () => resolve([]);
+      } catch {
+        resolve([]);
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Rakit BackupPayload dari IndexedDB LOKAL apa adanya (mengabaikan mode
+ *  server) — bahan impor migrasi otomatis instalasi lama ke server. */
+export async function eksporDataLokalSaja(): Promise<BackupPayload> {
+  const [siswa, users, rombel, ptk, petaKelas, tutupTahun, syncLogs, audit, profilMentah, configMentah] =
+    await Promise.all([
+      bacaStoreMentah<Siswa>(STORES.SISWA),
+      bacaStoreMentah<AppUser>(STORES.USERS),
+      getAllFromStore<RombelRef>(STORES.ROMBEL, sk(LS_KEYS.ROMBEL)),
+      getAllFromStore<PtkRef>(STORES.PTK, sk(LS_KEYS.PTK)),
+      getAllFromStore<PetaKelas>(STORES.PETA, sk(LS_KEYS.PETA)),
+      bacaStoreMentah<TutupTahunAjaran>(STORES.TUTUP),
+      bacaStoreMentah<DapodikSyncLog>(STORES.LOGS),
+      bacaStoreMentah<AuditLog>(STORES.AUDIT),
+      bacaStoreMentah<any>(STORES.SEKOLAH),
+      bacaStoreMentah<any>(STORES.CONFIG),
+    ]);
+  const profilRow = (profilMentah as any[])[0];
+  const { id: _abaikanP, ...profil } = profilRow || {};
+  const configRow = (configMentah as any[])[0];
+  const { id: _abaikanC, ...config } = configRow || {};
+  return {
+    app: 'BukuInduk_Merdeka',
+    version: '2',
+    exportedAt: new Date().toISOString(),
+    sekolah: (profil && Object.keys(profil).length ? profil : defaultSekolahProfile) as SekolahProfile,
+    dapodikConfig: (config && Object.keys(config).length ? config : defaultDapodikConfig) as DapodikConfig,
+    siswa,
+    syncLogs,
+    users: users.length ? users : initialUsersList,
+    rombel,
+    ptk,
+    tutupTahun,
+    petaKelas,
+    audit,
+  };
 }
 
 export async function exportAllData(): Promise<string> {

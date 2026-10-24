@@ -13,6 +13,8 @@ import {
   scopedStorageKey,
   storageKeys,
 } from './db';
+import { pakaiServer } from './modeData';
+import { buatSnapshotBerkasServer } from './dataApi';
 
 export const AUTOBACKUP_PILIHAN_MENIT = [15, 30, 60, 120, 240];
 export const AUTOBACKUP_DEFAULT_MENIT = 60;
@@ -68,6 +70,24 @@ function idBaru(): string {
 
 /** Buat satu snapshot sekarang (dipakai penjadwal & tombol manual). */
 export async function jalankanAutoBackup(dibuatOleh = 'penjadwal'): Promise<HasilAutoBackup> {
+  if (pakaiServer()) {
+    // S4: snapshot = berkas .db di server (VACUUM INTO), bukan JSON di
+    // IndexedDB. Penjadwal berkala di mode server dijalankan server
+    // sendiri (harian); fungsi ini melayani tombol manual.
+    try {
+      const meta = await buatSnapshotBerkasServer(dibuatOleh === 'penjadwal' ? 'otomatis' : dibuatOleh);
+      const jumlah = meta.hitungan?.siswa ?? 0;
+      simpanAutoBackupSetting({
+        terakhirJalan: meta.dibuatPada,
+        terakhirStatus: `OK (server) — ${jumlah} siswa`,
+      });
+      return { jalan: true, snapshotId: meta.nama, pesan: `Snapshot berkas server tersimpan (${jumlah} siswa).` };
+    } catch (err: unknown) {
+      const pesan = err instanceof Error ? err.message : String(err);
+      simpanAutoBackupSetting({ terakhirStatus: `Gagal (server): ${pesan.slice(0, 80)}` });
+      return { jalan: false, pesan };
+    }
+  }
   let siswa: Awaited<ReturnType<typeof getAllSiswa>> = [];
   try {
     siswa = await getAllSiswa();
@@ -105,6 +125,9 @@ export async function jalankanAutoBackup(dibuatOleh = 'penjadwal'): Promise<Hasi
  * atau null bila belum waktunya / nonaktif / tab tersembunyi.
  */
 export async function centangAutoBackup(): Promise<HasilAutoBackup | null> {
+  // Mode server: snapshot berkala dibuat server (harian) — penjadwal
+  // peramban tidak membuat duplikat di IndexedDB.
+  if (pakaiServer()) return null;
   const cfg = bacaAutoBackupSetting();
   if (!cfg.aktif) return null;
   if (typeof document !== 'undefined' && document.hidden) return null;
