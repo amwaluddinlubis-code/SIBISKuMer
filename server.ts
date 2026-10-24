@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { createDapodikProxyGuard, validateDapodikProxyConfig } from './server/dapodikProxyConfig';
+import { buatRouterV1 } from './server/api';
 // Catatan: 'vite' diimpor dinamis hanya saat development agar bundel produksi
 // (dist/server.cjs, dipakai aplikasi desktop Electron) tidak butuh vite runtime.
 import { mockDapodikPesertaDidik, mockDapodikSekolah, mockDapodikRombel, mockDapodikPtk, mockDapodikPengguna } from './src/data/initialData';
@@ -10,6 +11,9 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
+  // API v1 (SQLite): parser khusus berlimit besar untuk impor backup —
+  // dipasang SEBELUM parser global agar body besar tidak ditolak lebih dulu.
+  app.use('/api/v1', express.json({ limit: '25mb' }));
   app.use(express.json());
 
   // Dapodik Web Service Proxy Routes
@@ -271,6 +275,10 @@ async function startServer() {
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', service: 'Buku Induk Siswa Kurikulum Merdeka' });
   });
+
+  // API v1 — lapisan data SQLite (Fase S1 migrasi). Semua endpoint /api/v1/*
+  // kecuali daftar sekolah & login mensyaratkan sesi server.
+  app.use('/api/v1', buatRouterV1());
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
