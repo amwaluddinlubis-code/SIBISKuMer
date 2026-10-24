@@ -51,6 +51,15 @@ const confirmTarget = new EventTarget();
 // Simpan semua resolve per id agar dialog beruntun tidak saling menimpa
 // (bug lama: satu variabel pendingConfirm membuat promise pertama menggantung).
 const pendingConfirms = new Map<number, (ok: boolean) => void>();
+// EventTarget TIDAK memutar ulang event bagi pendengar yang terlambat
+// berlangganan: confirm yang diterbitkan saat ConfirmDialogHost belum
+// terpasang (atau sedang lepas-pasang di tengah transisi layar) hilang
+// selamanya dan promise-nya menggantung — terbukti pada gerbang migrasi
+// S4 (effect mencatat 'dialog-tampil' tetapi dialog tak pernah ter-render).
+// Karena itu request dibuffer bila belum ada host, lalu diserahkan begitu
+// host berlangganan.
+let jumlahHostConfirm = 0;
+const antreanConfirm: ConfirmRequest[] = [];
 
 export function confirmDialog(
   message: string,
@@ -73,15 +82,27 @@ export function confirmDialog(
       },
     };
     pendingConfirms.set(id, req.resolve);
-    confirmTarget.dispatchEvent(new CustomEvent<ConfirmRequest>('app-confirm-request', { detail: req }));
+    if (jumlahHostConfirm > 0) {
+      confirmTarget.dispatchEvent(new CustomEvent<ConfirmRequest>('app-confirm-request', { detail: req }));
+    } else {
+      antreanConfirm.push(req);
+    }
   });
 }
 
 /** Dipakai host dialog untuk mengambil request terakhir. */
 export function subscribeConfirmRequest(handler: (r: ConfirmRequest) => void): () => void {
+  jumlahHostConfirm += 1;
   const listener = (e: Event) => handler((e as CustomEvent<ConfirmRequest>).detail);
   confirmTarget.addEventListener('app-confirm-request', listener);
-  return () => confirmTarget.removeEventListener('app-confirm-request', listener);
+  // Serahkan request yang terbuffer selama belum ada host.
+  while (antreanConfirm.length > 0) {
+    handler(antreanConfirm.shift()!);
+  }
+  return () => {
+    jumlahHostConfirm -= 1;
+    confirmTarget.removeEventListener('app-confirm-request', listener);
+  };
 }
 
 export function resolvePendingConfirm(ok: boolean, id?: number): void {
