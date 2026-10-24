@@ -173,6 +173,9 @@ export const PemeriksaDataView: React.FC<PemeriksaDataViewProps> = ({ siswa, sek
               di sekolah aktif — sesuai hak akses Anda (operator hanya melihat rombelnya). Pemeriksa ini{' '}
               <strong className="text-slate-700">tidak pernah mengubah atau menghapus data</strong>; setiap temuan
               harus diperbaiki manual lewat formulir, atau diabaikan dengan alasan.
+              Aturan lengkapnya (kelengkapan, format, konflik, rentang, duplikat) terbuka lewat tombol
+              <strong className="text-slate-700"> &quot;Lihat &amp; atur aturan&quot;</strong> di bawah — perlu diingat,
+              aturan format hanya berlaku <em>bila kolomnya diisi</em>, jadi kolom kosong tidak selalu berarti temuan.
             </p>
           </div>
         </div>
@@ -384,7 +387,7 @@ export const PemeriksaDataView: React.FC<PemeriksaDataViewProps> = ({ siswa, sek
       <div className="ui-card p-4 space-y-3">
         <h3 className="text-sm font-bold text-slate-900">Bandingkan dengan data impor (pratinjau CSV)</h3>
         <p className="text-xs text-slate-500 leading-relaxed">
-          Unggah berkas CSV dengan header <code>nisn,nama,tanggalLahir,rombel,nik</code> untuk melihat perbedaan terhadap data
+          Unggah berkas CSV yang kolom pertamanya berisi NISN, Nama, Tanggal Lahir, Rombel, dan NIK untuk melihat perbedaan terhadap data
           saat ini <strong className="text-slate-700">tanpa mengubah data apa pun</strong>. Baris berstatus konflik tidak boleh
           diterapkan tanpa tinjauan manual. Penerapan perubahan tetap dilakukan satu per satu lewat formulir siswa.
         </p>

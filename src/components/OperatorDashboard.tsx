@@ -380,6 +380,10 @@ export const OperatorDashboard: React.FC<OperatorDashboardProps> = ({
                 {tugas.reduce((acc, t) => acc + t.jumlah, 0)} item menunggu
               </span>
             </div>
+            <p className="text-[11px] text-slate-500 mb-3">
+              Menghitung <strong>butir pekerjaan</strong> yang menunggu ditindaklanjuti (satu siswa dapat menyumbang
+              beberapa butir). Berbeda dari kartu Perlu Perhatian di Dasbor yang menghitung siswa per kondisi data.
+            </p>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
               {tugas.map((t) => {
                 const severity = t.jumlah === 0 ? 'done' : severityOf(t.id);

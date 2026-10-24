@@ -5,42 +5,7 @@ import { getAuditLogs } from '../utils/db';
 import { catatAudit } from '../utils/audit';
 import { PageControl } from './PageControl';
 import { toast } from '../utils/notify';
-
-const AKSI_LABEL: Record<AuditAksi, string> = {
-  login: 'Masuk',
-  logout: 'Keluar',
-  sesi_pindah: 'Pindah sesi',
-  login_gagal: 'Gagal masuk',
-  login_terkunci: 'Upaya saat terkunci',
-  akun_buat: 'Akun dibuat',
-  akun_ubah: 'Akun diubah',
-  akun_hapus: 'Akun dihapus',
-  password_ubah: 'Password diganti',
-  password_reset: 'Password di-reset',
-  impersonate_mulai: 'Impersonate mulai',
-  impersonate_selesai: 'Impersonate selesai',
-  siswa_tambah: 'Siswa ditambah',
-  siswa_ubah: 'Siswa diubah',
-  siswa_hapus: 'Siswa dihapus',
-  mutasi_masuk: 'Mutasi masuk',
-  mutasi_keluar: 'Mutasi keluar',
-  tutup_tahun: 'Tutup tahun',
-  buka_tahun: 'Buka kunci tahun',
-  sinkron_terapkan: 'Sinkron diterapkan',
-  // Issue #11: label untuk aksi impor siswa (wajib — AKSI_LABEL exhaustive atas AuditAksi).
-  impor_siswa: 'Impor siswa (Excel/CSV)',
-  backup_buat: 'Backup dibuat',
-  backup_pulihkan: 'Backup dipulihkan',
-  backup_reset: 'Reset database',
-  laporan_ekspor: 'Laporan diekspor',
-  cloud_unggah: 'Cloud diunggah',
-  cloud_unduh: 'Cloud diunduh',
-  cloud_sinkron: 'Sinkron cloud',
-  rombel_ubah: 'Rombel diubah',
-  dokumen_ekspor: 'Dokumen diekspor',
-  pengaturan_ubah: 'Pengaturan diubah',
-  gtk_ubah: 'GTK diubah',
-};
+import { AKSI_LABEL, labelAksi, labelEntitas } from '../utils/auditLabel';
 
 const AKSI_BADGE: Partial<Record<AuditAksi, string>> = {
   login_gagal: 'ui-badge-rose',
@@ -133,7 +98,7 @@ export const AuditLogView: React.FC = () => {
     const baris = ['Waktu,Aktor,Peran,Aksi,Entitas,Ringkasan'];
     for (const l of tersaring) {
       baris.push(
-        [l.timestamp, l.aktor, l.peran || '', AKSI_LABEL[l.aksi] || l.aksi, l.entitas, l.ringkasan]
+        [l.timestamp, l.aktor, l.peran || '', labelAksi(l.aksi), labelEntitas(l.entitas), l.ringkasan]
           .map(csvEscape)
           .join(',')
       );
@@ -190,7 +155,7 @@ export const AuditLogView: React.FC = () => {
         </select>
         <select value={fEntitas} onChange={(e) => setFEntitas(e.target.value)} className="ui-select !w-auto" aria-label="Filter entitas">
           {ENTITAS_OPTIONS.map((e) => (
-            <option key={e} value={e}>{e === 'semua' ? 'Semua entitas' : e}</option>
+            <option key={e} value={e}>{e === 'semua' ? 'Semua entitas' : labelEntitas(e)}</option>
           ))}
         </select>
         <select value={fHasil} onChange={(e) => setFHasil(e.target.value as 'semua' | 'berhasil' | 'gagal')} className="ui-select !w-auto" aria-label="Filter hasil">
@@ -226,8 +191,9 @@ export const AuditLogView: React.FC = () => {
                     </td>
                     <td>
                       <span className={`ui-badge ${AKSI_BADGE[l.aksi] || 'ui-badge-slate'}`}>
-                        {AKSI_LABEL[l.aksi] || l.aksi}
+                        {labelAksi(l.aksi)}
                       </span>
+                      <span className="block text-[10px] text-slate-400 mt-0.5">{labelEntitas(l.entitas)}</span>
                     </td>
                     <td>
                       <div className="text-xs">{l.ringkasan}</div>

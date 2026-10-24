@@ -256,6 +256,45 @@ export function calculatePredikat(nilai: number): 'A' | 'B' | 'C' | 'D' {
   return 'D';
 }
 
+/** Singkatan header mapel untuk tabel lebar (Leger) — nama penuh tetap
+ *  tersedia lewat tooltip & versi cetak. Kamus dulu, lalu singkatan kata. */
+const SINGKATAN_MAPEL: Array<[RegExp, string]> = [
+  [/pendidikan agama/i, 'PABP'],
+  [/pendidikan pancasila/i, 'Pancasila'],
+  [/pendidikan jasmani/i, 'PJOK'],
+  [/bahasa indonesia/i, 'B. Indo'],
+  [/bahasa inggris/i, 'B. Inggris'],
+  [/bahasa arab/i, 'B. Arab'],
+  [/bahasa daerah/i, 'B. Daerah'],
+  [/matematika/i, 'MTK'],
+  [/ilmu pengetahuan alam/i, 'IPA'],
+  [/ilmu pengetahuan sosial/i, 'IPS'],
+  [/seni budaya/i, 'Seni'],
+  [/seni rupa/i, 'Seni'],
+  [/informatika/i, 'Informatika'],
+  [/bimbingan konseling/i, 'BK'],
+  [/muatan lokal/i, 'Mulok'],
+  [/prakarya/i, 'Prakarya'],
+  [/alquran|al-qur|tahfidz|tahfizh/i, 'Tahfidz'],
+  [/kewirausahaan/i, 'KWU'],
+];
+
+export function singkatanMapel(nama: string): string {
+  const n = (nama || '').trim();
+  if (!n) return n;
+  for (const [pola, singkat] of SINGKATAN_MAPEL) {
+    if (pola.test(n)) return singkat;
+  }
+  if (n.length <= 10) return n;
+  // Fallback: inisial kata (maks 6 huruf), mis. "Sejarah Indonesia" → "SI".
+  const inisial = n
+    .split(/\s+/)
+    .filter((k) => k.length > 1)
+    .map((k) => k[0]!.toUpperCase())
+    .join('');
+  return inisial.length >= 2 ? inisial.slice(0, 6) : n.slice(0, 10);
+}
+
 export function generateDeskripsiOtomatis(
   mapelNama: string,
   nilai: number,

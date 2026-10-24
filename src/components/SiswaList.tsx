@@ -17,7 +17,8 @@ import {
 } from 'lucide-react';
 import { Siswa, SekolahProfile, JenjangSekolah, StatusSiswa } from '../types';
 import { getTingkatOptions, getFaseKurikulum } from '../utils/raportUtils';
-import { getTingkatAktifSiswa } from '../utils/db';
+import { getTingkatAktifSiswa, getActiveDbName } from '../utils/db';
+import { formatTanggalIndo } from '../utils/format';
 import { siswaTerlibatTahun, tahunSiswa } from '../utils/sesi';
 import {
   KONDISI_LABELS,
@@ -110,14 +111,36 @@ export const SiswaList: React.FC<SiswaListProps> = ({
   filterAwal,
   filterNonce,
 }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterRombel, setFilterRombel] = useState<string>('all');
-  const [filterTingkat, setFilterTingkat] = useState<string>('all');
-  const [filterGender, setFilterGender] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  // Fase 2 §12: filter & pencarian DILESTARIKAN di sessionStorage (per
+  // database sekolah) agar tidak ter-reset saat komponen dipasang ulang —
+  // terutama setelah mengedit siswa. Preset drill-down dasbor tetap menang
+  // karena diterapkan lewat effect filterNonce setelah mount.
+  const kunciFilter = `bukuinduk_filter_siswa::${getActiveDbName()}`;
+  const tersimpan = (() => {
+    try {
+      return JSON.parse(sessionStorage.getItem(kunciFilter) || 'null') as Record<string, string> | null;
+    } catch {
+      return null;
+    }
+  })();
+  const [searchTerm, setSearchTerm] = useState(tersimpan?.searchTerm || '');
+  const [filterRombel, setFilterRombel] = useState<string>(tersimpan?.filterRombel || 'all');
+  const [filterTingkat, setFilterTingkat] = useState<string>(tersimpan?.filterTingkat || 'all');
+  const [filterGender, setFilterGender] = useState<string>(tersimpan?.filterGender || 'all');
+  const [filterStatus, setFilterStatus] = useState<string>(tersimpan?.filterStatus || 'all');
   // Filter keterlibatan tahun ajaran (riwayat/raport). Default 'all' agar roster
   // lingkup sekolah tidak menyembunyikan siswa; sesi ditampilkan eksplisit.
-  const [filterTahun, setFilterTahun] = useState<string>('all');
+  const [filterTahun, setFilterTahun] = useState<string>(tersimpan?.filterTahun || 'all');
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        kunciFilter,
+        JSON.stringify({ searchTerm, filterRombel, filterTingkat, filterGender, filterStatus, filterTahun })
+      );
+    } catch { /* abaikan */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm, filterRombel, filterTingkat, filterGender, filterStatus, filterTahun]);
   // Kondisi data (Issue #2): predikat yang SAMA dengan angka dasbor
   // (cocokKondisi di utils/dashboard.ts) agar drill-down selalu sepakat.
   const [filterKondisi, setFilterKondisi] = useState<KondisiDrillDown>('semua');
@@ -498,7 +521,7 @@ export const SiswaList: React.FC<SiswaListProps> = ({
             className="ui-select"
             aria-label="Filter tingkat"
           >
-            <option value="all">Semua Tingkat ({jenjang === 'SD' ? 'Fase A–C' : 'Fase D'})</option>
+            <option value="all">Semua Tingkat</option>
             {tingkatOptions.map((t) => (
               <option key={t} value={t}>Kelas {t} ({getFaseKurikulum(t)})</option>
             ))}
@@ -635,11 +658,8 @@ export const SiswaList: React.FC<SiswaListProps> = ({
             </div>
             <h3 className="font-extrabold text-sm text-slate-800">Tidak ada yang cocok</h3>
             <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-              Coba kata kunci lain atau longgarkan filter yang diterapkan.
+              Coba kata kunci lain atau longgarkan filter yang diterapkan — tombol Reset Filter ada pada bilah filter di atas.
             </p>
-            <button onClick={resetFilters} className="ui-btn ui-btn-outline mx-auto">
-              Reset Filter
-            </button>
           </div>
         ) : (
           <>
@@ -713,7 +733,7 @@ export const SiswaList: React.FC<SiswaListProps> = ({
 
                     <td className="text-slate-700 text-[11px]">
                       <div className="font-semibold">{s.tempatLahir || '-'}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">{s.tanggalLahir}</div>
+                      <div className="text-[10px] text-slate-500">{formatTanggalIndo(s.tanggalLahir)}</div>
                     </td>
 
                     <td>

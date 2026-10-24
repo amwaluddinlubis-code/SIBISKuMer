@@ -3,6 +3,7 @@ import { Printer, Download, ArrowLeft, CreditCard, FileText, Award, BookOpen, Ca
 import { Siswa, SekolahProfile } from '../types';
 import { getFaseKurikulum, getRaportList, getNilaiList, hitungRataRataNilai } from '../utils/raportUtils';
 import { tahanMaksSesi } from '../utils/sesi';
+import { formatAlamatLengkap } from '../utils/format';
 import { KopSuratView } from './KopSuratView';
 import { KartuPelajar, TemplateKartu, TEMPLATE_KARTU } from './KartuPelajar';
 import { unduhIndukExcel, unduhIndukWord } from '../utils/dokumenInduk';
@@ -272,7 +273,7 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                   <div className="py-1 border-b border-slate-100">
                     <span className="text-slate-600 block">1. Alamat Lengkap:</span>
                     <span className="font-medium text-slate-900">
-                      {siswa.alamat} {siswa.rt && `RT ${siswa.rt}`} {siswa.rw && `RW ${siswa.rw}`}
+                      {formatAlamatLengkap(siswa)}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-2 py-1 border-b border-slate-100">

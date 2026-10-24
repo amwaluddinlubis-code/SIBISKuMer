@@ -181,10 +181,14 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
     <div className="mb-5 anim-stagger print:hidden">
     {/* Perlu Perhatian — di atas statistik lama */}
     <div className="mb-4">
-      <h3 className="ui-section-title !normal-case !tracking-normal !text-sm mb-2.5">
+      <h3 className="ui-section-title !normal-case !tracking-normal !text-sm mb-1">
         <BellRing className="w-4 h-4 text-red-600" />
         Perlu Perhatian
       </h3>
+      <p className="text-[11px] text-slate-500 mb-2.5">
+        Jumlah <strong>siswa</strong> per kondisi data yang bermasalah (satu siswa dapat muncul di beberapa kartu).
+        Berbeda dari Antrean Tugas operator yang menghitung <strong>butir pekerjaan</strong> yang menunggu ditindak.
+      </p>
       {perhatian.length === 0 ? (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex items-center gap-3">
           <span className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">

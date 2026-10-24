@@ -288,7 +288,7 @@ function rombelBaris(s: Siswa, tahun: string, tahunAktif: string): string {
 export function kolomLaporan(jenis: JenisLaporan): string[] {
   switch (jenis) {
     case 'statistik':
-      return ['Rombel', 'Laki-laki (L)', 'Perempuan (P)', 'JK Belum Diisi (X)', 'Jumlah Total'];
+      return ['Rombel', 'Laki-laki (L)', 'Perempuan (P)', 'JK Belum Diisi', 'Jumlah Total'];
     case 'daftar-siswa':
       return ['No', 'Nama Lengkap', 'NISN', 'NIPD', 'L/P', 'Rombel', 'Status', 'Tanggal Lahir', 'Agama', 'Jalur Masuk'];
     case 'mutasi-masuk':

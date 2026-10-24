@@ -300,6 +300,13 @@ export const GtkView: React.FC<GtkViewProps> = ({ ptk, rombel, isAdmin, onOpenSy
         {statCard('Dari Dapodik', stats.dapodik, <Database className="w-5 h-5" />, 'bg-slate-100 text-slate-700')}
       </div>
 
+      {/* Fase 2 §13: penjelasan sumber data GTK. */}
+      <p className="text-[11px] text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2" role="note">
+        Daftar ini memuat GTK <strong>hasil sinkronisasi Dapodik</strong> ditambah entri manual.
+        Kolom sumber pada kartu statistik menunjukkan campurannya; entri bersumber Dapodik
+        diperbarui lewat Sinkronisasi Dapodik, bukan diubah di sini.
+      </p>
+
       {/* Toolbar */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -363,7 +370,7 @@ export const GtkView: React.FC<GtkViewProps> = ({ ptk, rombel, isAdmin, onOpenSy
             </div>
             <p className="text-xs text-slate-500 max-w-md mx-auto">
               {(ptk || []).length === 0
-                ? 'Belum ada data GTK. Lakukan Sinkron Dapodik (getGtk/getPTK) atau tambah manual.'
+                ? 'Belum ada data GTK. Tarik lewat menu Sinkronisasi Dapodik atau tambah manual.'
                 : 'Tidak ada GTK yang cocok dengan filter.'}
             </p>
             {isAdmin && (ptk || []).length === 0 && (

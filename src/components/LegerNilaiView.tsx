@@ -1,14 +1,16 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Download, Printer } from 'lucide-react';
+import { Download, Printer, Search } from 'lucide-react';
 import { Siswa, SekolahProfile, AppUser, TingkatKelas } from '../types';
-import { filterSiswaByAccess } from '../utils/db';
+import { filterSiswaByAccess, getTingkatAktifSiswa } from '../utils/db';
 import {
   getRaportList,
   getNilaiList,
   getDefaultMataPelajaran,
   getTingkatOptions,
   calculatePredikat,
+  singkatanMapel,
 } from '../utils/raportUtils';
+import { PageControl } from './PageControl';
 import { opsiTahunMaksSesi } from '../utils/sesi';
 import { toast } from '../utils/notify';
 import { unduhExcel } from '../utils/excel';
@@ -51,6 +53,16 @@ export const LegerNilaiView: React.FC<LegerNilaiViewProps> = ({
   const [semester, setSemester] = useState<'1' | '2'>(sekolah.semesterAktif?.startsWith('2') ? '2' : '1');
   const [tingkat, setTingkat] = useState<string>('semua');
   const [rombel, setRombel] = useState<string>('semua');
+  // Fase 2 §7: pencarian, pagination, dan opsi tampilkan semua siswa aktif
+  // (bawaan: hanya siswa yang memiliki raport pada periode terpilih).
+  const [cari, setCari] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [tampilSemua, setTampilSemua] = useState(false);
+
+  useEffect(() => {
+    setPage(1);
+  }, [cari, tahun, semester, tingkat, rombel, tampilSemua]);
 
   // Cutoff sesi: opsi & pilihan tahun di atas sesi disembunyikan/dikembalikan.
   const daftarTahun = useMemo(() => {
@@ -87,12 +99,12 @@ export const LegerNilaiView: React.FC<LegerNilaiViewProps> = ({
     );
     const cocok = dalamAkses.filter((s) => {
       const rap = getRaportList(s).find((r) => r.tahunAjaran === tahun && r.semester === semester);
-      if (!rap) return false;
+      if (!rap && !tampilSemua) return false;
       if (tingkat !== 'semua') {
-        const t = (rap.tingkat || '').toString();
+        const t = rap ? (rap.tingkat || '').toString() : getTingkatAktifSiswa(s).toString();
         if (t !== tingkat) return false;
       }
-      if (rombel !== 'semua' && (rap.rombel || s.rombelSaatIni) !== rombel) return false;
+      if (rombel !== 'semua' && (rap?.rombel || s.rombelSaatIni) !== rombel) return false;
       return true;
     });
 
@@ -136,7 +148,22 @@ export const LegerNilaiView: React.FC<LegerNilaiViewProps> = ({
     });
     rows.sort((a, b) => (a.peringkat ?? 9999) - (b.peringkat ?? 9999) || a.siswa.namaLengkap.localeCompare(b.siswa.namaLengkap));
     return { kolomMapel: kolom, baris: rows };
-  }, [siswaList, currentUser, tahun, semester, tingkat, rombel, jenjang, opsiTingkat]);
+  }, [siswaList, currentUser, tahun, semester, tingkat, rombel, jenjang, opsiTingkat, tampilSemua]);
+
+  // Baris tampilan: pencarian menyaring tampilan (peringkat tetap global),
+  // ekspor selalu memakai seluruh `baris` pada periode terpilih.
+  const barisTampil = useMemo(() => {
+    const k = cari.trim().toLowerCase();
+    if (!k) return baris;
+    return baris.filter(
+      (r) =>
+        r.siswa.namaLengkap.toLowerCase().includes(k) ||
+        (r.siswa.nisn || '').toLowerCase().includes(k)
+    );
+  }, [baris, cari]);
+  const totalPages = Math.max(1, Math.ceil(barisTampil.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const barisHalaman = barisTampil.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const handleExportCsv = () => {
     if (baris.length === 0) {
@@ -248,7 +275,33 @@ export const LegerNilaiView: React.FC<LegerNilaiViewProps> = ({
         <span className="text-xs text-slate-500 pb-2">
           <strong className="text-slate-800 tabular-nums">{baris.length}</strong> siswa • <strong className="text-slate-800 tabular-nums">{kolomMapel.length}</strong> mapel
         </span>
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={cari}
+            onChange={(e) => setCari(e.target.value)}
+            placeholder="Cari nama / NISN…"
+            className="ui-input !pl-9"
+            aria-label="Cari siswa di leger"
+          />
+        </div>
+        <label className="flex items-center gap-2 text-xs text-slate-600 pb-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={tampilSemua}
+            onChange={(e) => setTampilSemua(e.target.checked)}
+            className="w-4 h-4 accent-blue-700"
+          />
+          Tampilkan semua siswa aktif
+        </label>
       </div>
+
+      {!tampilSemua && (
+        <p className="text-[11px] text-slate-500 print:hidden">
+          Hanya siswa yang <strong>memiliki raport</strong> pada tahun &amp; semester ini yang ditampilkan.
+          Siswa aktif tanpa raport disembunyikan — aktifkan &quot;Tampilkan semua siswa aktif&quot; untuk melihat mereka (baris kosong tanpa peringkat).
+        </p>
+      )}
 
       <div className="ui-card overflow-hidden">
         <div className="print-sheet overflow-x-auto">
@@ -259,21 +312,26 @@ export const LegerNilaiView: React.FC<LegerNilaiViewProps> = ({
           <table className="ui-table">
             <thead>
               <tr>
-                <th className="sticky left-0">No</th>
-                <th className="sticky left-0">Nama</th>
-                {kolomMapel.map((m) => <th key={m} className="whitespace-nowrap">{m}</th>)}
+                <th className="sticky left-0 z-20 bg-slate-50 w-10">No</th>
+                <th className="sticky left-10 z-20 bg-slate-50 min-w-[170px]">Nama</th>
+                {kolomMapel.map((m) => (
+                  <th key={m} className="whitespace-nowrap" title={m}>
+                    <span className="print:hidden">{singkatanMapel(m)}</span>
+                    <span className="hidden print:inline">{m}</span>
+                  </th>
+                ))}
                 <th>Rata-rata</th>
                 <th>Peringkat</th>
               </tr>
             </thead>
             <tbody>
-              {baris.length === 0 ? (
-                <tr><td colSpan={4 + kolomMapel.length} className="text-center py-8 text-slate-500">Tidak ada raport {tahun} semester {semester} pada filter ini.</td></tr>
+              {barisTampil.length === 0 ? (
+                <tr><td colSpan={4 + kolomMapel.length} className="text-center py-8 text-slate-500">Tidak ada siswa pada filter ini{tampilSemua ? '' : ` — raport ${tahun} semester ${semester} belum ada`}.</td></tr>
               ) : (
-                baris.map((r, i) => (
+                barisHalaman.map((r, i) => (
                   <tr key={r.siswa.id}>
-                    <td className="tabular-nums">{i + 1}</td>
-                    <td className="whitespace-nowrap font-semibold">
+                    <td className="tabular-nums sticky left-0 z-10 bg-white w-10">{(safePage - 1) * pageSize + i + 1}</td>
+                    <td className="whitespace-nowrap font-semibold sticky left-10 z-10 bg-white min-w-[170px]">
                       {r.siswa.namaLengkap}
                       <span className="block text-[10px] font-normal text-slate-500 font-mono">{r.siswa.nisn || '-'} • {r.siswa.rombelSaatIni}</span>
                     </td>
@@ -294,6 +352,17 @@ export const LegerNilaiView: React.FC<LegerNilaiViewProps> = ({
               )}
             </tbody>
           </table>
+        </div>
+        <div className="print:hidden">
+          <PageControl
+            page={safePage}
+            totalPages={totalPages}
+            totalItems={barisTampil.length}
+            pageSize={pageSize}
+            itemName="siswa"
+            onPageChange={setPage}
+            onPageSizeChange={(n) => { setPageSize(n); setPage(1); }}
+          />
         </div>
       </div>
     </div>

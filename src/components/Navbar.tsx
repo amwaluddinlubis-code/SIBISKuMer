@@ -112,7 +112,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'dokumen', label: 'Generator Dokumen', icon: FileText, badge: undefined },
     { id: 'referensi', label: 'Data Referensi', icon: Layers, badge: undefined },
     { id: 'gtk', label: 'Data GTK', icon: Contact, badge: undefined },
-    { id: 'arsip', label: 'Arsip Tahun Ajaran', icon: Archive, badge: undefined },
+    { id: 'arsip', label: 'Arsip', icon: Archive, badge: undefined },
     { id: 'pemeriksa', label: 'Pemeriksa Data', icon: ShieldCheck, badge: undefined },
   ];
 
@@ -120,7 +120,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const adminMenu = [
     { id: 'dapodik', label: 'Sinkron Dapodik', icon: RefreshCw },
     { id: 'pemetaan', label: 'Pemetaan Kelas', icon: LayoutGrid },
-    { id: 'pengaturan', label: 'Profil Sekolah', icon: Settings },
+    { id: 'pengaturan', label: 'Pengaturan', icon: Settings },
     { id: 'backup', label: 'Backup & Restore', icon: Database },
     { id: 'users', label: 'Manajemen Pengguna', icon: UserCog },
     { id: 'audit', label: 'Log Audit', icon: ScrollText },

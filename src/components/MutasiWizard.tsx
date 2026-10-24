@@ -524,7 +524,12 @@ export const MutasiWizard: React.FC<MutasiWizardProps> = ({
             <ChevronLeft className="w-4 h-4" /> {step > 1 ? 'Kembali' : 'Batal'}
           </button>
           {step < 3 ? (
-            <button onClick={lanjut} className="ui-btn ui-btn-primary" disabled={saving}>
+            <button
+              onClick={lanjut}
+              className="ui-btn ui-btn-primary"
+              disabled={saving || (mode === 'keluar' && step === 1 && !siswaDipilih)}
+              title={mode === 'keluar' && step === 1 && !siswaDipilih ? 'Pilih siswa terlebih dahulu' : undefined}
+            >
               Lanjut <ChevronRight className="w-4 h-4" />
             </button>
           ) : (

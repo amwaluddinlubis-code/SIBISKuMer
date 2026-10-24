@@ -1,20 +1,24 @@
-import React from 'react';
-import { 
-  X, 
-  Printer, 
-  CreditCard, 
-  Edit, 
-  Trash2, 
-  User, 
-  Sparkles, 
-  Heart, 
-  School, 
-  Users, 
+import React, { useState } from 'react';
+import {
+  X,
+  Printer,
+  CreditCard,
+  Edit,
+  Trash2,
+  User,
+  Sparkles,
+  Heart,
+  School,
+  Users,
   Calendar,
   MapPin,
-  FileText
+  FileText,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { Siswa, SekolahProfile } from '../types';
+import { formatAlamatLengkap, sensorNilai } from '../utils/format';
+import { catatAudit } from '../utils/audit';
 
 interface SiswaDetailModalProps {
   siswa: Siswa;
@@ -33,6 +37,19 @@ export const SiswaDetailModal: React.FC<SiswaDetailModalProps> = ({
   onPrintLembar,
   onDelete
 }) => {
+  // Fase 2 §11: NIK / No. KK / telepon orang tua disensor bawaan; tombol
+  // "Lihat" membuka semuanya sekaligus dan TERCATAT di log audit.
+  const [sensitifTerbuka, setSensitifTerbuka] = useState(false);
+  const tampilkanSensitif = (v?: string) => (sensitifTerbuka ? v || '-' : sensorNilai(v));
+  const bukaSensitif = () => {
+    setSensitifTerbuka(true);
+    catatAudit('data_sensitif_dilihat', {
+      entitas: 'siswa',
+      entitasId: siswa.id,
+      ringkasan: `Data sensitif (NIK/KK/telepon) "${siswa.namaLengkap}" ditampilkan dari pratinjau`,
+    });
+  };
+
   const formatDateIndo = (dateStr?: string) => {
     if (!dateStr) return '-';
     try {
@@ -139,11 +156,22 @@ export const SiswaDetailModal: React.FC<SiswaDetailModalProps> = ({
               </div>
               <div>
                 <span className="text-slate-500 block">NIK Siswa:</span>
-                <span className="font-mono text-slate-900">{siswa.nik || '-'}</span>
+                <span className="font-mono text-slate-900">{tampilkanSensitif(siswa.nik)}</span>
               </div>
               <div>
                 <span className="text-slate-500 block">Nomor KK:</span>
-                <span className="font-mono text-slate-900">{siswa.noKk || '-'}</span>
+                <span className="font-mono text-slate-900">{tampilkanSensitif(siswa.noKk)}</span>
+              </div>
+              <div className="col-span-2 sm:col-span-3">
+                <button
+                  type="button"
+                  onClick={() => (sensitifTerbuka ? setSensitifTerbuka(false) : bukaSensitif())}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
+                  aria-pressed={sensitifTerbuka}
+                >
+                  {sensitifTerbuka ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  {sensitifTerbuka ? 'Sembunyikan NIK, KK & telepon' : 'Lihat NIK, KK & telepon (tercatat di log audit)'}
+                </button>
               </div>
               <div>
                 <span className="text-slate-500 block">Anak Ke-:</span>
@@ -170,7 +198,7 @@ export const SiswaDetailModal: React.FC<SiswaDetailModalProps> = ({
                 Domisili & Jarak
               </h4>
               <p className="text-[11px] text-slate-800 leading-snug">
-                {siswa.alamat} RT {siswa.rt} RW {siswa.rw}, Kel. {siswa.kelurahan}, Kec. {siswa.kecamatan}
+                {formatAlamatLengkap(siswa)}
               </p>
               <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-200 flex justify-between">
                 <span>Tinggal bersama: <strong>{siswa.tinggalDengan}</strong></span>
@@ -187,12 +215,12 @@ export const SiswaDetailModal: React.FC<SiswaDetailModalProps> = ({
                 <div>
                   <span className="text-slate-500">Ayah: </span>
                   <strong className="text-slate-900">{siswa.ayah?.nama || '-'}</strong>
-                  <span className="text-slate-500 text-[10px] block">({siswa.ayah?.pekerjaan || '-'}, Telp: {siswa.ayah?.noTelepon || '-'})</span>
+                  <span className="text-slate-500 text-[10px] block">({siswa.ayah?.pekerjaan || '-'}, Telp: {tampilkanSensitif(siswa.ayah?.noTelepon)})</span>
                 </div>
                 <div>
                   <span className="text-slate-500">Ibu: </span>
                   <strong className="text-slate-900">{siswa.ibu?.nama || '-'}</strong>
-                  <span className="text-slate-500 text-[10px] block">({siswa.ibu?.pekerjaan || '-'}, Telp: {siswa.ibu?.noTelepon || '-'})</span>
+                  <span className="text-slate-500 text-[10px] block">({siswa.ibu?.pekerjaan || '-'}, Telp: {tampilkanSensitif(siswa.ibu?.noTelepon)})</span>
                 </div>
               </div>
             </div>

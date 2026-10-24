@@ -378,9 +378,13 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
       try {
         localStorage.removeItem(draftKey());
       } catch { /* abaikan */ }
-      toast(`Data "${formData.namaLengkap.trim()}" berhasil disimpan.`, 'success');
+      // Fase 3 §15: toast sukses/gagal diterbitkan SATU kali oleh pemanggil
+      // (App.handleSaveSiswa) — menerbitkannya di sini juga membuat duplikat.
       onClose();
     } catch (err: any) {
+      // Penanda batal dari App (konfirmasi ditolak / akses ditolak): form
+      // tetap terbuka dan draft dipertahankan, tanpa toast galat.
+      if (err?.message === '__SIMPAN_DIBATALKAN__') return;
       toast(`Gagal menyimpan data siswa: ${err.message}`, 'error');
     } finally {
       setSaving(false);
@@ -519,7 +523,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
             />
           </div>
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">NIK {label} <span title="Terkunci Dapodik">🔒</span></label>
+            <label className="block font-semibold text-slate-700 mb-1">NIK {label} {lockedNik && <span title="Terkunci Dapodik">🔒</span>}</label>
             <input
               type="text"
               maxLength={16}
@@ -695,7 +699,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">NISN (10 Digit) * <span title="Terkunci Dapodik">🔒</span></label>
+                  <label className="block font-semibold text-slate-700 mb-1">NISN (10 Digit) * {kunciNilai(initialData?.nisn) && <span title="Terkunci Dapodik">🔒</span>}</label>
                   <input
                     type="text"
                     required
@@ -711,7 +715,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                   {errText('nisn')}
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">No. Induk / NIPD <span title="Terkunci Dapodik">🔒</span></label>
+                  <label className="block font-semibold text-slate-700 mb-1">No. Induk / NIPD {kunciNilai(initialData?.nipd) && <span title="Terkunci Dapodik">🔒</span>}</label>
                   <input
                     type="text"
                     value={formData.nipd}
@@ -724,7 +728,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                   {errText('nipd')}
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Jenis Kelamin *</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Jenis Kelamin * {isEdit && <span title="Terkunci Dapodik">🔒</span>}</label>
                   <select
                     value={formData.jenisKelamin}
                     disabled={isEdit}
@@ -740,7 +744,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">NIK / No. KTP Siswa <span title="Terkunci Dapodik">🔒</span></label>
+                  <label className="block font-semibold text-slate-700 mb-1">NIK / No. KTP Siswa {kunciNilai(initialData?.nik) && <span title="Terkunci Dapodik">🔒</span>}</label>
                   <input
                     type="text"
                     inputMode="numeric"
@@ -755,7 +759,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                   {errText('nik')}
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">No. Kartu Keluarga (KK) <span title="Terkunci Dapodik">🔒</span></label>
+                  <label className="block font-semibold text-slate-700 mb-1">No. Kartu Keluarga (KK) {kunciNilai(initialData?.noKk) && <span title="Terkunci Dapodik">🔒</span>}</label>
                   <input
                     type="text"
                     inputMode="numeric"
@@ -770,7 +774,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                   {errText('noKk')}
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">No. Registrasi Akta Lahir <span title="Terkunci Dapodik">🔒</span></label>
+                  <label className="block font-semibold text-slate-700 mb-1">No. Registrasi Akta Lahir {kunciNilai(initialData?.noAktaLahir) && <span title="Terkunci Dapodik">🔒</span>}</label>
                   <input
                     type="text"
                     value={formData.noAktaLahir}
@@ -785,7 +789,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Tempat Lahir <span title="Terkunci Dapodik">🔒</span></label>
+                  <label className="block font-semibold text-slate-700 mb-1">Tempat Lahir {kunciNilai(initialData?.tempatLahir) && <span title="Terkunci Dapodik">🔒</span>}</label>
                   <input
                     type="text"
                     value={formData.tempatLahir}
@@ -797,7 +801,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Tanggal Lahir <span title="Terkunci Dapodik">🔒</span></label>
+                  <label className="block font-semibold text-slate-700 mb-1">Tanggal Lahir {kunciNilai(initialData?.tanggalLahir) && <span title="Terkunci Dapodik">🔒</span>}</label>
                   <input
                     type="date"
                     value={formData.tanggalLahir}
@@ -962,7 +966,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block font-semibold text-slate-700 mb-1">NIK Wali <span title="Terkunci Dapodik">🔒</span></label>
+                      <label className="block font-semibold text-slate-700 mb-1">NIK Wali {kunciNilai(initialData?.wali?.nik) && <span title="Terkunci Dapodik">🔒</span>}</label>
                       <input
                         type="text"
                         inputMode="numeric"
@@ -1214,8 +1218,10 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
             </div>
           )}
 
-          {/* Footer wizard — sticky, tombol full-width di mobile */}
-          <div className="pt-4 border-t border-slate-200 sticky bottom-0 bg-white pb-1">
+          {/* Footer wizard — sticky, tombol full-width di mobile.
+              Fase 2 §12: padding bawah diperbesar + ruang aman di akhir
+              konten agar bilah tombol tidak menutupi baris terbawah. */}
+          <div className="pt-4 mt-2 border-t border-slate-200 sticky bottom-0 bg-white pb-3">
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2">
               <button
                 type="button"

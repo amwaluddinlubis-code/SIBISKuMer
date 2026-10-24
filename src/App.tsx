@@ -128,21 +128,45 @@ const TAB_META: Record<string, { title: string; subtitle: string; accent: 'blue'
   dokumen: { title: 'Generator Dokumen', subtitle: 'Surat keterangan aktif, pindah, panggilan ortu & daftar rombel', accent: 'indigo', icon: FileText },
   referensi: { title: 'Data Referensi', subtitle: 'Rombel, PTK & profil sekolah hasil sinkronisasi', accent: 'purple', icon: Layers },
   gtk: { title: 'Data GTK', subtitle: 'Guru & tendik hasil sinkronisasi Dapodik (getGtk/getPTK)', accent: 'indigo', icon: Contact },
-  arsip: { title: 'Arsip Tahun Ajaran', subtitle: 'Potret terkunci per tahun + tutup tahun & promosi massal', accent: 'slate', icon: Archive },
+  arsip: { title: 'Arsip', subtitle: 'Arsip tahun ajaran: potret terkunci per tahun + tutup tahun & promosi massal', accent: 'slate', icon: Archive },
   pemeriksa: { title: 'Pemeriksa Data', subtitle: 'Kelengkapan, validitas, inkonsistensi & kemungkinan duplikat siswa', accent: 'emerald', icon: LayoutDashboard },
   pemetaan: { title: 'Pemetaan Kelas', subtitle: 'Daftar rombel resmi per tahun ajaran', accent: 'amber', icon: LayoutGrid },
-  pengaturan: { title: 'Profil Sekolah', subtitle: 'Identitas, periode aktif & konfigurasi layanan', accent: 'slate', icon: Settings },
+  pengaturan: { title: 'Pengaturan', subtitle: 'Profil sekolah: identitas, periode aktif & konfigurasi layanan', accent: 'slate', icon: Settings },
   users: { title: 'Manajemen Pengguna', subtitle: 'Akun administrator & operator beserta batas rombel', accent: 'purple', icon: UserCog },
   backup: { title: 'Backup & Restore', subtitle: 'Cadangan JSON lokal & Google Drive', accent: 'rose', icon: Database },
   audit: { title: 'Log Audit', subtitle: 'Jejak siapa-ubah-apa di database ini', accent: 'slate', icon: ScrollText },
 };
 
-/** Fallback saat chunk tab/modal diunduh (sekaligus menjawab backlog skeleton loading). */
+/** Fallback saat chunk tab/modal diunduh — Fase 3 §15: SKELETON halaman
+ *  (kerangka kartu + baris tabel berdenyut) menggantikan spinner polos,
+ *  agar perpindahan menu terasa seperti halaman yang sedang terbentuk. */
 function TabLoading() {
   return (
-    <div className="flex flex-col items-center justify-center py-20 space-y-3 anim-fade-up" aria-live="polite">
-      <div className="w-8 h-8 border-[3px] border-indigo-600 border-t-transparent rounded-full animate-spin" />
-      <p className="text-xs text-slate-500 font-medium">Memuat halaman…</p>
+    <div className="space-y-4 anim-fade-up" aria-live="polite" aria-label="Memuat halaman">
+      <div className="ui-card p-4 space-y-3">
+        <div className="h-4 w-48 rounded bg-slate-200 animate-pulse" />
+        <div className="h-3 w-72 max-w-full rounded bg-slate-100 animate-pulse" />
+        <div className="flex flex-wrap gap-2 pt-1">
+          <div className="h-8 w-28 rounded-lg bg-slate-200 animate-pulse" />
+          <div className="h-8 w-28 rounded-lg bg-slate-100 animate-pulse" />
+          <div className="h-8 w-28 rounded-lg bg-slate-100 animate-pulse" />
+        </div>
+      </div>
+      <div className="ui-card overflow-hidden">
+        <div className="p-4 space-y-2.5">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-slate-200 animate-pulse shrink-0" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-3 rounded bg-slate-200 animate-pulse" style={{ width: `${72 - i * 7}%` }} />
+                <div className="h-2.5 rounded bg-slate-100 animate-pulse" style={{ width: `${48 - i * 4}%` }} />
+              </div>
+              <div className="h-5 w-14 rounded-full bg-slate-100 animate-pulse shrink-0" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <p className="text-center text-xs text-slate-400 font-medium">Memuat halaman…</p>
     </div>
   );
 }
@@ -970,7 +994,8 @@ export default function App() {
   const handleSaveSiswa = async (siswaData: Siswa) => {
     if (!canUserAccessRombel(currentUser, siswaData.rombelSaatIni)) {
       toast(`Akses ditolak: rombel ${siswaData.rombelSaatIni} di luar kewenangan Anda.`, 'error');
-      return;
+      // Lempar penanda batal agar form TIDAK ikut tertutup / membuang draft.
+      throw new Error('__SIMPAN_DIBATALKAN__');
     }
     const prev = (siswaList || []).find((s) => s.id === siswaData.id);
     // Input manual: siswa baru dikonfirmasi masuk ke tahun sesi aktif.
@@ -980,7 +1005,7 @@ export default function App() {
         `"${(siswaData.namaLengkap || 'Siswa baru').trim()}" akan didaftarkan pada tahun sesi aktif (TA ${sesiLabel}). Lanjutkan?`,
         { confirmLabel: 'Ya, Daftarkan' }
       );
-      if (!ok) return;
+      if (!ok) throw new Error('__SIMPAN_DIBATALKAN__');
     }
     const keep = (oldV: unknown, newV: unknown) =>
       String(oldV ?? '').trim() !== '' ? oldV : newV;

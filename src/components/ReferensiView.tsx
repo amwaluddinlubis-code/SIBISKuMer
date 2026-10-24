@@ -111,6 +111,15 @@ export const ReferensiView: React.FC<ReferensiViewProps> = ({
         <p className="text-xs text-slate-500 mb-3">
           Rombongan belajar, PTK, dan profil sekolah hasil sinkronisasi Web Service Dapodik.
         </p>
+        {/* Fase 2 §13: cegah salah tafsir "data hilang" — angka tab adalah
+            hasil sinkron terakhir; bandingkan dengan data lokal yang hidup. */}
+        <p className="text-[11px] text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-3" role="note">
+          Angka pada tab adalah <strong>hasil sinkronisasi Dapodik terakhir</strong>
+          {' '}(saat ini {rombel.length} rombel &amp; {ptk.length} PTK tersinkron). Sebagai pembanding,
+          data lokal memuat <strong>{new Set((siswa || []).map((s) => (s.rombelSaatIni || '').trim()).filter(Boolean)).size} rombel
+          dari {siswa.length} siswa</strong>. Bila angka tersinkron 0 tetapi data lokal terisi,
+          artinya sinkronisasi belum pernah dijalankan — data siswa Anda tidak hilang.
+        </p>
         <div className="flex flex-wrap gap-2">
           {tabs.map((t) => {
             const Icon = t.icon;

@@ -56,10 +56,15 @@ function FotoSiswa({ siswa, terang }: { siswa: Siswa; terang?: boolean }) {
   );
 }
 
+/** Chip NISN pada kartu. Fase 3 §15: garis "barcode" tiruan sebelumnya
+ *  DIHAPUS — barcode palsu yang tidak bisa dipindai lebih buruk daripada
+ *  tidak ada barcode. NISN ditampilkan sebagai angka terbaca; barcode
+ *  asli (Code128) memerlukan pustaka terverifikasi sebagai keputusan
+ *  dependensi terpisah. */
 function BarcodeNisn({ nisn, terang }: { nisn?: string; terang?: boolean }) {
   return (
     <div className={`font-mono tracking-widest text-[9px] px-1.5 py-0.5 rounded ${terang ? 'bg-slate-900 text-white' : 'bg-white text-black'}`}>
-      ||| | | |||| | ||| | {nisn || '0091234567'}
+      NISN {nisn || '-'}
     </div>
   );
 }
@@ -81,7 +86,7 @@ function Ketentuan({ sekolah, terang, aksen }: { sekolah: SekolahProfile; terang
           {list.map((k, i) => <li key={i}>{k}</li>)}
         </ol>
       </div>
-      <div className={`flex items-end justify-between border-t pt-1 text-[7px] ${terang ? 'text-slate-500 border-slate-200' : 'text-slate-400 border-slate-800'}`}>
+      <div className={`flex items-end justify-between border-t pt-1 text-[8px] ${terang ? 'text-slate-500 border-slate-200' : 'text-slate-400 border-slate-800'}`}>
         <div><p>{sekolah.alamat}</p><p>Telp: {sekolah.telepon}</p></div>
         <div className="text-center">
           <p>Kepala Sekolah</p>
@@ -181,20 +186,20 @@ export const KartuDepan: React.FC<KartuProps> = ({ siswa, sekolah, jenjang, fase
 export const KartuBelakang: React.FC<KartuProps> = ({ sekolah, template }) => {
   if (template === 'modern') {
     return (
-      <div className="w-[85.6mm] h-[53.98mm] mx-auto bg-white text-slate-800 rounded-xl shadow-xl overflow-hidden border border-slate-200 p-3 flex flex-col justify-between text-[8px]">
+      <div className="w-[85.6mm] h-[53.98mm] mx-auto bg-white text-slate-800 rounded-xl shadow-xl overflow-hidden border border-slate-200 p-3 flex flex-col justify-between text-[9px]">
         <Ketentuan sekolah={sekolah} terang aksen="text-indigo-800 border-indigo-100" />
       </div>
     );
   }
   if (template === 'minimal') {
     return (
-      <div className="w-[85.6mm] h-[53.98mm] mx-auto bg-white text-slate-800 rounded-md shadow-xl overflow-hidden p-3 border-2 border-double border-slate-800 flex flex-col justify-between text-[8px]">
+      <div className="w-[85.6mm] h-[53.98mm] mx-auto bg-white text-slate-800 rounded-md shadow-xl overflow-hidden p-3 border-2 border-double border-slate-800 flex flex-col justify-between text-[9px]">
         <Ketentuan sekolah={sekolah} terang aksen="border-slate-300" />
       </div>
     );
   }
   return (
-    <div className="w-[85.6mm] h-[53.98mm] mx-auto bg-slate-900 text-white rounded-xl shadow-xl overflow-hidden p-3 border border-slate-700 flex flex-col justify-between text-[8px]">
+    <div className="w-[85.6mm] h-[53.98mm] mx-auto bg-slate-900 text-white rounded-xl shadow-xl overflow-hidden p-3 border border-slate-700 flex flex-col justify-between text-[9px]">
       <Ketentuan sekolah={sekolah} aksen="text-amber-300 border-slate-700" />
     </div>
   );

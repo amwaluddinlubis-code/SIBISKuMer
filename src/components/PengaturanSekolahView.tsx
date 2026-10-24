@@ -127,8 +127,8 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
     toast('Baris kop diisi otomatis dari profil. Simpan untuk menerapkan.', 'info');
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSave = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     const issues = validateSekolahProfile(profile);
     if (issues.length > 0) {
       toast(issues[0], 'error');
@@ -1116,6 +1116,26 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
               ))}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Fase 2 §14: bilah simpan MENEMPEL di bawah layar — halaman ini
+          panjang (Identitas, Kop Surat, Tampilan, Cadangan) dan semua
+          bagian mengedit state profil yang sama; pengguna tidak perlu
+          lagi berburu tombol simpan di tengah halaman. */}
+      <div className="sticky bottom-3 z-30 print:hidden">
+        <div className="bg-navy-950/95 backdrop-blur text-white rounded-2xl shadow-xl px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-slate-300">
+            Perubahan pada <strong className="text-white">seluruh bagian halaman ini</strong> diterapkan lewat tombol ini.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            className="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-xs transition cursor-pointer text-xs"
+          >
+            <Save className="w-4 h-4" />
+            Simpan Profil Sekolah
+          </button>
         </div>
       </div>
     </div>

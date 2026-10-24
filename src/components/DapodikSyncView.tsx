@@ -747,17 +747,17 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Semester ID Aktif
+                  Semester Aktif
                 </label>
                 <select
                   value={cfg.semesterId}
                   onChange={(e) => setCfg({ ...cfg, semesterId: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none bg-white"
                 >
-                  <option value="20261">2026/2027 Ganjil (20261) — aktif</option>
-                  <option value="20262">2026/2027 Genap (20262)</option>
+                  <option value="20261">2026/2027 Ganjil — aktif</option>
+                  <option value="20262">2026/2027 Genap</option>
                   {!['20261', '20262'].includes(cfg.semesterId) && cfg.semesterId && (
-                    <option value={cfg.semesterId}>Tersimpan: {cfg.semesterId} (ganti ke 20261)</option>
+                    <option value={cfg.semesterId}>Semester tersimpan sebelumnya (pilih salah satu di atas)</option>
                   )}
                 </select>
               </div>
@@ -1163,7 +1163,7 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
             <div className="space-y-2">
               <h4 className="font-bold text-xs uppercase tracking-wide text-slate-900 flex items-center gap-1.5">
                 <Users className="w-4 h-4 text-indigo-700" />
-                Pendidik & Tenaga Kependidikan (getPTK)
+                Pendidik & Tenaga Kependidikan
               </h4>
               <div className="overflow-x-auto border border-slate-200 rounded-lg">
                 <table className="w-full text-left text-xs">

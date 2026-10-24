@@ -38,7 +38,6 @@ import {
 } from '../types';
 import {
   getTingkatOptions,
-  getDefaultRombelOptions,
   getDefaultMataPelajaran,
   calculatePredikat,
   generateDeskripsiOtomatis,
@@ -90,14 +89,19 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
 }) => {
   const jenjang = sekolah.jenjang || (sekolah.bentukPendidikan?.toUpperCase().includes('SD') ? 'SD' : 'SMP');
   const tingkatOptions = useMemo(() => getTingkatOptions(jenjang), [jenjang]);
+  // Fase 2 §10: opsi rombel dibangun dari rombel yang BENAR-BENAR ada pada
+  // data (rombel saat ini + rombel pada raport/riwayat), meniru pola Pusat
+  // Laporan — bukan templat bawaan jenjang yang memunculkan rombel hantu.
   const rombelOptions = useMemo(() => {
     const list = new Set<string>();
-    getDefaultRombelOptions(jenjang).forEach((r) => list.add(r));
     siswaList.forEach((s) => {
       if (s.rombelSaatIni) list.add(s.rombelSaatIni);
+      getRaportList(s).forEach((r) => {
+        if (r.rombel) list.add(r.rombel);
+      });
     });
     return Array.from(list).sort();
-  }, [jenjang, siswaList]);
+  }, [siswaList]);
 
   // Year choices: dari profil + sesi login + data (tanpa tahun contoh statis,
   // agar database baru/kosong tidak memunculkan opsi tahun lama).
@@ -1092,6 +1096,12 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
                   <BookOpen className="w-4 h-4 text-blue-700" />
                   Daftar Nilai Akhir & Deskripsi Capaian Kompetensi (Kurikulum Merdeka)
                 </h3>
+
+                {/* Fase 3 §15: legenda predikat & kehadiran agar singkatan tidak ditebak. */}
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  <strong className="text-slate-700">Predikat:</strong> A = 90–100 • B = 80–89 • C = 70–79 • D = di bawah 70.
+                  {' '}<strong className="text-slate-700">Kehadiran:</strong> S = Sakit • I = Izin • A = Alpa (tanpa keterangan).
+                </p>
 
                 <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
                   <table className="w-full text-left text-xs">

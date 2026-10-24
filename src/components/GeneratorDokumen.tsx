@@ -319,35 +319,27 @@ export const GeneratorDokumen: React.FC<GeneratorDokumenProps> = ({ siswa, sekol
                   <input value={nomorManual} onChange={(e) => setNomorManual(e.target.value)} placeholder="cth. 421/123/2026" className="ui-input font-mono" />
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="ui-label">Nomor urut *</label>
-                    <input
-                      type="number"
-                      min={meta.perluNomor ? 1 : 0}
-                      value={nomorUrut}
-                      onChange={(e) => setNomorUrut(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
-                      className="ui-input font-mono"
-                    />
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      Saran berikutnya: <strong>{saranNomorUrut(penomoranAktif)}</strong> (terakhir terpakai: {penomoranAktif.nomorTerakhir})
-                    </p>
-                  </div>
-                  <div>
-                    <label className="ui-label">Tanggal surat *</label>
-                    <input type="date" value={tanggalSurat} onChange={(e) => setTanggalSurat(e.target.value)} className="ui-input" />
-                  </div>
-                </div>
-              )}
-              {pakaiManual && (
                 <div>
-                  <label className="ui-label">Tanggal surat *</label>
-                  <input type="date" value={tanggalSurat} onChange={(e) => setTanggalSurat(e.target.value)} className="ui-input" />
+                  <label className="ui-label">Nomor urut *</label>
+                  <input
+                    type="number"
+                    min={meta.perluNomor ? 1 : 0}
+                    value={nomorUrut}
+                    onChange={(e) => setNomorUrut(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+                    className="ui-input font-mono"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Saran berikutnya: <strong>{saranNomorUrut(penomoranAktif)}</strong> (terakhir terpakai: {penomoranAktif.nomorTerakhir})
+                  </p>
                 </div>
               )}
+              {/* Fase 3 §15: SATU pemilih tanggal untuk kedua mode nomor. */}
+              <div>
+                <label className="ui-label">Tanggal surat *</label>
+                <input type="date" value={tanggalSurat} onChange={(e) => setTanggalSurat(e.target.value)} className="ui-input" />
+              </div>
               <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
                 Nomor yang akan tercetak: <strong className="font-mono">{nomorPratinjau}</strong>
-                {!pakaiManual && <span className="text-slate-500"> (pola: <span className="font-mono">{penomoranAktif.pola}</span>)</span>}
               </p>
               {isAdmin && !pakaiManual && (
                 <button

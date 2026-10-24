@@ -9,7 +9,17 @@ export interface ToastPayload {
 let toastSeq = 0;
 const toastTarget = new EventTarget();
 
+// Fase 3 §15: dedupe toast — pesan+jenis yang sama dalam 2 detik hanya
+// tampil sekali (beberapa alur menerbitkan notifikasi yang sama dua kali).
+let toastTerakhir: { kunci: string; pada: number } | null = null;
+
 export function toast(message: string, kind: ToastKind = 'info'): void {
+  const kunci = `${kind}::${message}`;
+  const kini = Date.now();
+  if (toastTerakhir && toastTerakhir.kunci === kunci && kini - toastTerakhir.pada < 2000) {
+    return;
+  }
+  toastTerakhir = { kunci, pada: kini };
   toastSeq += 1;
   const payload: ToastPayload = { id: toastSeq, kind, message };
   toastTarget.dispatchEvent(new CustomEvent<ToastPayload>('app-toast', { detail: payload }));

@@ -353,7 +353,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/80 backdrop-blur-sm overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950 overflow-y-auto">
       <div className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-white/20 overflow-hidden my-8 anim-scale-in grid md:grid-cols-[1fr_1.1fr]">
         {/* Panel branding */}
         <div className="hidden md:flex flex-col justify-between relative overflow-hidden bg-gradient-to-b from-navy-800 via-navy-900 to-[#0b1e4b] text-white p-7">

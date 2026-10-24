@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefKode, labelKode } from '../data/referensi';
+import { RefKode } from '../data/referensi';
 
 interface KodeSelectProps {
   id?: string;
@@ -11,9 +11,10 @@ interface KodeSelectProps {
   required?: boolean;
 }
 
-/** Dropdown "kode – uraian" untuk tabel referensi Dapodik.
- *  Nilai lama yang tak ada di tabel tetap ditampilkan sebagai opsi
- *  "(data lama)" agar tidak hilang saat dibuka untuk diubah. */
+/** Dropdown tabel referensi Dapodik. Fase 2 §8: label hanya menampilkan
+ *  uraian manusiawi — kode angka Dapodik tidak ditampilkan ke pengguna
+ *  (nilai tersimpan tidak berubah). Nilai lama yang tak ada di tabel
+ *  tetap ditampilkan sebagai opsi "(data lama)" agar tidak hilang. */
 export const KodeSelect: React.FC<KodeSelectProps> = ({
   id,
   value,
@@ -42,7 +43,7 @@ export const KodeSelect: React.FC<KodeSelectProps> = ({
       )}
       {options.map((o) => (
         <option key={`${o.kode}-${o.nilai}`} value={o.nilai}>
-          {labelKode(o)}
+          {o.uraian}
         </option>
       ))}
     </select>

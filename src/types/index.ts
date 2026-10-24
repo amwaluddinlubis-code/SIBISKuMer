@@ -649,6 +649,7 @@ export type AuditAksi =
   | 'siswa_tambah'
   | 'siswa_ubah'
   | 'siswa_hapus'
+  | 'data_sensitif_dilihat'
   | 'mutasi_masuk'
   | 'mutasi_keluar'
   | 'tutup_tahun'
