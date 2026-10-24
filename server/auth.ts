@@ -11,6 +11,7 @@ import {
   dbSekolah,
   simpanEntriSekolah,
   userByUsername,
+  userById,
   simpanUser,
   semuaUsers,
   semuaSiswa,
@@ -225,6 +226,69 @@ export function sesiDariToken(token: string | null | undefined): SesiServer | nu
 
 export function akhiriSesi(token: string): void {
   dbRegistry().prepare('DELETE FROM sesi WHERE token = ?').run(token);
+}
+
+// ---------------- Ganti kata sandi (sesi sendiri) ----------------
+
+/** Ganti kata sandi pemilik sesi (dipakai alur ganti-paksa & menu akun
+ *  pada mode server). Menghapus mustChangePassword. */
+export async function gantiSandiSesi(sesi: SesiServer, passwordBaru: string): Promise<any> {
+  const db = dbSekolah(sesi.sekolahId);
+  const user = userById(db, sesi.userId);
+  if (!user) throw new Error('Pengguna sesi tidak ditemukan.');
+  user.password = await hashPassword(passwordBaru);
+  user.mustChangePassword = false;
+  user.updatedAt = new Date().toISOString();
+  simpanUser(db, user);
+  return user;
+}
+
+// ---------------- Impersonate (Fase S3) ----------------
+
+/** Buat sesi impersonate: sesi BARU untuk user target yang mencatat
+ *  impersonator + token induk, agar berhenti-impersonate dapat
+ *  mengembalikan cookie ke sesi admin tanpa token admin pernah
+ *  meninggalkan server. */
+export function buatSesiImpersonate(
+  sesiAdmin: SesiServer,
+  target: any
+): SesiServer {
+  const token = randomBytes(32).toString('hex');
+  const dibuat = new Date();
+  const kedaluwarsa = new Date(dibuat.getTime() + SESI_JAM * 3600 * 1000);
+  dbRegistry().prepare(
+    'INSERT INTO sesi (token, sekolah_id, user_id, username, peran, impersonator_id, token_induk, dibuat_pada, kedaluwarsa_pada) ' +
+    'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(
+    token,
+    sesiAdmin.sekolahId,
+    target.id,
+    target.username,
+    target.role,
+    sesiAdmin.userId,
+    sesiAdmin.token,
+    dibuat.toISOString(),
+    kedaluwarsa.toISOString()
+  );
+  return {
+    token,
+    sekolahId: sesiAdmin.sekolahId,
+    userId: target.id,
+    username: target.username,
+    peran: target.role,
+    impersonatorId: sesiAdmin.userId,
+  };
+}
+
+/** Akhiri sesi impersonate dan kembalikan token induk (admin), atau
+ *  null bila sesi ini bukan sesi impersonate / induk sudah tidak sah. */
+export function akhiriImpersonate(sesi: SesiServer): string | null {
+  const b = dbRegistry().prepare('SELECT token_induk FROM sesi WHERE token = ?')
+    .get(sesi.token) as any;
+  const induk: string | null = b?.token_induk || null;
+  akhiriSesi(sesi.token);
+  if (!induk) return null;
+  return sesiDariToken(induk) ? induk : null;
 }
 
 // ---------------- Aturan akses (cermin utils/db.ts klien) ----------------

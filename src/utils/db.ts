@@ -7,6 +7,11 @@ import { toast } from './notify';
 // di dalam badan fungsi (tidak saat evaluasi modul).
 import { muatTombstoneLokal, simpanTombstoneLokal } from './tombstone';
 import { bolehImporEntriAudit } from './auditSanitasi';
+// Fase S3 migrasi SQLite: pada mode utama 'server', fungsi inti di bawah
+// dirutekan ke API SQLite (modul dataApi) — tanda tangan & semantik untuk
+// pemanggil tidak berubah. Mode 'lokal' (bawaan) tidak tersentuh sama sekali.
+import { pakaiServer } from './modeData';
+import * as api from './dataApi';
 // Issue #10 — integritas (SHA-256), kompatibilitas & validasi struktur backup.
 import {
   BACKUP_FORMAT_VERSION,
@@ -685,6 +690,7 @@ async function seedDefaultData(db: IDBDatabase, opts?: { withSample?: boolean })
 // ---------------- SISWA CRUD ----------------
 
 export async function getAllSiswa(): Promise<Siswa[]> {
+  if (pakaiServer()) return api.ambilSiswaDariServer();
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -704,6 +710,7 @@ export async function getAllSiswa(): Promise<Siswa[]> {
 }
 
 export async function getSiswaById(id: string): Promise<Siswa | null> {
+  if (pakaiServer()) return api.ambilSiswaSatuDariServer(id);
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -732,6 +739,10 @@ export async function saveSiswa(siswa: Siswa): Promise<void> {
   // jangan ditulis diam-diam ke localStorage (takkan pernah terbaca lagi).
   if (!siswa || typeof siswa.id !== 'string' || !siswa.id.trim()) {
     throw new Error('saveSiswa dibatalkan: data siswa tanpa id yang valid (id wajib diisi).');
+  }
+  if (pakaiServer()) {
+    await api.simpanSiswaKeServer(siswa);
+    return;
   }
   try {
     const db = await openDB();
@@ -767,6 +778,10 @@ export async function saveSiswa(siswa: Siswa): Promise<void> {
 }
 
 export async function deleteSiswa(id: string): Promise<void> {
+  if (pakaiServer()) {
+    await api.hapusSiswaDariServer(id);
+    return;
+  }
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -789,6 +804,10 @@ export async function deleteSiswa(id: string): Promise<void> {
  */
 export async function saveSiswaBulk(daftar: Siswa[]): Promise<void> {
   if (!daftar || daftar.length === 0) return;
+  if (pakaiServer()) {
+    await api.simpanSiswaBulkKeServer(daftar);
+    return;
+  }
   try {
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
@@ -1126,6 +1145,9 @@ export async function promoteSiswaKenaikanKelas(
 // ---------------- SEKOLAH PROFILE ----------------
 
 export async function getSekolahProfile(): Promise<SekolahProfile> {
+  if (pakaiServer()) {
+    return (await api.ambilProfilDariServer<SekolahProfile>()) ?? { ...defaultSekolahProfile };
+  }
   try {
     const db = await openDB();
     return new Promise((resolve) => {
@@ -1149,6 +1171,10 @@ export async function getSekolahProfile(): Promise<SekolahProfile> {
 }
 
 export async function saveSekolahProfile(profile: SekolahProfile): Promise<void> {
+  if (pakaiServer()) {
+    await api.simpanProfilKeServer(profile);
+    return;
+  }
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -1166,6 +1192,9 @@ export async function saveSekolahProfile(profile: SekolahProfile): Promise<void>
 // ---------------- DAPODIK CONFIG ----------------
 
 export async function getDapodikConfig(): Promise<DapodikConfig> {
+  if (pakaiServer()) {
+    return (await api.ambilConfigDariServer<DapodikConfig>('dapodik')) ?? { ...defaultDapodikConfig };
+  }
   try {
     const db = await openDB();
     return new Promise((resolve) => {
@@ -1189,6 +1218,10 @@ export async function getDapodikConfig(): Promise<DapodikConfig> {
 }
 
 export async function saveDapodikConfig(cfg: DapodikConfig): Promise<void> {
+  if (pakaiServer()) {
+    await api.simpanConfigKeServer('dapodik', cfg);
+    return;
+  }
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -1206,6 +1239,12 @@ export async function saveDapodikConfig(cfg: DapodikConfig): Promise<void> {
 // ---------------- SYNC LOGS ----------------
 
 export async function getSyncLogs(): Promise<DapodikSyncLog[]> {
+  if (pakaiServer()) {
+    const rows = await api.ambilKoleksiDariServer<DapodikSyncLog>('sync_logs');
+    return rows.sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  }
   try {
     const db = await openDB();
     return new Promise((resolve) => {
@@ -1227,6 +1266,10 @@ export async function getSyncLogs(): Promise<DapodikSyncLog[]> {
 }
 
 export async function addSyncLog(log: DapodikSyncLog): Promise<void> {
+  if (pakaiServer()) {
+    await api.simpanKoleksiSatuKeServer('sync_logs', log);
+    return;
+  }
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -1249,6 +1292,12 @@ const AUDIT_MAX = 2000;
 const AUDIT_LS_MIRROR_MAX = 300;
 
 export async function getAuditLogs(limit = 500): Promise<AuditLog[]> {
+  if (pakaiServer()) {
+    const rows = await api.ambilKoleksiDariServer<AuditLog>('audit_logs');
+    return rows
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, Math.max(1, limit));
+  }
   try {
     const db = await openDB();
     const rows: AuditLog[] = await new Promise((resolve) => {
@@ -1277,6 +1326,10 @@ export async function getAuditLogs(limit = 500): Promise<AuditLog[]> {
 }
 
 export async function addAuditLog(entry: AuditLog): Promise<void> {
+  if (pakaiServer()) {
+    await api.simpanKoleksiSatuKeServer('audit_logs', entry);
+    return;
+  }
   try {
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
@@ -1443,6 +1496,10 @@ export async function simpanSnapshotPengaman(payload: string, jumlahSiswa: numbe
 // ---------------- ARSIP TAHUN AJARAN (tutup tahun, terkunci) ----------------
 
 export async function getTutupTahun(): Promise<TutupTahunAjaran[]> {
+  if (pakaiServer()) {
+    const rows = await api.ambilKoleksiDariServer<TutupTahunAjaran>('tutup_tahun');
+    return rows.sort((a, b) => b.tahunAjaran.localeCompare(a.tahunAjaran));
+  }
   try {
     const db = await openDB();
     const rows: TutupTahunAjaran[] = await new Promise((resolve) => {
@@ -1483,6 +1540,10 @@ export async function getTutupTahun(): Promise<TutupTahunAjaran[]> {
 export async function saveTutupTahun(entry: TutupTahunAjaran): Promise<void> {
   const normalized: TutupTahunAjaran = { ...entry, tahunAjaran: entry.tahunAjaran.trim() };
   if (!normalized.tahunAjaran) throw new Error('Tahun ajaran arsip wajib diisi.');
+  if (pakaiServer()) {
+    await api.simpanKoleksiSatuKeServer('tutup_tahun', normalized);
+    return;
+  }
   try {
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
@@ -1510,6 +1571,10 @@ export async function saveTutupTahun(entry: TutupTahunAjaran): Promise<void> {
 /** Buka kunci tahun ajaran (pembatalan administratif; TIDAK mengembalikan
  *  promosi/rombel — perbaiki manual bila perlu). */
 export async function deleteTutupTahun(tahunAjaran: string): Promise<void> {
+  if (pakaiServer()) {
+    await api.hapusKoleksiDariServer('tutup_tahun', tahunAjaran);
+    return;
+  }
   try {
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
@@ -1533,10 +1598,12 @@ export async function deleteTutupTahun(tahunAjaran: string): Promise<void> {
 // ---------------- PEMETAAN KELAS PER TAHUN AJARAN ----------------
 
 export function getAllPetaKelas(): Promise<PetaKelas[]> {
+  if (pakaiServer()) return api.ambilKoleksiDariServer<PetaKelas>('peta_kelas');
   return getAllFromStore<PetaKelas>(STORES.PETA, sk(LS_KEYS.PETA));
 }
 
 export function savePetaKelasList(items: PetaKelas[]): Promise<void> {
+  if (pakaiServer()) return api.gantiKoleksiDiServer('peta_kelas', items);
   return putAllToStore<PetaKelas>(STORES.PETA, sk(LS_KEYS.PETA), items);
 }
 
@@ -1555,11 +1622,16 @@ export function savePetaKelas(item: PetaKelas): Promise<void> {
   };
   if (!normalized.tahunAjaran) return Promise.reject(new Error('Tahun ajaran wajib diisi.'));
   if (!normalized.rombel) return Promise.reject(new Error('Nama rombel wajib diisi.'));
+  if (pakaiServer()) return api.simpanKoleksiSatuKeServer('peta_kelas', normalized);
   return putAllToStore<PetaKelas>(STORES.PETA, sk(LS_KEYS.PETA), [normalized]);
 }
 
 /** Hapus satu baris pemetaan dari IndexedDB + cache localStorage. */
 export async function deletePetaKelas(id: string): Promise<void> {
+  if (pakaiServer()) {
+    await api.hapusKoleksiDariServer('peta_kelas', id);
+    return;
+  }
   try {
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
@@ -1685,18 +1757,22 @@ async function putAllToStore<T extends { id: string }>(
 }
 
 export function getAllRombelRefs(): Promise<RombelRef[]> {
+  if (pakaiServer()) return api.ambilKoleksiDariServer<RombelRef>('rombel');
   return getAllFromStore<RombelRef>(STORES.ROMBEL, sk(LS_KEYS.ROMBEL));
 }
 
 export function saveRombelRefs(items: RombelRef[]): Promise<void> {
+  if (pakaiServer()) return api.gantiKoleksiDiServer('rombel', items);
   return putAllToStore<RombelRef>(STORES.ROMBEL, sk(LS_KEYS.ROMBEL), items);
 }
 
 export function getAllPtkRefs(): Promise<PtkRef[]> {
+  if (pakaiServer()) return api.ambilKoleksiDariServer<PtkRef>('ptk');
   return getAllFromStore<PtkRef>(STORES.PTK, sk(LS_KEYS.PTK));
 }
 
 export function savePtkRefs(items: PtkRef[]): Promise<void> {
+  if (pakaiServer()) return api.gantiKoleksiDiServer('ptk', items);
   return putAllToStore<PtkRef>(STORES.PTK, sk(LS_KEYS.PTK), items);
 }
 
@@ -1708,11 +1784,16 @@ export function savePtkRef(item: PtkRef): Promise<void> {
     source: item.source || 'manual',
     updatedAt: new Date().toISOString(),
   };
+  if (pakaiServer()) return api.simpanKoleksiSatuKeServer('ptk', normalized);
   return putAllToStore<PtkRef>(STORES.PTK, sk(LS_KEYS.PTK), [normalized]);
 }
 
 /** Hapus satu GTK dari IndexedDB + cache localStorage. */
 export async function deletePtkRef(id: string): Promise<void> {
+  if (pakaiServer()) {
+    await api.hapusKoleksiDariServer('ptk', id);
+    return;
+  }
   try {
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
@@ -1757,6 +1838,7 @@ function readUsersFromScopedLS(): AppUser[] {
 }
 
 export async function getAllUsers(): Promise<AppUser[]> {
+  if (pakaiServer()) return api.ambilUsersDariServer<AppUser>();
   try {
     const db = await openDB();
     return new Promise((resolve) => {
@@ -1783,6 +1865,10 @@ export async function getAllUsers(): Promise<AppUser[]> {
 }
 
 export async function saveUser(user: AppUser): Promise<void> {
+  if (pakaiServer()) {
+    await api.simpanUserKeServer(user);
+    return;
+  }
   try {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -1828,6 +1914,10 @@ export async function migrateUserPasswordsToHash(): Promise<number> {
 }
 
 export async function deleteUser(id: string): Promise<void> {
+  if (pakaiServer()) {
+    await api.hapusUserDariServer(id);
+    return;
+  }
   try {
     const db = await openDB();
     await new Promise<void>((resolve, reject) => {
@@ -2020,6 +2110,9 @@ export interface BackupPayload {
 }
 
 export async function exportAllData(): Promise<string> {
+  if (pakaiServer()) {
+    return JSON.stringify(await api.ambilEksporDariServer(), null, 2);
+  }
   const [siswa, sekolah, dapodikConfig, syncLogs, users, rombel, ptk, tutupTahun, petaKelas, audit] = await Promise.all([
     getAllSiswa(),
     getSekolahProfile(),
@@ -2195,6 +2288,41 @@ export async function importBackupData(
   opts?: RestoreOptions
 ): Promise<RestoreResult> {
   const mode: RestoreMode = opts?.mode === 'ganti-total' ? 'ganti-total' : 'gabung';
+  if (pakaiServer()) {
+    // S3 Tahap 1: mode server mendukung PENGGANTIAN TOTAL via API
+    // (transaksi tunggal + snapshot pengaman di server). Mode gabung
+    // belum dirutekan — ditolak dengan pesan jelas, bukan dikerjakan
+    // diam-diam dengan semantik yang salah.
+    if (mode !== 'ganti-total') {
+      return {
+        status: 'ditolak',
+        alasan: 'Mode gabung belum tersedia pada mode server. Gunakan mode Ganti Total, atau matikan Mode Server di Pengaturan untuk penggabungan lokal.',
+        success: false,
+        message: 'Mode gabung belum tersedia pada mode server. Gunakan mode Ganti Total, atau matikan Mode Server di Pengaturan untuk penggabungan lokal.',
+        count: 0,
+      };
+    }
+    let payloadImpor: unknown;
+    try {
+      payloadImpor = JSON.parse(jsonString);
+    } catch {
+      return {
+        status: 'ditolak',
+        alasan: 'File cadangan bukan JSON yang valid.',
+        success: false,
+        message: 'File cadangan bukan JSON yang valid.',
+        count: 0,
+      };
+    }
+    const hasil = await api.imporKeServer(payloadImpor);
+    const jumlah = hasil?.hitungan?.siswa ?? 0;
+    return {
+      status: 'diganti',
+      success: true,
+      message: `Pemulihan server selesai: ${jumlah} siswa terimpor (snapshot pengaman dibuat otomatis di server).`,
+      count: jumlah,
+    };
+  }
   const tolak = (alasan: string): RestoreResult => ({
     status: 'ditolak',
     alasan,
@@ -2522,7 +2650,33 @@ export async function importBackupData(
   }
 }
 
+/** Payload "pabrik" untuk reset mode server: setara keadaan instalasi
+ *  baru (profil & config bawaan + akun bawaan; siswa contoh opsional).
+ *  Dikirim sebagai impor ganti-total ke API — server membuat snapshot
+ *  pengaman sebelum menimpa. */
+function payloadPabrik(sertakanContoh: boolean): Record<string, unknown> {
+  return {
+    app: 'BukuInduk_Merdeka',
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    sekolah: defaultSekolahProfile,
+    dapodikConfig: { ...defaultDapodikConfig, wsToken: '' },
+    siswa: sertakanContoh ? initialSiswaList : [],
+    syncLogs: [],
+    users: initialUsersList,
+    rombel: [],
+    ptk: [],
+    tutupTahun: [],
+    petaKelas: [],
+    audit: [],
+  };
+}
+
 export async function resetToSampleData(): Promise<void> {
+  if (pakaiServer()) {
+    await api.imporKeServer(payloadPabrik(true));
+    return;
+  }
   const wanted = [STORES.SISWA, STORES.SEKOLAH, STORES.CONFIG, STORES.LOGS, STORES.USERS, STORES.ROMBEL, STORES.PTK, STORES.TUTUP, STORES.PETA, STORES.AUDIT, STORES.AUTOBACKUP];
   try {
     const db = await openDB();
@@ -2571,6 +2725,10 @@ export async function resetToSampleData(): Promise<void> {
 }
 
 export async function clearDatabase(): Promise<void> {
+  if (pakaiServer()) {
+    await api.imporKeServer(payloadPabrik(false));
+    return;
+  }
   const wanted = [STORES.SISWA, STORES.SEKOLAH, STORES.CONFIG, STORES.LOGS, STORES.ROMBEL, STORES.PTK, STORES.TUTUP, STORES.PETA, STORES.AUDIT, STORES.AUTOBACKUP];
   try {
     const db = await openDB();

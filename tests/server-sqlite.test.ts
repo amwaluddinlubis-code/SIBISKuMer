@@ -246,6 +246,77 @@ test('snapshot: buat, daftar, pulihkan (admin)', async () => {
   assert.equal(siswa.body.data.length, 1);
 });
 
+test('ganti sandi sesi sendiri: sandi lama mati, sandi baru berlaku', async () => {
+  await panggil('PUT', '/data/users/gs-uji', {
+    cookie: cookieAdmin,
+    body: {
+      id: 'gs-uji',
+      username: 'gsuji',
+      password: 'awal12345',
+      nama: 'Uji Ganti Sandi',
+      role: 'operator',
+      status: 'aktif',
+      mustChangePassword: true,
+    },
+  });
+  const masuk = await login('gsuji', 'awal12345');
+  assert.equal(masuk.status, 200);
+  assert.equal(masuk.body.data.mustChangePassword, true);
+  const ganti = await panggil('POST', '/auth/ganti-sandi', {
+    cookie: masuk.cookie!,
+    body: { passwordBaru: 'baru12345' },
+  });
+  assert.equal(ganti.status, 200);
+  assert.equal(ganti.body.data.mustChangePassword, false);
+  const pendek = await panggil('POST', '/auth/ganti-sandi', {
+    cookie: masuk.cookie!,
+    body: { passwordBaru: 'abc' },
+  });
+  assert.equal(pendek.status, 400);
+  await panggil('POST', '/auth/logout', { cookie: masuk.cookie!, body: {} });
+  const lama = await login('gsuji', 'awal12345');
+  assert.equal(lama.status, 401);
+  const baru = await login('gsuji', 'baru12345');
+  assert.equal(baru.status, 200);
+});
+
+test('impersonate: admin menyamar operator, berhenti kembali ke admin', async () => {
+  const diri = await panggil('POST', '/auth/impersonate', {
+    cookie: cookieAdmin,
+    body: { userId: 'usr-admin-01' },
+  });
+  assert.equal(diri.status, 400);
+
+  const mulai = await panggil('POST', '/auth/impersonate', {
+    cookie: cookieAdmin,
+    body: { userId: 'usr-op-01' },
+  });
+  assert.equal(mulai.status, 200);
+  assert.ok(mulai.cookie, 'cookie sesi impersonate terbit');
+  assert.equal(mulai.body.data.impersonatorId, 'usr-admin-01');
+  const cookieSam = mulai.cookie!;
+
+  const sesi = await panggil('GET', '/auth/sesi', { cookie: cookieSam });
+  assert.equal(sesi.body.data.user.id, 'usr-op-01');
+  assert.equal(sesi.body.data.impersonator.username, 'administrator');
+
+  const users = await panggil('GET', '/data/users', { cookie: cookieSam });
+  assert.equal(users.status, 403);
+
+  const berhenti = await panggil('POST', '/auth/impersonate/berhenti', {
+    cookie: cookieSam,
+    body: {},
+  });
+  assert.equal(berhenti.status, 200);
+  assert.ok(berhenti.cookie, 'cookie kembali ke sesi admin');
+  const sesiAdmin = await panggil('GET', '/auth/sesi', { cookie: berhenti.cookie! });
+  assert.equal(sesiAdmin.body.data.user.username, 'administrator');
+  assert.equal(sesiAdmin.body.data.impersonatorId, null);
+
+  const samMati = await panggil('GET', '/auth/sesi', { cookie: cookieSam });
+  assert.equal(samMati.status, 401);
+});
+
 test('kunci login: 5x salah -> terkunci, sandi benar pun ditolak', async () => {
   await panggil('PUT', '/data/users/kunci-uji', {
     cookie: cookieAdmin,

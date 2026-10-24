@@ -7,8 +7,8 @@ import { cekKunciLoginAsync, catatGagalLoginAsync, catatSuksesLoginAsync, LOGIN_
 import { catatAudit } from '../utils/audit';
 import { getDaftarTahunAjaran, getTahunDiizinkan } from '../utils/tahunAjaran';
 import { toast } from '../utils/notify';
-import { adaLayarServer } from '../utils/modeData';
-import { loginKeServer } from '../utils/dataApi';
+import { adaLayarServer, pakaiServer } from '../utils/modeData';
+import { loginKeServer, masukServer, gantiSandiServer } from '../utils/dataApi';
 import { initialUsersList } from '../data/initialData';
 
 interface LoginModalProps {
@@ -146,10 +146,41 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
   };
 
+  /** Jalur login MODE SERVER PENUH (Fase S3): server adalah otoritas —
+   *  verifikasi, kunci login, dan ganti sandi paksa semuanya di server.
+   *  Tidak ada verifikasi lokal dan tidak ada fallback diam-diam. */
+  const loginViaServer = async (cleanUser: string, cleanPass: string) => {
+    setIsLoading(true);
+    try {
+      const hasil = await masukServer(cleanUser, cleanPass);
+      const userServer = hasil.user as AppUser;
+      if (hasil.mustChangePassword) {
+        // Sesi server sudah terbuka; form ganti sandi memakai endpoint
+        // ganti-sandi (cabang server di handleGantiPasswordBawaan).
+        setWajibGanti({ ...userServer, password: '' });
+        setPassBaru('');
+        setPassBaru2('');
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(false);
+      void masukKePilihTahun(userServer);
+    } catch (e: any) {
+      setIsLoading(false);
+      setError(e?.message || 'Tidak dapat masuk melalui server. Periksa koneksi server aplikasi.');
+      toast('Gagal masuk (mode server).', 'error');
+    }
+  };
+
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
+
+    if (pakaiServer()) {
+      void loginViaServer(username.trim().toLowerCase(), password);
+      return;
+    }
 
     setTimeout(() => {
       void (async () => {
@@ -268,6 +299,33 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     }
     if (p1 !== passBaru2) {
       setError('Konfirmasi kata sandi tidak sama.');
+      return;
+    }
+    if (pakaiServer()) {
+      // Mode server: ganti sandi dilakukan di server (sesi sudah terbuka
+      // dari masukServer). Jalur saveUser lokal TIDAK dipakai — record
+      // wajibGanti di sini tidak membawa kata sandi lama.
+      setIsLoading(true);
+      try {
+        const hasil = await gantiSandiServer(p1);
+        const updated = ((hasil?.user || wajibGanti) as AppUser);
+        setWajibGanti(null);
+        setPassBaru('');
+        setPassBaru2('');
+        toast('Kata sandi berhasil diganti di server. Silakan lanjutkan masuk.', 'success');
+        catatAudit('ganti_password_bawaan', {
+          entitas: 'pengguna',
+          entitasId: updated.id,
+          ringkasan: `Kata sandi bawaan diganti (server): @${updated.username}`,
+          aktor: updated.username,
+          peran: updated.role,
+        });
+        setIsLoading(false);
+        void masukKePilihTahun({ ...updated, mustChangePassword: false });
+      } catch (e: any) {
+        setIsLoading(false);
+        setError(e?.message || 'Gagal mengganti kata sandi di server. Coba lagi.');
+      }
       return;
     }
     setIsLoading(true);

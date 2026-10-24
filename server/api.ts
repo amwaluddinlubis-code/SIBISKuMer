@@ -38,6 +38,9 @@ import {
   loginServer,
   sesiDariToken,
   akhiriSesi,
+  gantiSandiSesi,
+  buatSesiImpersonate,
+  akhiriImpersonate,
   userPublik,
   bolehAksesRombel,
   siswaTerlihat,
@@ -250,11 +253,68 @@ export function buatRouterV1(): Router {
   });
 
   r.get('/auth/sesi', perluSesi, (req: ReqBersesi, res) => {
+    let impersonator: any = null;
+    if (req.sesi!.impersonatorId) {
+      const induk = userById(dbSekolah(req.sesi!.sekolahId), req.sesi!.impersonatorId);
+      impersonator = induk ? userPublik(induk) : null;
+    }
     kirimOk(res, {
       user: userPublik(req.user),
       sekolahId: req.sesi!.sekolahId,
       impersonatorId: req.sesi!.impersonatorId,
+      impersonator,
     });
+  });
+
+  r.post('/auth/ganti-sandi', perluSesi, async (req: ReqBersesi, res) => {
+    const { passwordBaru } = req.body || {};
+    if (typeof passwordBaru !== 'string' || passwordBaru.length < 8) {
+      return kirimGagal(res, 400, 'Kata sandi baru minimal 8 karakter.');
+    }
+    try {
+      const user = await gantiSandiSesi(req.sesi!, passwordBaru);
+      kirimOk(res, { user: userPublik(user), mustChangePassword: false });
+    } catch (e: any) {
+      kirimGagal(res, 400, e?.message || 'Gagal mengganti kata sandi.');
+    }
+  });
+
+  r.post('/auth/impersonate', perluSesi, perluAdmin, (req: ReqBersesi, res) => {
+    const { userId } = req.body || {};
+    const db = dbSekolah(req.sesi!.sekolahId);
+    const target = typeof userId === 'string' ? userById(db, userId) : null;
+    if (!target) return kirimGagal(res, 404, 'Pengguna tujuan tidak ditemukan.');
+    if (target.id === req.user.id) {
+      return kirimGagal(res, 400, 'Anda tidak dapat menyamar sebagai diri sendiri.');
+    }
+    if (target.role === 'administrator') {
+      return kirimGagal(res, 400, 'Akun administrator tidak dapat disamarkan.');
+    }
+    if (target.status === 'nonaktif') {
+      return kirimGagal(res, 400, 'Akun tujuan sedang nonaktif.');
+    }
+    const sesi = buatSesiImpersonate(req.sesi!, target);
+    pasangCookieSesi(res, sesi.token);
+    kirimOk(res, {
+      user: userPublik(target),
+      sekolahId: sesi.sekolahId,
+      impersonatorId: sesi.impersonatorId,
+      impersonator: userPublik(req.user),
+    });
+  });
+
+  r.post('/auth/impersonate/berhenti', perluSesi, (req: ReqBersesi, res) => {
+    if (!req.sesi!.impersonatorId) {
+      return kirimGagal(res, 400, 'Sesi ini bukan sesi impersonate.');
+    }
+    const tokenInduk = akhiriImpersonate(req.sesi!);
+    if (!tokenInduk) {
+      hapusCookieSesi(res);
+      return kirimGagal(res, 401, 'Sesi administrator asal sudah tidak sah. Silakan masuk kembali.');
+    }
+    pasangCookieSesi(res, tokenInduk);
+    const admin = userById(dbSekolah(req.sesi!.sekolahId), req.sesi!.impersonatorId);
+    kirimOk(res, { user: admin ? userPublik(admin) : null, sekolahId: req.sesi!.sekolahId });
   });
 
   // ---------- Data: siswa ----------
@@ -365,11 +425,18 @@ export function buatRouterV1(): Router {
     kirimOk(res, ambilMeta(db, 'profil_sekolah'));
   });
 
-  r.get('/data/config/:kunci', perluSesi, perluAdmin, (req: ReqBersesi, res) => {
+  // Config: BACA untuk semua sesi (operator Dapodik membutuhkan host/port/
+  // semester untuk sinkronisasi — setara keadaan lokal hari ini di mana
+  // config berada di perangkat yang sama). TULIS: admin atau operator
+  // (form pengaturan Dapodik memang dipakai operator Dapodik).
+  r.get('/data/config/:kunci', perluSesi, (req: ReqBersesi, res) => {
     kirimOk(res, ambilMeta(dbSekolah(req.sesi!.sekolahId), `config_${req.params.kunci}`));
   });
 
-  r.put('/data/config/:kunci', perluSesi, perluAdmin, (req: ReqBersesi, res) => {
+  r.put('/data/config/:kunci', perluSesi, (req: ReqBersesi, res, next) => {
+    if (adalahAdmin(req.user) || req.user?.role === 'operator') return next();
+    kirimGagal(res, 403, 'Peran Anda tidak berhak mengubah konfigurasi.');
+  }, (req: ReqBersesi, res) => {
     const db = dbSekolah(req.sesi!.sekolahId);
     simpanMeta(db, `config_${req.params.kunci}`, req.body || {});
     kirimOk(res, ambilMeta(db, `config_${req.params.kunci}`));

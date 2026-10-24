@@ -48,3 +48,31 @@ export function daftarLayarPilot(): Array<{ layar: LayarPilot; label: string }> 
     { layar: 'siswa', label: 'Master Siswa' },
   ];
 }
+
+// ---------------- Mode utama (Fase S3) ----------------
+// 'lokal'  : seluruh data dari IndexedDB perangkat ini (perilaku bawaan).
+// 'server' : MODE SERVER PENUH — login, baca, dan tulis melalui API
+//            SQLite; IndexedDB hanya menjadi salinan cadangan lokal.
+// Saklar per layar di atas hanya relevan pada mode utama 'lokal'.
+export const MODE_UTAMA_KEY = 'bukuinduk_mode_utama';
+
+export function modeUtama(): ModeData {
+  try {
+    return localStorage.getItem(MODE_UTAMA_KEY) === 'server' ? 'server' : 'lokal';
+  } catch {
+    return 'lokal';
+  }
+}
+
+export function aturModeUtama(mode: ModeData): void {
+  try {
+    localStorage.setItem(MODE_UTAMA_KEY, mode);
+  } catch {
+    /* abaikan */
+  }
+}
+
+/** True bila jalur data harus melalui server (mode utama server). */
+export function pakaiServer(): boolean {
+  return modeUtama() === 'server';
+}

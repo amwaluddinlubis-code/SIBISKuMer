@@ -53,16 +53,29 @@ export function sekolahIdServer(): string {
   }
 }
 
+export interface HasilMasukServer {
+  user: any;
+  sekolahId: string;
+  mustChangePassword: boolean;
+}
+
+/** Masuk ke server dan kembalikan sesi + user. Melempar Error berpesan
+ *  jelas (termasuk pesan kunci login) bila ditolak — dipakai jalur login
+ *  utama pada mode server penuh (Fase S3). */
+export async function masukServer(username: string, password: string): Promise<HasilMasukServer> {
+  return panggil<HasilMasukServer>('POST', '/auth/login', {
+    sekolahId: sekolahIdServer(),
+    username,
+    password,
+  });
+}
+
 /** Buka sesi server dengan kredensial yang sama seperti login lokal.
  *  Kegagalan TIDAK menggagalkan login lokal — layar mode server akan
  *  jatuh kembali ke data lokal bila sesi tidak ada. */
 export async function loginKeServer(username: string, password: string): Promise<boolean> {
   try {
-    await panggil('POST', '/auth/login', {
-      sekolahId: sekolahIdServer(),
-      username,
-      password,
-    });
+    await masukServer(username, password);
     return true;
   } catch {
     return false;
@@ -92,4 +105,97 @@ export function sedangMenyamar(): boolean {
   } catch {
     return false;
   }
+}
+
+// ---------------- Metode inti Fase S3 (cermin fungsi db.ts) ----------------
+
+const seg = (v: string): string => encodeURIComponent(v);
+
+export async function ambilSiswaSatuDariServer(id: string): Promise<Siswa | null> {
+  try {
+    return await panggil<Siswa>('GET', `/data/siswa/${seg(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function simpanSiswaKeServer(siswa: Siswa): Promise<void> {
+  await panggil('PUT', `/data/siswa/${seg(siswa.id)}`, siswa);
+}
+
+export async function hapusSiswaDariServer(id: string): Promise<void> {
+  await panggil('DELETE', `/data/siswa/${seg(id)}`);
+}
+
+export async function simpanSiswaBulkKeServer(items: Siswa[]): Promise<void> {
+  await panggil('POST', '/data/siswa/bulk', { items });
+}
+
+export async function ambilUsersDariServer<T = any>(): Promise<T[]> {
+  return panggil<T[]>('GET', '/data/users');
+}
+
+export async function simpanUserKeServer(user: any): Promise<void> {
+  await panggil('PUT', `/data/users/${seg(user.id)}`, user);
+}
+
+export async function hapusUserDariServer(id: string): Promise<void> {
+  await panggil('DELETE', `/data/users/${seg(id)}`);
+}
+
+export async function ambilProfilDariServer<T = any>(): Promise<T> {
+  return panggil<T>('GET', '/data/profil');
+}
+
+export async function simpanProfilKeServer(profil: unknown): Promise<void> {
+  await panggil('PUT', '/data/profil', profil);
+}
+
+export async function ambilConfigDariServer<T = any>(kunci: string): Promise<T> {
+  return panggil<T>('GET', `/data/config/${seg(kunci)}`);
+}
+
+export async function simpanConfigKeServer(kunci: string, nilai: unknown): Promise<void> {
+  await panggil('PUT', `/data/config/${seg(kunci)}`, nilai);
+}
+
+export async function ambilKoleksiDariServer<T = any>(entitas: string): Promise<T[]> {
+  return panggil<T[]>('GET', `/data/koleksi/${seg(entitas)}`);
+}
+
+export async function simpanKoleksiSatuKeServer(entitas: string, item: any): Promise<void> {
+  const id = entitas === 'tutup_tahun' ? String(item.tahunAjaran || item.id || '') : String(item.id || '');
+  await panggil('PUT', `/data/koleksi/${seg(entitas)}/${seg(id)}`, item);
+}
+
+export async function gantiKoleksiDiServer(entitas: string, items: any[]): Promise<void> {
+  await panggil('POST', `/data/koleksi/${seg(entitas)}/bulk`, { mode: 'ganti', items });
+}
+
+export async function hapusKoleksiDariServer(entitas: string, id: string): Promise<void> {
+  await panggil('DELETE', `/data/koleksi/${seg(entitas)}/${seg(id)}`);
+}
+
+export async function ambilEksporDariServer<T = any>(): Promise<T> {
+  return panggil<T>('GET', '/backup/ekspor');
+}
+
+export async function imporKeServer(payload: unknown): Promise<any> {
+  return panggil('POST', '/backup/impor', { payload });
+}
+
+export async function gantiSandiServer(passwordBaru: string): Promise<any> {
+  return panggil('POST', '/auth/ganti-sandi', { passwordBaru });
+}
+
+export async function ambilSesiServer(): Promise<any> {
+  return panggil('GET', '/auth/sesi');
+}
+
+export async function mulaiImpersonateServer(userId: string): Promise<any> {
+  return panggil('POST', '/auth/impersonate', { userId });
+}
+
+export async function berhentiImpersonateServer(): Promise<any> {
+  return panggil('POST', '/auth/impersonate/berhenti', {});
 }

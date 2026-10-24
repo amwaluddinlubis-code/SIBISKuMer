@@ -119,3 +119,49 @@ test('sedangMenyamar mengikuti kunci impersonate lokal', () => {
   ls.setItem('bukuinduk_impersonate_from', '{"id":"usr-admin-01"}');
   assert.equal(dataApi.sedangMenyamar(), true);
 });
+
+test('modeUtama: bawaan lokal; server mengaktifkan pakaiServer (S3)', () => {
+  assert.equal(modeData.modeUtama(), 'lokal');
+  assert.equal(modeData.pakaiServer(), false);
+  modeData.aturModeUtama('server');
+  assert.equal(modeData.modeUtama(), 'server');
+  assert.equal(modeData.pakaiServer(), true);
+  modeData.aturModeUtama('lokal');
+  assert.equal(modeData.pakaiServer(), false);
+});
+
+test('masukServer: memetakan user + mustChangePassword dari amplop (S3)', async () => {
+  responBerikut = {
+    status: 200,
+    body: {
+      ok: true,
+      data: {
+        user: { id: 'usr-admin-01', username: 'administrator' },
+        sekolahId: 'utama',
+        mustChangePassword: true,
+      },
+    },
+  };
+  const hasil = await dataApi.masukServer('administrator', 'administrator');
+  assert.equal(hasil.mustChangePassword, true);
+  assert.equal(hasil.user.username, 'administrator');
+  const body = JSON.parse(panggilan[0].init.body);
+  assert.equal(body.sekolahId, 'utama');
+});
+
+test('metode tulis S3: jalur & metode benar, id ter-encode (S3)', async () => {
+  responBerikut = { status: 200, body: { ok: true, data: {} } };
+  await dataApi.simpanSiswaKeServer({ id: 'sis-001' } as any);
+  await dataApi.hapusKoleksiDariServer('tutup_tahun', '2026/2027');
+  await dataApi.gantiSandiServer('baru12345');
+  await dataApi.imporKeServer({ app: 'BukuInduk_Merdeka' });
+  assert.deepEqual(
+    panggilan.map((p) => `${p.init.method} ${p.url}`),
+    [
+      'PUT /api/v1/data/siswa/sis-001',
+      'DELETE /api/v1/data/koleksi/tutup_tahun/2026%2F2027',
+      'POST /api/v1/auth/ganti-sandi',
+      'POST /api/v1/backup/impor',
+    ]
+  );
+});

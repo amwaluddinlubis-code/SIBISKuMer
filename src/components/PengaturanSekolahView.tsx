@@ -32,7 +32,7 @@ import { processLogoImage, formatKb, MAX_LOGO_BYTES } from '../utils/photo';
 import { KopSuratView } from './KopSuratView';
 import { startTopProgress, doneTopProgress } from '../utils/progress';
 import { catatAudit, diffAudit } from '../utils/audit';
-import { daftarLayarPilot, modeLayar, aturModeLayar, type ModeData } from '../utils/modeData';
+import { daftarLayarPilot, modeLayar, aturModeLayar, modeUtama, aturModeUtama, type ModeData } from '../utils/modeData';
 
 const PROFIL_AUDIT_ALLOWLIST = [
   'nama',
@@ -1134,6 +1134,35 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
             bahan perbandingan selama migrasi bertahap. Perubahan data tetap tersimpan secara lokal
             sampai penukaran jalur tulis (Fase S3). Berlaku untuk perangkat ini saja.
           </p>
+        </div>
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-extrabold text-amber-900">MODE UTAMA APLIKASI (Fase S3)</p>
+              <p className="text-[11px] text-amber-800 mt-0.5">
+                <strong>Server Penuh</strong>: masuk, membaca, dan menyimpan semuanya melalui server
+                SQLite — basis data perangkat ini berhenti menjadi sumber utama. Aktifkan hanya bila
+                data server sudah terisi (mis. lewat Impor Backup), lalu <strong>keluar & masuk lagi</strong>.
+              </p>
+            </div>
+            <select
+              value={modeUtama()}
+              onChange={(e) => {
+                aturModeUtama(e.target.value as ModeData);
+                setModeTick((t) => t + 1);
+                toast(
+                  e.target.value === 'server'
+                    ? 'Mode Utama: Server Penuh. Keluar lalu masuk lagi agar berlaku.'
+                    : 'Mode Utama: Lokal. Keluar lalu masuk lagi agar berlaku penuh.',
+                  'info'
+                );
+              }}
+              className="rounded-lg border border-amber-400 bg-white px-2 py-1.5 text-xs font-bold text-amber-900"
+            >
+              <option value="lokal">Lokal (bawaan)</option>
+              <option value="server">Server Penuh (SQLite)</option>
+            </select>
+          </div>
         </div>
         {daftarLayarPilot().map(({ layar, label }) => (
           <div key={layar} className="flex items-center justify-between gap-3">

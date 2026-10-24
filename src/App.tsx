@@ -105,7 +105,8 @@ import { ToastHost } from './components/ToastHost';
 import { ConfirmDialogHost } from './components/ConfirmDialogHost';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { toast, confirmDialog } from './utils/notify';
-import { keluarDariServer } from './utils/dataApi';
+import { keluarDariServer, mulaiImpersonateServer, berhentiImpersonateServer } from './utils/dataApi';
+import { pakaiServer } from './utils/modeData';
 import { FileText, Search, User, Printer, Eye, Lock, Users, Award, RefreshCw, BarChart3, Layers, Settings, UserCog, Database, GraduationCap, Contact, LayoutDashboard, Archive, LayoutGrid, ScrollText, Table } from 'lucide-react';
 import { PageHeader } from './components/PageHeader';
 import { PageControl } from './components/PageControl';
@@ -966,6 +967,16 @@ export default function App() {
       toast(`Operator @${operatorUser.username} tidak memiliki akses ke sesi TA ${sessionTahun}.`, 'error');
       return;
     }
+    if (pakaiServer()) {
+      // S3: sesi server ikut berpindah ke akun tujuan (cookie diganti
+      // server; token admin tersimpan di server untuk pemulihan).
+      try {
+        await mulaiImpersonateServer(operatorUser.id);
+      } catch (e: any) {
+        toast(e?.message || 'Impersonate server gagal. Coba lagi.', 'error');
+        return;
+      }
+    }
     setImpersonateSession(currentUser, operatorUser);
     setImpersonator(currentUser);
     setCurrentUser(operatorUser);
@@ -977,13 +988,21 @@ export default function App() {
     });
   };
 
-  const handleStopImpersonating = () => {
+  const handleStopImpersonating = async () => {
     if (!impersonator) return;
     catatAudit('impersonate_selesai', {
       entitas: 'akun',
       entitasId: currentUser?.id,
       ringkasan: `@${impersonator.username} selesai menyamar`,
     });
+    if (pakaiServer()) {
+      // Kembalikan cookie ke sesi administrator asal (di server).
+      try {
+        await berhentiImpersonateServer();
+      } catch {
+        toast('Sesi server impersonate tidak dapat diakhiri; Anda mungkin perlu masuk kembali.', 'error');
+      }
+    }
     clearImpersonateSession();
     setCurrentUser(impersonator);
     setImpersonator(null);

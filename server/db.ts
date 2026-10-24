@@ -71,6 +71,7 @@ export function dbRegistry(): DatabaseSync {
     CREATE TABLE IF NOT EXISTS sesi (
       token TEXT PRIMARY KEY, sekolah_id TEXT NOT NULL, user_id TEXT NOT NULL,
       username TEXT NOT NULL, peran TEXT NOT NULL, impersonator_id TEXT,
+      token_induk TEXT,
       dibuat_pada TEXT NOT NULL, kedaluwarsa_pada TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS kunci_login (
@@ -82,6 +83,12 @@ export function dbRegistry(): DatabaseSync {
       kunci TEXT PRIMARY KEY, nilai TEXT NOT NULL
     );
   `);
+  // Migrasi skema ringan: kolom token_induk untuk sesi impersonate pada
+  // registry yang dibuat sebelum Fase S3.
+  const kolom = db.prepare("SELECT name FROM pragma_table_info('sesi')").all() as any[];
+  if (!kolom.some((k) => k.name === 'token_induk')) {
+    db.exec('ALTER TABLE sesi ADD COLUMN token_induk TEXT');
+  }
   return db;
 }
 
