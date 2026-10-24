@@ -219,17 +219,20 @@ export interface DapodikComparisonResult {
   totalDapodik: number;
 }
 
-export function mapAgamaDapodik(agamaStr?: string): Agama {
-  if (!agamaStr) return 'Islam';
-  const norm = agamaStr.toLowerCase();
-  if (norm.includes('kristen') || norm.includes('protestan')) return 'Kristen';
-  if (norm.includes('katolik') || norm.includes('katholik')) return 'Katholik';
-  if (norm.includes('hindu')) return 'Hindu';
-  if (norm.includes('buddha') || norm.includes('budha')) return 'Buddha';
-  if (norm.includes('khonghucu') || norm.includes('konghucu')) return 'Khonghucu';
-  if (norm.includes('kepercayaan')) return 'Kepercayaan';
+export function mapAgamaDapodik(agamaStr?: string): Agama | '' {
+  // KEJUJURAN DATA (QA Fase 0): agama tak dikenal JANGAN dikarang 'Islam'.
+  // Kosong berarti belum terpetakan — operator dapat melengkapi manual.
+  if (!agamaStr) return '';
+  const norm = agamaStr.toLowerCase().trim();
+  if (norm.includes('islam') || norm === '1') return 'Islam';
+  if (norm.includes('kristen') || norm.includes('protestan') || norm === '2') return 'Kristen';
+  if (norm.includes('katolik') || norm.includes('katholik') || norm === '3') return 'Katholik';
+  if (norm.includes('hindu') || norm === '4') return 'Hindu';
+  if (norm.includes('buddha') || norm.includes('budha') || norm === '5') return 'Buddha';
+  if (norm.includes('khonghucu') || norm.includes('konghucu') || norm === '6') return 'Khonghucu';
+  if (norm.includes('kepercayaan') || norm === '7') return 'Kepercayaan';
   if (norm.includes('lainnya') || norm === '99' || norm === 'lain') return 'Lainnya';
-  return 'Islam';
+  return '';
 }
 
 export function mapTingkatKelas(tingkat?: string | number, namaRombel?: string, jenjang?: JenjangSekolah): TingkatKelas {
@@ -337,96 +340,74 @@ export function convertDapodikToSiswa(
     nik: raw.nik || '',
     noKk: '',
     noAktaLahir: '',
-    tempatLahir: raw.tempat_lahir || 'Kota',
-    tanggalLahir: raw.tanggal_lahir || '2011-01-01',
+    // KEJUJURAN DATA (QA Fase 0): field yang tidak dibawa Dapodik tetap
+    // KOSONG — jangan mengarang tempat/tanggal lahir, RT/RW, riwayat
+    // kesehatan, ukuran badan, dsb. untuk siswa hasil sinkronisasi.
+    tempatLahir: raw.tempat_lahir || '',
+    tanggalLahir: raw.tanggal_lahir || '',
     agama: mapAgamaDapodik(raw.agama_id_str),
     kewarganegaraan: 'WNI',
-    anakKe: raw.anak_keberapa || 1,
-    jumlahSaudaraKandung: 1,
+    anakKe: raw.anak_keberapa || 0,
+    jumlahSaudaraKandung: 0,
     jumlahSaudaraTiri: 0,
     jumlahSaudaraAngkat: 0,
-    statusDalamKeluarga: 'Anak Kandung',
-    bahasaSehariHari: 'Bahasa Indonesia',
+    statusDalamKeluarga: '',
+    bahasaSehariHari: '',
     golonganDarah: '-',
-    tinggiBadan: raw.tinggi_badan ? Number(raw.tinggi_badan) : 155,
-    beratBadan: raw.berat_badan ? Number(raw.berat_badan) : 45,
-    riwayatPenyakit: 'Tidak ada riwayat kronis',
-    kelainanFisik: 'Tidak ada',
-    kebutuhanKhusus: 'Tidak ada',
+    tinggiBadan: raw.tinggi_badan ? Number(raw.tinggi_badan) : 0,
+    beratBadan: raw.berat_badan ? Number(raw.berat_badan) : 0,
+    riwayatPenyakit: '',
+    kelainanFisik: '',
+    kebutuhanKhusus: '',
     alamat: raw.alamat_jalan || '',
-    rt: raw.rt || '01',
-    rw: raw.rw || '01',
+    rt: raw.rt || '',
+    rw: raw.rw || '',
     dusun: raw.nama_dusun || '',
     kelurahan: raw.desa_kelurahan || '',
     kecamatan: raw.kecamatan || '',
     kabupatenKota: '',
     provinsi: '',
     kodePos: raw.kode_pos || '',
-    tinggalDengan: 'Orang Tua',
-    jarakKeSekolahKm: 1.0,
-    transportasiKeSekolah: 'Jalan Kaki',
+    tinggalDengan: '',
+    jarakKeSekolahKm: 0,
+    transportasiKeSekolah: '',
     ayah: {
       nama: raw.nama_ayah || '',
       nik: raw.nik_ayah || '',
-      tahunLahir: '1975',
-      pendidikan: 'SMA / sederajat',
-      pekerjaan: raw.pekerjaan_ayah_id_str || 'Wiraswasta',
-      penghasilan: raw.penghasilan_ayah_id_str || 'Rp. 2,000,000 - Rp. 4,999,999',
+      tahunLahir: '',
+      pendidikan: '',
+      pekerjaan: raw.pekerjaan_ayah_id_str || '',
+      penghasilan: raw.penghasilan_ayah_id_str || '',
       noTelepon: raw.nomor_telepon_seluler || '',
-      status: 'Masih Hidup'
+      status: ''
     },
     ibu: {
       nama: raw.nama_ibu || '',
       nik: raw.nik_ibu || '',
-      tahunLahir: '1978',
-      pendidikan: 'SMA / sederajat',
-      pekerjaan: raw.pekerjaan_ibu_id_str || 'Ibu Rumah Tangga',
-      penghasilan: raw.penghasilan_ibu_id_str || 'Tidak Berpenghasilan',
+      tahunLahir: '',
+      pendidikan: '',
+      pekerjaan: raw.pekerjaan_ibu_id_str || '',
+      penghasilan: raw.penghasilan_ibu_id_str || '',
       noTelepon: '',
-      status: 'Masih Hidup'
+      status: ''
     },
     asalSdMi: raw.sekolah_asal || '',
     npsnSdMi: '',
     noIjazahSd: '',
-    tahunLulusSd: String(tahunMulai),
-    lamaBelajarSd: 6,
-    tanggalDiterima: `${tahunMulai}-07-15`,
+    tahunLulusSd: '',
+    lamaBelajarSd: 0,
+    tanggalDiterima: '',
     diterimaDiTingkat: tingkat,
     diterimaDiRombel: rombel,
     rombelSaatIni: rombel,
-    jalurMasuk: 'Zonasi',
+    jalurMasuk: '',
     // Dapodik tak membawa jenis pendaftaran; siswa sinkron dari tahun berjalan
     // dianggap Siswa Baru (operator dapat mengoreksi menjadi Pindahan).
     jenisPendaftaran: 'Siswa Baru',
-    p5Projects: [
-      {
-        id: newSyncId('p5'),
-        tema: 'Gaya Hidup Berkelanjutan',
-        judulProjek: 'Projek Pengurangan Jejak Karbon Sekolah',
-        fase,
-        tingkat: tingkat,
-        semester: '1',
-        tahunAjaran: tahunSinkron,
-        dimensi: {
-          berimanBertakwa: 'Sedang Berkembang',
-          berkebinekaanGlobal: 'Sedang Berkembang',
-          bergotongRoyong: 'Berkembang Sesuai Harapan',
-          mandiri: 'Berkembang Sesuai Harapan',
-          bernalarKritis: 'Sedang Berkembang',
-          kreatif: 'Sedang Berkembang'
-        },
-        catatanProses: 'Aktif berpartisipasi dalam kegiatan P5 Kurikulum Merdeka.'
-      }
-    ],
-    ekstrakurikuler: [
-      {
-        id: newSyncId('ek'),
-        nama: jenjang === 'SD' ? 'Pramuka Siaga (Wajib)' : 'Pramuka Penggalang (Wajib)',
-        keterangan: 'Mengikuti latihan rutin pramuka',
-        predikat: 'Baik',
-        tingkat: tingkat
-      }
-    ],
+    // Siswa sinkronisasi belum punya penilaian P5 / ekskul — jangan
+    // mengarang capaian dimensi dan predikat (QA Fase 0).
+    p5Projects: [],
+    ekstrakurikuler: [],
     prestasi: [],
     riwayatSemester: [
       {

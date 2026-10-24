@@ -75,6 +75,17 @@ mengembalikan `{entry, keptSession}`), `ensureSchoolsInit` (adopsi DB lama bila 
 
 ### 3.1 `Siswa` — segmen A–I (ledger dinas)
 
+> **Aturan kejujuran data (QA Fase 0, Okt 2026):** field faktual yang belum
+> diisi bernilai kosong (`''` / `0` / `[]`) — BUKAN nilai karangan. Ketiga
+> jalur pembuatan siswa (form wizard, impor CSV/Excel, sinkronisasi Dapodik)
+> dilarang mengisi bawaan faktual seperti tanggal lahir `2011-01-01`, RT/RW
+> `01`, pekerjaan orang tua, status hidup orang tua, jalur masuk, agama,
+> riwayat kesehatan `Tidak ada`, ukuran badan, maupun penilaian P5/ekskul
+> beserta predikatnya. Tipe `agama`, `statusDalamKeluarga`, `tinggalDengan`,
+> `transportasiKeSekolah`, `jalurMasuk`, dan `status` orang tua secara resmi
+> mengizinkan `''` (= belum diisi); tampilan/cetak menampilkan `—`/`-` untuk
+> nilai kosong. Placeholder form hanyalah contoh berawalan "Contoh:", bukan nilai.
+
 | Segmen | Field kunci |
 |--------|-------------|
 | A. Identitas | `namaLengkap`, `namaPanggilan`, `jenisKelamin` (L/P), `nisn` (10 digit, unik), `nipd` (unik), `nik` (16 digit, unik bila diisi), `noKk`, `noAktaLahir`, ttl, `agama` (Select kode Dapodik 1–7/99 + `Lainnya`), kewarganegaraan, anak-ke/saudara, status keluarga, bahasa, `fotoUrl` (dataURL/URL) |

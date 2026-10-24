@@ -367,7 +367,9 @@ integritas SHA-256 — lihat §4.3) berlaku per-DB aktif. SOP:
 - Sesi login divalidasi ulang ke database saat aplikasi dibuka; akun yang sudah
   dinonaktifkan tidak bisa memakai sesi lama.
 - Batas `rombelAkses` per operator; backup tersimpan terbatas akses; jangan
-  membagikan token Web Service Dapodik.
+  membagikan token Web Service Dapodik. Token **ditampilkan tersamar** di layar
+  Sinkronisasi Dapodik (tombol mata hanya untuk melihat sesaat); nilainya di
+  perangkat tersimpan plaintext pada IndexedDB, jadi amankan perangkatnya.
 - **Pesan login generik**: "Username atau kata sandi salah." untuk semua kasus
   gagal (anti-enumerasi username).
 - **Kata sandi tidak lagi di-trim**: spasi di awal/akhir kini dianggap bagian dari

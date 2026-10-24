@@ -190,12 +190,14 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                   <div className="grid grid-cols-3 py-1 border-b border-slate-100">
                     <span className="text-slate-600">9. Anak Ke- / Dari</span>
                     <span className="col-span-2 text-slate-800">
-                      Anak ke-{siswa.anakKe} dari {siswa.jumlahSaudaraKandung + 1} bersaudara
+                      {siswa.anakKe >= 1
+                        ? `Anak ke-${siswa.anakKe} dari ${siswa.jumlahSaudaraKandung + 1} bersaudara`
+                        : '-'}
                     </span>
                   </div>
                   <div className="grid grid-cols-3 py-1 border-b border-slate-100">
                     <span className="text-slate-600">10. Status dalam Keluarga</span>
-                    <span className="col-span-2 text-slate-800">{siswa.statusDalamKeluarga}</span>
+                    <span className="col-span-2 text-slate-800">{siswa.statusDalamKeluarga || '-'}</span>
                   </div>
                   <div className="grid grid-cols-3 py-1">
                     <span className="text-slate-600">11. Bahasa Sehari-hari</span>
@@ -242,7 +244,9 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                   </div>
                   <div className="flex justify-between py-1 border-b border-slate-100">
                     <span className="text-slate-600">2. Tinggi / Berat Badan</span>
-                    <span className="font-semibold text-slate-900">{siswa.tinggiBadan} cm / {siswa.beratBadan} kg</span>
+                    <span className="font-semibold text-slate-900">
+                      {siswa.tinggiBadan > 0 ? `${siswa.tinggiBadan} cm` : '—'} / {siswa.beratBadan > 0 ? `${siswa.beratBadan} kg` : '—'}
+                    </span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-slate-100">
                     <span className="text-slate-600">3. Riwayat Penyakit</span>
@@ -392,7 +396,10 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
                   </div>
                   <div className="flex justify-between py-1">
                     <span className="text-slate-600">Tahun Lulus</span>
-                    <span className="text-slate-800">{siswa.tahunLulusSd} ({siswa.lamaBelajarSd} Tahun Belajar)</span>
+                    <span className="text-slate-800">
+                      {siswa.tahunLulusSd || '-'}
+                      {siswa.lamaBelajarSd > 0 ? ` (${siswa.lamaBelajarSd} Tahun Belajar)` : ''}
+                    </span>
                   </div>
                 </div>
               </div>

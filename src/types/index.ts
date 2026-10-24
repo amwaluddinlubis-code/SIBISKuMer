@@ -132,13 +132,15 @@ export interface Siswa {
   noAktaLahir: string;
   tempatLahir: string;
   tanggalLahir: string; // YYYY-MM-DD
-  agama: Agama;
+  /** '' = belum diisi. Jangan pernah mengarang agama bawaan untuk siswa baru. */
+  agama: Agama | '';
   kewarganegaraan: 'WNI' | 'WNA';
   anakKe: number;
   jumlahSaudaraKandung: number;
   jumlahSaudaraTiri: number;
   jumlahSaudaraAngkat: number;
-  statusDalamKeluarga: 'Anak Kandung' | 'Anak Tiri' | 'Anak Angkat';
+  /** '' = belum diisi (bukan karangan 'Anak Kandung'). */
+  statusDalamKeluarga: 'Anak Kandung' | 'Anak Tiri' | 'Anak Angkat' | '';
   bahasaSehariHari: string;
   fotoUrl?: string;
   /** Mini JPEG (≤60KB) untuk sinkron cloud via Firestore — tanpa Storage.
@@ -164,9 +166,12 @@ export interface Siswa {
   kabupatenKota: string;
   provinsi: string;
   kodePos: string;
-  tinggalDengan: 'Orang Tua' | 'Wali' | 'Asrama' | 'Kost' | 'Panti Asuhan' | 'Pesantren' | 'Lainnya';
+  /** '' = belum diisi. */
+  tinggalDengan: 'Orang Tua' | 'Wali' | 'Asrama' | 'Kost' | 'Panti Asuhan' | 'Pesantren' | 'Lainnya' | '';
   jarakKeSekolahKm: number;
+  /** '' = belum diisi (bukan karangan 'Jalan Kaki'). */
   transportasiKeSekolah:
+    | ''
     | 'Jalan Kaki'
     | 'Sepeda'
     | 'Sepeda Motor'
@@ -194,7 +199,8 @@ export interface Siswa {
     pekerjaan: string;
     penghasilan: string;
     noTelepon: string;
-    status: 'Masih Hidup' | 'Meninggal Dunia';
+    /** '' = belum diisi (jangan mengarang status hidup orang tua). */
+    status: 'Masih Hidup' | 'Meninggal Dunia' | '';
   };
   ibu: {
     nama: string;
@@ -204,7 +210,8 @@ export interface Siswa {
     pekerjaan: string;
     penghasilan: string;
     noTelepon: string;
-    status: 'Masih Hidup' | 'Meninggal Dunia';
+    /** '' = belum diisi (jangan mengarang status hidup orang tua). */
+    status: 'Masih Hidup' | 'Meninggal Dunia' | '';
   };
   wali?: {
     nama: string;
@@ -230,7 +237,8 @@ export interface Siswa {
   diterimaDiTingkat: TingkatKelas;
   diterimaDiRombel: string; // e.g. "7A"
   rombelSaatIni: string; // e.g. "7A", "8B", "9C"
-  jalurMasuk: JalurMasuk;
+  /** '' = belum dipilih (bukan karangan 'Zonasi'). */
+  jalurMasuk: JalurMasuk | '';
   /** Jenis pendaftaran Dapodik (Siswa Baru / Pindahan / Kembali Bersekolah). */
   jenisPendaftaran?: 'Siswa Baru' | 'Pindahan' | 'Kembali Bersekolah';
   asalMutasi?: string;

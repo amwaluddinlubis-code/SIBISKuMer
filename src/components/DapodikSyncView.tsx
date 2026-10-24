@@ -17,7 +17,9 @@ import {
   Sparkles,
   Users,
   KeyRound,
-  Lock
+  Lock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { DapodikConfig, DapodikSyncLog, Siswa, DapodikRawPesertaDidik, DapodikRawSekolah, DapodikRawRombel, DapodikRawPtk, DapodikRawPengguna, SekolahProfile, JenjangSekolah } from '../types';
 import {
@@ -82,6 +84,8 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
   onRefreshData
 }) => {
   const [cfg, setCfg] = useState<DapodikConfig>(config);
+  // Token Web Service selalu tersamar; tombol mata hanya membuka sesaat.
+  const [tokenTerlihat, setTokenTerlihat] = useState(false);
   const [testingConn, setTestingConn] = useState(false);
   const [connResult, setConnResult] = useState<{ success: boolean; message: string; latency?: number } | null>(null);
 
@@ -763,21 +767,34 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
               <label className="block font-semibold text-slate-700 mb-1">
                 Token Web Service Dapodik (Bearer Key) *
               </label>
-              <input
-                type="text"
-                required
-                aria-required="true"
-                value={cfg.token}
-                onChange={(e) => setCfg({ ...cfg, token: e.target.value })}
-                placeholder="Salin token dari menu Pengaturan Web Service di aplikasi Dapodik"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none"
-              />
-              {/* S7: token tersimpan plaintext di perangkat ini (IndexedDB /
-                  localStorage) — tidak ikut file backup, tetapi siapa pun
-                  yang memegang perangkat dapat membacanya. */}
+              <div className="relative">
+                <input
+                  type={tokenTerlihat ? 'text' : 'password'}
+                  required
+                  aria-required="true"
+                  autoComplete="off"
+                  value={cfg.token}
+                  onChange={(e) => setCfg({ ...cfg, token: e.target.value })}
+                  placeholder="Salin token dari menu Pengaturan Web Service di aplikasi Dapodik"
+                  className="w-full px-3 py-2 pr-10 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setTokenTerlihat((v) => !v)}
+                  aria-label={tokenTerlihat ? 'Sembunyikan token' : 'Tampilkan token sesaat'}
+                  title={tokenTerlihat ? 'Sembunyikan token' : 'Tampilkan token sesaat'}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                >
+                  {tokenTerlihat ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {/* S7: token DITAMPILKAN tersamar (QA Fase 0), tetapi di
+                  penyimpanan perangkat ini nilainya masih plaintext
+                  (IndexedDB/localStorage) — tidak ikut file backup, tetapi
+                  siapa pun yang memegang perangkat dapat membacanya. */}
               <p className="mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                Token tersimpan <strong>plaintext</strong> di perangkat ini. Jangan bagikan file
-                backup/config yang memuatnya; token tidak ikut diekspor ke file backup.
+                Token ditampilkan tersamar. Di perangkat ini token tersimpan <strong>plaintext</strong> —
+                jangan bagikan file backup/config yang memuatnya; token tidak ikut diekspor ke file backup.
               </p>
             </div>
 

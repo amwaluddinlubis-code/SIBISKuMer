@@ -65,9 +65,10 @@ const emptyWali = (): NonNullable<Siswa['wali']> => ({
   nama: '',
   nik: '',
   tahunLahir: '',
-  pendidikan: 'SMA / sederajat',
-  pekerjaan: 'Lainnya',
-  penghasilan: 'Tidak Berpenghasilan',
+  // Kosong = belum diisi. Jangan mengarang pendidikan/pekerjaan/penghasilan wali.
+  pendidikan: '',
+  pekerjaan: '',
+  penghasilan: '',
   noTelepon: '',
   hubungan: '',
   alamat: '',
@@ -165,96 +166,75 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
       noKk: '',
       noAktaLahir: '',
       tempatLahir: '',
-      tanggalLahir: '2011-01-01',
-      agama: 'Islam',
+      // ATURAN KEJUJURAN DATA (QA Fase 0): template siswa baru TIDAK boleh
+      // berisi nilai karangan. Semua field faktual mulai KOSONG; yang wajib
+      // diisi ditegakkan oleh validasi langkah, sisanya tampil '—' di Tinjau.
+      tanggalLahir: '',
+      agama: '',
       kewarganegaraan: 'WNI',
-      anakKe: 1,
+      anakKe: 0,
       jumlahSaudaraKandung: 0,
       jumlahSaudaraTiri: 0,
       jumlahSaudaraAngkat: 0,
-      statusDalamKeluarga: 'Anak Kandung',
-      bahasaSehariHari: 'Bahasa Indonesia',
+      statusDalamKeluarga: '',
+      bahasaSehariHari: '',
       fotoUrl: '',
       golonganDarah: '-',
-      tinggiBadan: 155,
-      beratBadan: 45,
-      riwayatPenyakit: 'Tidak ada',
-      kelainanFisik: 'Tidak ada',
-      kebutuhanKhusus: 'Tidak ada',
+      tinggiBadan: 0,
+      beratBadan: 0,
+      riwayatPenyakit: '',
+      kelainanFisik: '',
+      kebutuhanKhusus: '',
       alamat: '',
-      rt: '01',
-      rw: '01',
+      rt: '',
+      rw: '',
       dusun: '',
       kelurahan: '',
       kecamatan: '',
       kabupatenKota: '',
       provinsi: '',
       kodePos: '',
-      tinggalDengan: 'Orang Tua',
-      jarakKeSekolahKm: 1.0,
-      transportasiKeSekolah: 'Jalan Kaki',
+      tinggalDengan: '',
+      jarakKeSekolahKm: 0,
+      transportasiKeSekolah: '',
       ayah: {
         nama: '',
         nik: '',
-        tahunLahir: '1975',
-        pendidikan: 'SMA / sederajat',
-        pekerjaan: 'Wiraswasta',
-        penghasilan: 'Rp. 2,000,000 - Rp. 4,999,999',
+        tahunLahir: '',
+        pendidikan: '',
+        pekerjaan: '',
+        penghasilan: '',
         noTelepon: '',
-        status: 'Masih Hidup'
+        status: ''
       },
       ibu: {
         nama: '',
         nik: '',
-        tahunLahir: '1978',
-        pendidikan: 'SMA / sederajat',
-        pekerjaan: 'Lainnya',
-        penghasilan: 'Tidak Berpenghasilan',
+        tahunLahir: '',
+        pendidikan: '',
+        pekerjaan: '',
+        penghasilan: '',
         noTelepon: '',
-        status: 'Masih Hidup'
+        status: ''
       },
       asalSdMi: '',
       npsnSdMi: '',
       noIjazahSd: '',
-      tahunLulusSd: tahunMulai,
-      lamaBelajarSd: 6,
-      tanggalDiterima: `${tahunMulai}-07-15`,
+      tahunLulusSd: '',
+      lamaBelajarSd: 0,
+      tanggalDiterima: '',
       diterimaDiTingkat: defTingkat,
       diterimaDiRombel: defRombel,
       rombelSaatIni: defRombel,
-      jalurMasuk: 'Zonasi',
+      jalurMasuk: '',
       jenisPendaftaran: 'Siswa Baru',
       hobi: '',
       citaCita: '',
-      p5Projects: [
-        {
-          id: `p5-init-${Date.now()}`,
-          tema: 'Gaya Hidup Berkelanjutan',
-          judulProjek: 'Pengurangan Jejak Karbon dan Kebersihan Lingkungan Sekolah',
-          fase: defFase,
-          tingkat: defTingkat,
-          semester: '1',
-          tahunAjaran: taBerjalan,
-          dimensi: {
-            berimanBertakwa: 'Berkembang Sesuai Harapan',
-            berkebinekaanGlobal: 'Berkembang Sesuai Harapan',
-            bergotongRoyong: 'Sangat Berkembang',
-            mandiri: 'Berkembang Sesuai Harapan',
-            bernalarKritis: 'Berkembang Sesuai Harapan',
-            kreatif: 'Berkembang Sesuai Harapan'
-          },
-          catatanProses: 'Aktif berkolaborasi dalam kelompok kerja projek P5.'
-        }
-      ],
-      ekstrakurikuler: [
-        {
-          id: `ek-init-${Date.now()}`,
-          nama: isSD ? 'Pramuka Siaga (Wajib)' : 'Pramuka Penggalang (Wajib)',
-          keterangan: 'Mengikuti latihan rutin pramuka',
-          predikat: 'Baik',
-          tingkat: defTingkat
-        }
-      ],
+      // Siswa baru belum punya projek P5 / ekskul / prestasi — jangan
+      // mengarang penilaian. Baris riwayat semester berjalan tetap dibuat
+      // (struktur kehadiran), tetapi catatan wali kelas mulai kosong.
+      p5Projects: [],
+      ekstrakurikuler: [],
       prestasi: [],
       riwayatSemester: [
         {
@@ -266,7 +246,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
           izin: 0,
           alpa: 0,
           statusKenaikan: 'Belum Ditentukan',
-          catatanWaliKelas: 'Menunjukkan kesungguhan belajar di kelas.'
+          catatanWaliKelas: ''
         }
       ],
       statusSiswa: 'Aktif',
@@ -725,7 +705,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                     readOnly={kunciNilai(initialData?.nisn)}
                     title={kunciNilai(initialData?.nisn) ? 'Terkunci Dapodik — ubah via Sinkron Dapodik' : undefined}
                     onChange={(e) => set('nisn', e.target.value)}
-                    placeholder="0091234567"
+                    placeholder="Contoh: 0091234567"
                     className={`w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none ${clsKunci(kunciNilai(initialData?.nisn))}`}
                   />
                   {errText('nisn')}
@@ -738,7 +718,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                     readOnly={kunciNilai(initialData?.nipd)}
                     title={kunciNilai(initialData?.nipd) ? 'Terkunci Dapodik — ubah via Sinkron Dapodik' : undefined}
                     onChange={(e) => set('nipd', e.target.value)}
-                    placeholder="242507001"
+                    placeholder="Contoh: 242507001"
                     className={`w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-blue-600 focus:outline-none ${clsKunci(kunciNilai(initialData?.nipd))}`}
                   />
                   {errText('nipd')}
@@ -797,7 +777,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                     readOnly={kunciNilai(initialData?.noAktaLahir)}
                     title={kunciNilai(initialData?.noAktaLahir) ? 'Terkunci Dapodik — ubah via Sinkron Dapodik' : undefined}
                     onChange={(e) => set('noAktaLahir', e.target.value)}
-                    placeholder="3201-LT-15042009-0012"
+                    placeholder="Contoh: 3201-LT-15042009-0012"
                     className={`w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none ${clsKunci(kunciNilai(initialData?.noAktaLahir))}`}
                   />
                 </div>
@@ -850,7 +830,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                   rows={2}
                   value={formData.alamat}
                   onChange={(e) => set('alamat', e.target.value)}
-                  placeholder="Jl. Merpati Putih No. 12"
+                  placeholder="Contoh: Jl. Merpati Putih No. 12"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:outline-none"
                 />
               </div>
@@ -1010,7 +990,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Pekerjaan Wali</label>
                       <KodeSelect
-                        value={formData.wali?.pekerjaan || 'Lainnya'}
+                        value={formData.wali?.pekerjaan || ''}
                         options={PEKERJAAN_OPTIONS}
                         ariaLabel="Pekerjaan wali"
                         onChange={(v) => setWali('pekerjaan', v)}
@@ -1126,7 +1106,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                       type="text"
                       value={formData.asalSdMi}
                       onChange={(e) => set('asalSdMi', e.target.value)}
-                      placeholder={jenjang === 'SD' ? 'TK Pertiwi Nusantara' : 'SD Negeri 1 Nusantara'}
+                      placeholder={jenjang === 'SD' ? 'Contoh: TK Pertiwi Nusantara' : 'Contoh: SD Negeri 1 Nusantara'}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                     />
                   </div>
@@ -1139,7 +1119,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                       inputMode="numeric"
                       value={formData.npsnSdMi}
                       onChange={(e) => set('npsnSdMi', e.target.value)}
-                      placeholder="20101234"
+                      placeholder="Contoh: 20101234"
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono"
                     />
                   </div>
@@ -1150,6 +1130,7 @@ export const SiswaFormModal: React.FC<SiswaFormModalProps> = ({
                       onChange={(e) => set('jalurMasuk', e.target.value as JalurMasuk)}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
                     >
+                      <option value="">— Pilih —</option>
                       <option value="Zonasi">Zonasi</option>
                       <option value="Afirmasi">Afirmasi (Keluarga Tidak Mampu)</option>
                       <option value="Prestasi">Prestasi (Akademik / Non-Akademik)</option>

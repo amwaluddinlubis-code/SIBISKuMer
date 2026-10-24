@@ -147,11 +147,13 @@ export const SiswaDetailModal: React.FC<SiswaDetailModalProps> = ({
               </div>
               <div>
                 <span className="text-slate-500 block">Anak Ke-:</span>
-                <span className="text-slate-900">Anak ke-{siswa.anakKe} dari {siswa.jumlahSaudaraKandung + 1}</span>
+                <span className="text-slate-900">
+                  {siswa.anakKe >= 1 ? `Anak ke-${siswa.anakKe} dari ${siswa.jumlahSaudaraKandung + 1}` : '-'}
+                </span>
               </div>
               <div>
                 <span className="text-slate-500 block">Bahasa Sehari-hari:</span>
-                <span className="text-slate-900">{siswa.bahasaSehariHari}</span>
+                <span className="text-slate-900">{siswa.bahasaSehariHari || '-'}</span>
               </div>
               <div>
                 <span className="text-slate-500 block">Kewarganegaraan:</span>

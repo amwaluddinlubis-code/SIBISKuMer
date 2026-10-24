@@ -345,6 +345,34 @@ describe('rencanaTerapkan', () => {
     assert.equal(s.diterimaDiTingkat, '7');
     assert.equal(s.statusSiswa, 'Aktif');
   });
+  test('bangunSiswaBaru: sel kosong TIDAK diisi nilai karangan (regresi QA Fase 0)', () => {
+    const s = bangunSiswaBaru(
+      { namaLengkap: 'Siswa Minimal', nisn: '0011223344', rombelSaatIni: '7A' },
+      { jenjang: 'SMP', tahunAjaran: '2026/2027', sekarangIso: '2026-10-15T00:00:00.000Z' },
+      'tes-minimal'
+    );
+    // Dulu semua ini dikarang: agama Islam, RT/RW 01, Anak Kandung,
+    // Bahasa Indonesia, riwayat 'Tidak ada', Zonasi, ortu 'Masih Hidup',
+    // tahun lulus berjalan, lama belajar 6, tanggal diterima 15 Juli.
+    assert.equal(s.agama, '');
+    assert.equal(s.rt, '');
+    assert.equal(s.rw, '');
+    assert.equal(s.statusDalamKeluarga, '');
+    assert.equal(s.bahasaSehariHari, '');
+    assert.equal(s.riwayatPenyakit, '');
+    assert.equal(s.kelainanFisik, '');
+    assert.equal(s.kebutuhanKhusus, '');
+    assert.equal(s.tinggalDengan, '');
+    assert.equal(s.transportasiKeSekolah, '');
+    assert.equal(s.jalurMasuk, '');
+    assert.equal(s.ayah.status, '');
+    assert.equal(s.ibu.status, '');
+    assert.equal(s.tahunLulusSd, '');
+    assert.equal(s.lamaBelajarSd, 0);
+    assert.equal(s.tanggalDiterima, '');
+    assert.equal(s.tanggalLahir, '');
+    assert.equal(s.anakKe, 0);
+  });
 });
 
 describe('laporanErrorCsv', () => {
