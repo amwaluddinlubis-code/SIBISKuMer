@@ -62,6 +62,8 @@ import { getDaftarTahunAjaran, getTahunDiizinkan } from './utils/tahunAjaran';
 import { tahunSesiEfektif, siswaTerlihatSesi } from './utils/sesi';
 import { initialSekolahProfile, initialDapodikConfig } from './data/initialData';
 import { Navbar } from './components/Navbar';
+// Versi aplikasi yang tampil di footer — samakan dengan "version" di package.json.
+const APP_VERSION = '1.0.0';
 // Code-splitting: tiap tab & modal dimuat on-demand agar bundel awal kecil.
 // (Backlog: bundel ~1MB → chunk terpisah per view; firebase hanya ikut chunk Backup.)
 function lazyView(
@@ -1258,7 +1260,7 @@ export default function App() {
       />
 
       {/* Content Column (offset for fixed topbar + sidebar width; bottom pad for fixed footer) */}
-      <div className={`flex flex-col min-h-screen min-w-0 pt-16 pb-32 sm:pb-24 ${sidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-64'}`}>
+      <div className={`flex flex-col min-h-screen min-w-0 pt-16 pb-44 sm:pb-32 ${sidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-64'}`}>
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
         <Suspense fallback={<TabLoading />}>
@@ -1746,19 +1748,29 @@ export default function App() {
 
       {/* Footer — freeze di bawah viewport */}
       <footer className={`fixed bottom-0 right-0 left-0 z-30 border-t border-slate-200/80 bg-white/90 backdrop-blur px-4 sm:px-6 py-3 print:hidden transition-[left] duration-200 ${sidebarCollapsed ? 'lg:left-[76px]' : 'lg:left-64'}`}>
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
-          <p className="flex items-center gap-2 text-slate-600">
-            <span className="w-6 h-6 rounded bg-gradient-to-br from-blue-600 to-navy-900 text-gold-300 flex items-center justify-center shrink-0">
-              <GraduationCap className="w-3.5 h-3.5" />
-            </span>
-            <span>
-              Buku Induk Siswa {sekolah.jenjang || 'SMP'} • <strong className="text-slate-800">Kurikulum Merdeka {sekolah.jenjang === 'SD' ? '(Fase A, B, C)' : '(Fase D)'}</strong>
-            </span>
-          </p>
-          <p className="flex items-center gap-2 text-slate-400 text-[11px]">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            Offline-first (IndexedDB PWA) • Sinkron Dapodik Lokal • Standar Kemdikbudristek RI
-          </p>
+        <div className="max-w-7xl mx-auto flex flex-col gap-2 text-xs">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
+            <p className="flex items-center gap-2 text-slate-600">
+              <span className="w-6 h-6 rounded bg-gradient-to-br from-blue-600 to-navy-900 text-gold-300 flex items-center justify-center shrink-0">
+                <GraduationCap className="w-3.5 h-3.5" />
+              </span>
+              <span>
+                Buku Induk Siswa {sekolah.jenjang || 'SMP'} • <strong className="text-slate-800">Kurikulum Merdeka {sekolah.jenjang === 'SD' ? '(Fase A, B, C)' : '(Fase D)'}</strong>
+              </span>
+            </p>
+            <p className="flex items-center gap-2 text-slate-400 text-[11px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              Offline-first (IndexedDB PWA) • Sinkron Dapodik Lokal • Standar Kemdikbudristek RI • Versi {APP_VERSION}
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-1 border-t border-slate-100 pt-2 text-[11px] text-slate-400">
+            <p>
+              © {new Date().getFullYear()} {sekolah.nama || 'Buku Induk Siswa Merdeka'}{sekolah.npsn ? ` • NPSN ${sekolah.npsn}` : ''} — Hak cipta dilindungi undang-undang.
+            </p>
+            <p>
+              Tahun Ajaran {sekolah.tahunAjaran} • Data tersimpan lokal di perangkat ini
+            </p>
+          </div>
         </div>
       </footer>
       </div>{/* End Content Column */}
