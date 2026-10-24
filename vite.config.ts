@@ -55,6 +55,10 @@ export default defineConfig(() => {
       },
     },
     server: {
+      // Izinkan akses server dev lewat tunnel ngrok (QA browser jarak jauh).
+      // Hanya subdomain ngrok-free.dev; host lain tetap ditolak Vite.
+      // Tidak berpengaruh ke build produksi/Electron.
+      allowedHosts: ['.ngrok-free.dev'],
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
