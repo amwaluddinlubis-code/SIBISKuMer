@@ -1768,6 +1768,13 @@ export default function App() {
               © {new Date().getFullYear()} {sekolah.nama || 'Buku Induk Siswa Merdeka'}{sekolah.npsn ? ` • NPSN ${sekolah.npsn}` : ''} — Hak cipta dilindungi undang-undang.
             </p>
             <p>
+              Pengembang: <span className="text-slate-500 font-medium">Amwaluddin Lubis, S.T</span> (
+              <a href="mailto:amwaluddin.lubis@gmail.com" className="text-slate-500 hover:text-blue-600 hover:underline">
+                amwaluddin.lubis@gmail.com
+              </a>
+              )
+            </p>
+            <p>
               Tahun Ajaran {sekolah.tahunAjaran} • Data tersimpan lokal di perangkat ini
             </p>
           </div>
