@@ -66,10 +66,27 @@ test('modeLayar: JSON rusak di penyimpanan -> jatuh ke lokal, tidak melempar', (
   assert.equal(modeData.modeLayar('siswa'), 'lokal');
 });
 
-test('sekolahIdServer: tanpa sekolah aktif -> utama; dengan id aktif -> id itu', () => {
+test('sekolahIdServer: entri utama (dbName bawaan) -> utama; sekolah tambahan -> id entri', () => {
   assert.equal(dataApi.sekolahIdServer(), 'utama');
-  ls.setItem('bukuinduk_active_school', 'sk-abc123');
-  assert.equal(dataApi.sekolahIdServer(), 'sk-abc123');
+  // Entri utama selalu ber-id bangkitan tetapi dbName bawaan (kasus nyata
+  // instalasi — regresi QA pasangan S2: id mentah membuat server membuka
+  // database kosong dan login server selalu gagal).
+  ls.setItem('bukuinduk_active_school', 'sch-main-m42xyz');
+  ls.setItem(
+    'bukuinduk_schools',
+    JSON.stringify([{ id: 'sch-main-m42xyz', dbName: 'BukuInduk_Merdeka_DB', nama: 'Utama' }])
+  );
+  assert.equal(dataApi.sekolahIdServer(), 'utama');
+  // Sekolah tambahan dengan database sendiri memakai id entrinya.
+  ls.setItem('bukuinduk_active_school', 'sk-kedua');
+  ls.setItem(
+    'bukuinduk_schools',
+    JSON.stringify([
+      { id: 'sch-main-m42xyz', dbName: 'BukuInduk_Merdeka_DB', nama: 'Utama' },
+      { id: 'sk-kedua', dbName: 'BukuInduk_Merdeka_DB_sk-kedua', nama: 'Kedua' },
+    ])
+  );
+  assert.equal(dataApi.sekolahIdServer(), 'sk-kedua');
 });
 
 test('ambilSiswaDariServer: memanggil API dengan cookie sesi & membuka amplop', async () => {

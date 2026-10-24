@@ -31,14 +31,23 @@ async function panggil<T>(
   return amplop.data as T;
 }
 
-/** Id sekolah di server: sekolah bawaan lokal dipetakan ke 'utama';
- *  sekolah lain memakai id entrinya (kunci LS 'bukuinduk_active_school'
- *  menyimpan id entri sekolah aktif; server membersihkan karakter
- *  nama berkas). */
+/** Id sekolah di server. Entri sekolah UTAMA klien selalu ber-id hasil
+ *  bangkitan (sch-...) tetapi dbName-nya adalah database bawaan
+ *  'BukuInduk_Merdeka_DB' — entri itulah yang dipetakan ke 'utama' di
+ *  server. Sekolah tambahan (dbName lain) memakai id entrinya sendiri.
+ *  (Temuan QA pasangan S2: memetakan dari id aktif mentah membuat login
+ *  server membuka database kosong sehingga sesi tidak pernah terbentuk.) */
 export function sekolahIdServer(): string {
   try {
-    const aktif = (localStorage.getItem('bukuinduk_active_school') || '').trim();
-    return aktif || 'utama';
+    const aktifId = (localStorage.getItem('bukuinduk_active_school') || '').trim();
+    if (!aktifId) return 'utama';
+    const daftar = JSON.parse(localStorage.getItem('bukuinduk_schools') || '[]');
+    const entri = Array.isArray(daftar)
+      ? daftar.find((s: any) => s && s.id === aktifId)
+      : null;
+    if (!entri) return 'utama';
+    if (!entri.dbName || entri.dbName === 'BukuInduk_Merdeka_DB') return 'utama';
+    return String(entri.id);
   } catch {
     return 'utama';
   }
