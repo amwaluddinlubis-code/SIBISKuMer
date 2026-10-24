@@ -530,20 +530,33 @@ export default function App() {
           `Basis data server masih berisi data contoh, sedangkan perangkat ini menyimpan ${jumlahLokal} siswa dari instalasi sebelumnya. Impor data perangkat ini ke server sekarang? Data contoh di server akan digantikan (snapshot pengaman dibuat otomatis di server).`,
           { confirmLabel: 'Ya, Impor ke Server', cancelLabel: 'Nanti Saja' }
         );
+        if (!ok) {
+          try {
+            localStorage.setItem('bukuinduk_migrasi_server', 'ditolak');
+          } catch {
+            /* abaikan */
+          }
+          return;
+        }
+        // Penanda hanya ditulis SETELAH impor berhasil — kegagalan
+        // ditampilkan apa adanya dan penawaran boleh muncul lagi
+        // (regresi gerbang S4: gagal diam-diam + penanda terlanjur).
+        const hasil = await imporKeServer(lokal);
         try {
-          localStorage.setItem('bukuinduk_migrasi_server', ok ? 'selesai' : 'ditolak');
+          localStorage.setItem('bukuinduk_migrasi_server', 'selesai');
         } catch {
           /* abaikan */
         }
-        if (!ok) return;
-        const hasil = await imporKeServer(lokal);
         toast(
           `Migrasi selesai: ${hasil?.hitungan?.siswa ?? jumlahLokal} siswa kini tersimpan di server.`,
           'success'
         );
         await loadData();
-      } catch {
-        /* penawaran migrasi tidak boleh mengganggu pemakaian aplikasi */
+      } catch (e: any) {
+        toast(
+          `Migrasi ke server gagal: ${e?.message || 'kesalahan tidak dikenal'}. Penawaran akan muncul lagi pada masuk berikutnya.`,
+          'error'
+        );
       }
     })();
   }, [currentUser, loadData]);

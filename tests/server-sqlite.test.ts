@@ -100,6 +100,18 @@ test('paritas first-run: sekolah baru ter-seed data contoh yang sama', async () 
   assert.deepEqual(daftar.body.data.map((s: any) => s.id), idTerurut);
 });
 
+test('benihAwal: true pada benih segar, false setelah ada tulis data (S4)', async () => {
+  const sesi = await panggil('GET', '/auth/sesi', { cookie: cookieAdmin });
+  assert.equal(sesi.body.data.benihAwal, true);
+  await panggil('PUT', '/data/siswa/benih-uji', {
+    cookie: cookieAdmin,
+    body: { id: 'benih-uji', namaLengkap: 'Uji Benih', nama: 'Uji Benih' },
+  });
+  const sesi2 = await panggil('GET', '/auth/sesi', { cookie: cookieAdmin });
+  assert.equal(sesi2.body.data.benihAwal, false);
+  await panggil('DELETE', '/data/siswa/benih-uji', { cookie: cookieAdmin });
+});
+
 test('impor backup asli oleh admin: hitungan cocok, token tidak ikut', async () => {
   const payloadMentah: any = {
     app: 'Buku Induk Siswa Kurikulum Merdeka',

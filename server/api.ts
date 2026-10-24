@@ -337,6 +337,28 @@ export function buatRouterV1(): Router {
     kirimOk(res, { user: admin ? userPublik(admin) : null, sekolahId: req.sesi!.sekolahId });
   });
 
+  // Fase S4: tulis data nyata apa pun (mutasi /data atau /snapshot)
+  // mengakhiri status benih-awal sekolah itu — gerbang penawaran
+  // migrasi hanya untuk server yang benar-benar belum pernah dipakai.
+  // Wajib terdaftar SEBELUM rute-rute data di bawah.
+  r.use(['/data', '/snapshot'], (req: ReqBersesi, _res, next) => {
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+      try {
+        const token = tokenDariReq(req);
+        const sesi = token ? sesiDariToken(token) : null;
+        if (sesi) {
+          const db = dbSekolah(sesi.sekolahId);
+          if (!ambilMeta(db, 'data_nyata')) {
+            simpanMeta(db, 'data_nyata', { pada: new Date().toISOString(), via: 'tulis-api' });
+          }
+        }
+      } catch {
+        /* penanda tidak boleh menggagalkan permintaan */
+      }
+    }
+    next();
+  });
+
   // ---------- Data: siswa ----------
   r.get('/data/siswa', perluSesi, (req: ReqBersesi, res) => {
     const db = dbSekolah(req.sesi!.sekolahId);

@@ -14,6 +14,7 @@ import { pakaiServer } from './modeData';
 import * as api from './dataApi';
 // Issue #10 — integritas (SHA-256), kompatibilitas & validasi struktur backup.
 import {
+  BACKUP_APP_NAME,
   BACKUP_FORMAT_VERSION,
   deteksiCadanganTerenkripsi,
   periksaIntegritas,
@@ -2172,8 +2173,10 @@ export async function eksporDataLokalSaja(): Promise<BackupPayload> {
   const configRow = (configMentah as any[])[0];
   const { id: _abaikanC, ...config } = configRow || {};
   return {
-    app: 'BukuInduk_Merdeka',
-    version: '2',
+    // WAJIB konstanta kanonis — server menolak app/version lain
+    // (regresi gerbang S4: payload rakitan tangan ditolak validasi).
+    app: BACKUP_APP_NAME,
+    version: BACKUP_FORMAT_VERSION,
     exportedAt: new Date().toISOString(),
     sekolah: (profil && Object.keys(profil).length ? profil : defaultSekolahProfile) as SekolahProfile,
     dapodikConfig: (config && Object.keys(config).length ? config : defaultDapodikConfig) as DapodikConfig,
@@ -2735,8 +2738,8 @@ export async function importBackupData(
  *  pengaman sebelum menimpa. */
 function payloadPabrik(sertakanContoh: boolean): Record<string, unknown> {
   return {
-    app: 'BukuInduk_Merdeka',
-    version: 2,
+    app: BACKUP_APP_NAME,
+    version: BACKUP_FORMAT_VERSION,
     exportedAt: new Date().toISOString(),
     sekolah: defaultSekolahProfile,
     dapodikConfig: { ...defaultDapodikConfig, wsToken: '' },
