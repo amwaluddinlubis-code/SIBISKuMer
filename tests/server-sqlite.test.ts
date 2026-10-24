@@ -103,6 +103,13 @@ test('paritas first-run: sekolah baru ter-seed data contoh yang sama', async () 
 test('benihAwal: true pada benih segar, false setelah ada tulis data (S4)', async () => {
   const sesi = await panggil('GET', '/auth/sesi', { cookie: cookieAdmin });
   assert.equal(sesi.body.data.benihAwal, true);
+  // Tulis audit (terjadi pada setiap login) TIDAK mengakhiri status benih.
+  await panggil('PUT', '/data/koleksi/audit_logs/audit-benih-uji', {
+    cookie: cookieAdmin,
+    body: { id: 'audit-benih-uji', timestamp: new Date().toISOString(), aksi: 'login' },
+  });
+  const sesiAudit = await panggil('GET', '/auth/sesi', { cookie: cookieAdmin });
+  assert.equal(sesiAudit.body.data.benihAwal, true);
   await panggil('PUT', '/data/siswa/benih-uji', {
     cookie: cookieAdmin,
     body: { id: 'benih-uji', namaLengkap: 'Uji Benih', nama: 'Uji Benih' },

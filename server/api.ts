@@ -342,7 +342,14 @@ export function buatRouterV1(): Router {
   // migrasi hanya untuk server yang benar-benar belum pernah dipakai.
   // Wajib terdaftar SEBELUM rute-rute data di bawah.
   r.use(['/data', '/snapshot'], (req: ReqBersesi, _res, next) => {
-    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    // Entri audit dikecualikan: aplikasi menulis audit pada SETIAP login,
+    // sehingga menghitungnya sebagai "pemakaian nyata" akan mematikan
+    // status benih sebelum penawaran migrasi sempat diperiksa (regresi
+    // terbukti pada QA ulang S4, 25 Okt 2026).
+    // NB: req.path di dalam use('/data') bersifat relatif terhadap titik
+    // pasang (awalan /data sudah dilepas Express).
+    const jalurAudit = /^\/koleksi\/audit_logs(\/|$)/.test(req.path);
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method) && !jalurAudit) {
       try {
         const token = tokenDariReq(req);
         const sesi = token ? sesiDariToken(token) : null;
