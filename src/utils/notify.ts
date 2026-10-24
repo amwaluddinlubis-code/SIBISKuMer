@@ -29,6 +29,10 @@ interface ConfirmRequest {
   confirmLabel: string;
   cancelLabel: string;
   danger: boolean;
+  /** Bila diisi, tombol konfirmasi hanya aktif setelah pengguna mengetik
+   *  teks ini persis (konfirmasi dua tahap untuk aksi ireversibel). */
+  requireText?: string;
+  requireTextLabel?: string;
   resolve: (ok: boolean) => void;
 }
 
@@ -40,7 +44,7 @@ const pendingConfirms = new Map<number, (ok: boolean) => void>();
 
 export function confirmDialog(
   message: string,
-  opts?: { confirmLabel?: string; cancelLabel?: string; danger?: boolean }
+  opts?: { confirmLabel?: string; cancelLabel?: string; danger?: boolean; requireText?: string; requireTextLabel?: string }
 ): Promise<boolean> {
   confirmSeq += 1;
   const id = confirmSeq;
@@ -51,6 +55,8 @@ export function confirmDialog(
       confirmLabel: opts?.confirmLabel || 'Ya, Lanjutkan',
       cancelLabel: opts?.cancelLabel || 'Batal',
       danger: opts?.danger ?? true,
+      requireText: opts?.requireText,
+      requireTextLabel: opts?.requireTextLabel,
       resolve: (ok: boolean) => {
         pendingConfirms.delete(id);
         resolve(ok);

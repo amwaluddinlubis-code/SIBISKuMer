@@ -867,7 +867,17 @@ export const DapodikSyncView: React.FC<DapodikSyncViewProps> = ({
 
             <div className="space-y-2.5">
               <button
-                onClick={() => handleFetchData(false)}
+                onClick={async () => {
+                  // Konfirmasi eksplisit sebelum membaca Dapodik (QA Fase 1):
+                  // tegaskan bahwa langkah ini BARU membaca & membandingkan —
+                  // tidak ada data Buku Induk yang berubah sampai pengguna
+                  // memilih "Terapkan" pada pratinjau perbandingan.
+                  const ok = await confirmDialog(
+                    'Tarik data peserta didik dari Dapodik lokal sekarang?\n\nHasil tarikan hanya DITAMPILKAN sebagai pratinjau perbandingan. Data Buku Induk TIDAK berubah sampai Anda menekan tombol Terapkan pada pratinjau tersebut.',
+                    { confirmLabel: 'Ya, Tarik & Bandingkan', danger: false }
+                  );
+                  if (ok) handleFetchData(false);
+                }}
                 disabled={loadingSync}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl shadow-sm transition active:scale-98 disabled:opacity-50 text-xs"
               >

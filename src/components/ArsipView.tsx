@@ -16,6 +16,7 @@ import { Siswa, SekolahProfile, TutupTahunAjaran, PetaKelas, AppUser } from '../
 import { PageControl } from './PageControl';
 import { toast, confirmDialog } from '../utils/notify';
 import { cekTulisTahun, tahanMaksSesi } from '../utils/sesi';
+import { statusBackupTerakhir } from '../utils/autoBackup';
 import {
   tahunBerikutnya,
   tingkatAkhir,
@@ -164,9 +165,25 @@ export const ArsipView: React.FC<ArsipViewProps> = ({
       toast('Rencana promosi kosong — tidak ada siswa aktif.', 'warning');
       return;
     }
+    // Gerbang backup segar (QA Fase 1): tutup tahun hanya boleh jalan bila
+    // ada snapshot backup yang memuat jumlah siswa TERKINI — bukti bahwa
+    // kondisi sebelum promosi massal sudah diamankan dan bisa dipulihkan.
+    const statusB = await statusBackupTerakhir();
+    if (!statusB.waktu || statusB.jumlahSiswaSnapshot !== siswa.length) {
+      toast(
+        'Tutup tahun dibatalkan: belum ada snapshot backup terbaru untuk data saat ini. Buka menu Backup & Restore, buat snapshot baru, lalu ulangi.',
+        'error'
+      );
+      return;
+    }
     const ok = await confirmDialog(
-      `Tutup & kunci tahun ${tahunTutup.trim()}? Lulus: ${totalLulus}, Naik: ${totalNaik}, Tinggal: ${totalTinggal}. Tahun aktif menjadi ${tahunBaru.trim()}. Arsip terkunci dan hanya bisa dibuka administrator.`,
-      { confirmLabel: 'Ya, Tutup Tahun', danger: true }
+      `Tutup & kunci tahun ${tahunTutup.trim()}? Lulus: ${totalLulus}, Naik: ${totalNaik}, Tinggal: ${totalTinggal}. Tahun aktif menjadi ${tahunBaru.trim()}. Arsip terkunci dan hanya bisa dibuka administrator.\n\nSnapshot backup terakhir: ${new Date(statusB.waktu).toLocaleString('id-ID')} (${statusB.jumlahSiswaSnapshot} siswa).`,
+      {
+        confirmLabel: 'Ya, Tutup Tahun',
+        danger: true,
+        requireText: tahunTutup.trim(),
+        requireTextLabel: `Ketik tahun yang ditutup (${tahunTutup.trim()}) untuk mengonfirmasi`,
+      }
     );
     if (!ok) return;
     setExecuting(true);
@@ -246,7 +263,8 @@ export const ArsipView: React.FC<ArsipViewProps> = ({
                 setPlanBuiltFor('');
                 setWizardOpen(true);
               }}
-              className="ui-btn ui-btn-primary"
+              className="ui-btn !bg-amber-50 !text-amber-900 border !border-amber-300 hover:!bg-amber-100"
+              title="Aksi permanen: membuka wizard penutupan tahun (promosi massal + arsip terkunci). Perlu snapshot backup terbaru dan konfirmasi ketik tahun."
             >
               <Lock className="w-3.5 h-3.5" />
               Tutup Tahun Ajaran

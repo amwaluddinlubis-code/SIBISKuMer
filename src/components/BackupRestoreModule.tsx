@@ -23,7 +23,7 @@ import {
   Play
 } from 'lucide-react';
 import { SekolahProfile, AppUser, AutoBackupSnapshot } from '../types';
-import { exportDatabaseBackup, importDatabaseBackup, resetToInitialData, clearDatabase, deleteAutoSnapshot, parseBackupPayload, pratinjauBackup, importSelectiveSiswa, PENGAMAN_RESTORE_OLEH, type BackupPayload, type RestoreMode } from '../utils/db';
+import { exportDatabaseBackup, importDatabaseBackup, resetToInitialData, clearDatabase, deleteAutoSnapshot, parseBackupPayload, pratinjauBackup, importSelectiveSiswa, getAllSiswa, PENGAMAN_RESTORE_OLEH, type BackupPayload, type RestoreMode } from '../utils/db';
 import { catatAudit } from '../utils/audit';
 import {
   bacaAutoBackupSetting,
@@ -168,11 +168,18 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
   const [cloudProg, setCloudProg] = useState<{ tahap: string; persen: number } | null>(null);
   const [cloudStatus, setCloudStatus] = useState(() => statusCloudTerakhir());
 
+  const [jumlahSiswaKini, setJumlahSiswaKini] = useState<number | null>(null);
+
   const muatSnapshots = async () => {
     try {
       setSnapshots(await daftarSnapshot());
     } catch {
       setSnapshots([]);
+    }
+    try {
+      setJumlahSiswaKini((await getAllSiswa()).length);
+    } catch {
+      setJumlahSiswaKini(null);
     }
   };
 
@@ -516,7 +523,7 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
       toast('Tindakan ini memerlukan hak akses Administrator.', 'error');
       return;
     }
-    if (await confirmDialog('Kembalikan database ke data contoh Kurikulum Merdeka? Data kustom akan digantikan dengan data sampel.', { confirmLabel: 'Ya, Kembalikan' })) {
+    if (await confirmDialog('Kembalikan database ke data contoh Kurikulum Merdeka? SELURUH data kustom saat ini akan DIGANTIKAN data sampel dan tidak dapat dikembalikan kecuali dari cadangan.', { confirmLabel: 'Ya, Kembalikan', requireText: 'SAMPEL', requireTextLabel: 'Ketik SAMPEL untuk mengonfirmasi penggantian data' })) {
       try {
         await resetToInitialData();
         onDataChanged();
@@ -537,7 +544,14 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
       toast('Tindakan ini memerlukan hak akses Administrator.', 'error');
       return;
     }
-    const ok = await confirmDialog('PERINGATAN KRUSIAL: Seluruh data siswa dan riwayat akan dihapus permanen! Lanjutkan penghapusan?', { confirmLabel: 'Ya, Hapus Semua' });
+    const ok = await confirmDialog(
+      'PERINGATAN KRUSIAL: Seluruh data siswa dan riwayat akan dihapus permanen dari perangkat ini! Penghapusan tidak dapat dibatalkan.\n\nPastikan snapshot/file cadangan terbaru sudah tersimpan sebelum melanjutkan.',
+      {
+        confirmLabel: 'Ya, Hapus Semua',
+        requireText: 'KOSONGKAN',
+        requireTextLabel: 'Ketik KOSONGKAN untuk mengonfirmasi pengosongan database',
+      }
+    );
     if (ok) {
       try {
         await clearDatabase();
@@ -603,9 +617,16 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
   };
 
   const handleRestoreSnap = async (snap: AutoBackupSnapshot) => {
+    // Konfirmasi berlapis (QA Fase 1): snapshot disebut namanya (waktu +
+    // jumlah siswa) dan pengguna wajib mengetik PULIHKAN — memulihkan
+    // menimpa seluruh database, tidak boleh satu klik.
     const ok = await confirmDialog(
-      `Pulihkan database dari snapshot otomatis ${formatSnapWaktu(snap.timestamp)} (${snap.jumlahSiswa} siswa)? Data saat ini akan ditimpa.`,
-      { confirmLabel: 'Ya, Pulihkan' }
+      `Pulihkan database dari snapshot otomatis ${formatSnapWaktu(snap.timestamp)} (${snap.jumlahSiswa} siswa)? SELURUH data saat ini akan ditimpa oleh isi snapshot. Kondisi sebelum restore tetap disimpan sebagai snapshot pengaman.`,
+      {
+        confirmLabel: 'Ya, Pulihkan',
+        requireText: 'PULIHKAN',
+        requireTextLabel: 'Ketik PULIHKAN untuk mengonfirmasi pemulihan',
+      }
     );
     if (!ok) return;
     setRestoringSnapId(snap.id);
@@ -633,7 +654,7 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
   };
 
   const handleDeleteSnap = async (snap: AutoBackupSnapshot) => {
-    const ok = await confirmDialog(`Hapus snapshot otomatis ${formatSnapWaktu(snap.timestamp)}?`, { confirmLabel: 'Ya, Hapus' });
+    const ok = await confirmDialog(`Hapus snapshot otomatis ${formatSnapWaktu(snap.timestamp)} (${snap.jumlahSiswa} siswa)? Snapshot yang dihapus tidak dapat dikembalikan.`, { confirmLabel: 'Ya, Hapus' });
     if (!ok) return;
     try {
       await deleteAutoSnapshot(snap.id);
@@ -1313,8 +1334,23 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
         </div>
 
         <p className="text-[11px] text-slate-500">
-          Terakhir: <strong className="text-slate-700">{autoCfg.terakhirJalan ? formatSnapWaktu(autoCfg.terakhirJalan) : 'belum pernah'}</strong>
+          {/* Sumber tunggal (QA Fase 1.6): waktu snapshot TERBARU dari daftar
+              IndexedDB yang sama dengan yang dirender di bawah & dibaca
+              Dasbor — catatan setting hanya cadangan bila snapshot kosong. */}
+          Terakhir:{' '}
+          <strong className="text-slate-700">
+            {snapshots[0]
+              ? formatSnapWaktu(snapshots[0].timestamp)
+              : autoCfg.terakhirJalan
+                ? formatSnapWaktu(autoCfg.terakhirJalan)
+                : 'belum pernah'}
+          </strong>
           {autoCfg.terakhirStatus && <span className="text-slate-400"> • {autoCfg.terakhirStatus}</span>}
+          {snapshots[0] && jumlahSiswaKini !== null && snapshots[0].jumlahSiswa !== jumlahSiswaKini && (
+            <span className="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded-md text-[10px] font-bold border border-amber-200">
+              Kedaluwarsa — jumlah siswa berubah ({snapshots[0].jumlahSiswa} → {jumlahSiswaKini}), buat snapshot baru
+            </span>
+          )}
         </p>
 
         {snapshots.length === 0 ? (
@@ -1366,12 +1402,16 @@ export const BackupRestoreModule: React.FC<BackupRestoreModuleProps> = ({
                       <Upload className="w-3.5 h-3.5" />
                       <span>{restoring ? 'Memulihkan…' : 'Pulihkan'}</span>
                     </button>
+                    {/* Hapus snapshot: berlabel + gaya bahaya, terpisah
+                        dari aksi aman (QA Fase 1). */}
+                    <span className="mx-0.5 h-5 w-px bg-slate-200" aria-hidden="true" />
                     <button
                       onClick={() => void handleDeleteSnap(snap)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                      title="Hapus snapshot ini"
+                      className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer"
+                      title="Hapus snapshot ini secara permanen"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Hapus</span>
                     </button>
                   </div>
                 </div>

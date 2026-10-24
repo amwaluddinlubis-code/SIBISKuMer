@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { Users, GraduationCap, CheckCircle, RefreshCw, AlertCircle, ArrowRight, ShieldAlert, Hash, CalendarX, UserX, Award, Database, CheckCircle2, BellRing } from 'lucide-react';
 import { Siswa, DapodikSyncLog, JenjangSekolah } from '../types';
-import { getTingkatOptions, getTingkatDariRombel, getRaportList } from '../utils/raportUtils';
-import { bacaAutoBackupSetting } from '../utils/autoBackup';
+import { getTingkatOptions, getRaportList } from '../utils/raportUtils';
+import { getTingkatAktifSiswa } from '../utils/db';
+import { statusBackupTerakhir, type StatusBackupTerakhir } from '../utils/autoBackup';
 import {
   KondisiDrillDown,
   dataWajibKosong,
@@ -58,12 +59,13 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
   const pctL = total > 0 ? Math.round((laki / total) * 100) : 0;
 
   const tingkatOptions = getTingkatOptions(jenjang);
+  // SATU SUMBER HITUNG (QA Fase 1): tingkat siswa = tingkat AKTIF tunggal
+  // (getTingkatAktifSiswa: rombel saat ini → raport/riwayat terakhir →
+  // tingkat penerimaan). Aturan ATAU yang lama menghitung siswa yang sama
+  // di dua tingkat sekaligus (mis. diterima di 7, kini di 8A terhitung di
+  // kelas 7 DAN 8) sehingga total kartu fase melebihi jumlah siswa unik.
   const countByTingkat = (t: string) =>
-    siswa.filter((s) =>
-      (s.rombelSaatIni || '').startsWith(t) ||
-      s.diterimaDiTingkat === t ||
-      getTingkatDariRombel(s.rombelSaatIni) === t
-    ).length;
+    siswa.filter((s) => getTingkatAktifSiswa(s) === t).length;
   const maxTingkat = Math.max(1, ...tingkatOptions.map(countByTingkat));
   const faseLabel = jenjang === 'SD' ? 'Fase A–C (Tingkat SD)' : 'Fase D (Tingkat SMP)';
 
@@ -90,6 +92,23 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
     }
   };
 
+  // Status backup dari SUMBER TUNGGAL yang sama dengan modul Backup
+  // (QA Fase 1.6) — dimuat async dari snapshot IndexedDB terbaru.
+  const [statusB, setStatusB] = React.useState<StatusBackupTerakhir | null>(null);
+  React.useEffect(() => {
+    let hidup = true;
+    statusBackupTerakhir()
+      .then((st) => {
+        if (hidup) setStatusB(st);
+      })
+      .catch(() => {
+        if (hidup) setStatusB({ waktu: null, jumlahSiswaSnapshot: null, status: null });
+      });
+    return () => {
+      hidup = false;
+    };
+  }, [total]);
+
   // ---------- SEKSI "PERLU PERHATIAN" ----------
   const perhatian = useMemo(() => {
     const list = siswa || [];
@@ -103,15 +122,14 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
         ).length
       : 0;
 
-    let terakhirJalan: string | null = null;
-    try {
-      terakhirJalan = bacaAutoBackupSetting().terakhirJalan ?? null;
-    } catch {
-      terakhirJalan = null;
-    }
+    const terakhirJalan = statusB?.waktu ?? null;
     const hariSejakBackup =
       terakhirJalan != null ? Math.floor((Date.now() - new Date(terakhirJalan).getTime()) / 86400000) : null;
-    const backupKedaluwarsa = hariSejakBackup === null || hariSejakBackup > 14;
+    // Kedaluwarsa juga bila jumlah siswa berubah sejak snapshot terakhir
+    // (snapshot tidak lagi memuat kondisi data terkini).
+    const jumlahBerubah =
+      statusB?.jumlahSiswaSnapshot != null && statusB.jumlahSiswaSnapshot !== list.length;
+    const backupKedaluwarsa = hariSejakBackup === null || hariSejakBackup > 14 || jumlahBerubah;
 
     const kartu: KartuPerhatian[] = [];
     if (tanpaNisn > 0)
@@ -148,10 +166,16 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
         tint: 'bg-amber-100 text-amber-700', border: 'border-amber-200',
         angka: hariSejakBackup === null ? '–' : String(hariSejakBackup),
         label: 'Hari sejak backup terakhir',
-        desc: hariSejakBackup === null ? 'Belum pernah ada backup otomatis.' : 'Backup terakhir sudah lebih dari 14 hari.', tujuan: 'backup',
+        desc:
+          hariSejakBackup === null
+            ? 'Belum pernah ada backup otomatis.'
+            : jumlahBerubah
+              ? `Snapshot terakhir (${statusB?.jumlahSiswaSnapshot} siswa) sudah kedaluwarsa — jumlah siswa kini ${list.length}. Buat snapshot baru.`
+              : 'Backup terakhir sudah lebih dari 14 hari.',
+        tujuan: 'backup',
       });
     return kartu;
-  }, [siswa, sessionTahun, tahunAktif]);
+  }, [siswa, sessionTahun, tahunAktif, statusB]);
 
   return (
     <div className="mb-5 anim-stagger print:hidden">
@@ -258,7 +282,7 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
           <span className="text-xl font-extrabold text-slate-900 tabular-nums leading-none">
             {tingkatOptions.reduce((acc, t) => acc + countByTingkat(t), 0)}
           </span>
-          <span className="text-[11px] text-slate-500 font-semibold">terpetakan ke fase</span>
+          <span className="text-[11px] text-slate-500 font-semibold">siswa unik menurut tingkat aktifnya</span>
         </div>
         <div className="mt-2 space-y-1">
           {tingkatOptions.map((t) => {

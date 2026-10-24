@@ -123,11 +123,23 @@ describe('saringLaporan: filter tahun/rombel/status', () => {
     assert.deepEqual(hasil.map((s) => s.id).sort(), [a.id, c.id].sort());
   });
 
-  test('rombel: memakai rombel PADA tahun filter, bukan rombel berjalan', () => {
-    const a = siswa({ rombelSaatIni: '8A', riwayatTahunAjaran: [{ id: 'r1', tahunAjaran: '2026/2027', tingkat: '7', rombel: '7A' }] });
-    const f: FilterLaporan = { jenis: 'daftar-siswa', tahunAjaran: '2026/2027', rombel: '7A', status: 'semua' };
-    assert.equal(saringLaporan([a], f, { tahunAktif: '2026/2027' }).length, 1);
-    assert.equal(saringLaporan([a], { ...f, rombel: '8A' }, { tahunAktif: '2026/2027' }).length, 0);
+  test('rombel: tahun LAMPAU memakai riwayat; tahun AKTIF memakai rombel berjalan (QA Fase 1)', () => {
+    // Riwayat 2025/2026 = 7A dan baris 2026/2027 masih basi (7A, dibuat
+    // saat penerimaan); siswa kini berjalan di 8A pada tahun aktif
+    // 2026/2027. Dulu tahun aktif ikut riwayat basi sehingga laporan
+    // menghitung siswa di 7A sementara Master Siswa menampilkan 8A.
+    const a = siswa({
+      rombelSaatIni: '8A',
+      riwayatTahunAjaran: [
+        { id: 'r1', tahunAjaran: '2025/2026', tingkat: '7', rombel: '7A' },
+        { id: 'r2', tahunAjaran: '2026/2027', tingkat: '7', rombel: '7A' },
+      ],
+    });
+    const lampau: FilterLaporan = { jenis: 'daftar-siswa', tahunAjaran: '2025/2026', rombel: '7A', status: 'semua' };
+    assert.equal(saringLaporan([a], lampau, { tahunAktif: '2026/2027' }).length, 1);
+    const aktif: FilterLaporan = { jenis: 'daftar-siswa', tahunAjaran: '2026/2027', rombel: '8A', status: 'semua' };
+    assert.equal(saringLaporan([a], aktif, { tahunAktif: '2026/2027' }).length, 1);
+    assert.equal(saringLaporan([a], { ...aktif, rombel: '7A' }, { tahunAktif: '2026/2027' }).length, 0);
   });
 
   test('status: Aktif menyaring keluar siswa Mutasi Keluar; semua memasukkan', () => {
@@ -193,6 +205,31 @@ describe('bangunStatistik: total & konsistensi', () => {
     assert.equal(stat.total, 2000);
     assert.deepEqual(cekKonsistensiStatistik(stat), []);
     assert.ok(Date.now() - t0 < 5000, 'agregasi 2000 siswa harus < 5 detik');
+  });
+
+  test('regresi QA Fase 1: tahun aktif memakai rombelSaatIni, bukan riwayat basi', () => {
+    // Siswa kini di 8A, tetapi baris riwayat tahun aktif masih menulis 7A
+    // (dibuat saat penerimaan). Master Siswa menampilkan 8A — laporan untuk
+    // tahun aktif WAJIB sepakat 8A; tahun lampau tetap dari riwayat.
+    const pindahan = siswa({
+      jenisKelamin: 'L',
+      rombelSaatIni: '8A',
+      diterimaDiRombel: '7A',
+      riwayatTahunAjaran: [
+        { id: 'rth-1', tahunAjaran: '2026/2027', tingkat: '7', rombel: '7A' },
+        { id: 'rth-2', tahunAjaran: '2025/2026', tingkat: '7', rombel: '7A' },
+      ],
+    });
+    const tetap = siswa({ jenisKelamin: 'P', rombelSaatIni: '8A' });
+    const stat = bangunStatistik([pindahan, tetap], ctx);
+    assert.deepEqual(stat.perRombel, [{ rombel: '8A', L: 1, P: 1, X: 0, total: 2 }]);
+  });
+
+  test('agama/jalur kosong dilaporkan Belum Diisi, bukan kategori karangan', () => {
+    const s = siswa({ agama: '', jalurMasuk: '' });
+    const stat = bangunStatistik([s], ctx);
+    assert.deepEqual(stat.perAgama, [{ label: 'Belum Diisi', jumlah: 1, persen: 100 }]);
+    assert.deepEqual(stat.perJalur, [{ label: 'Belum Diisi', jumlah: 1, persen: 100 }]);
   });
 });
 

@@ -4,7 +4,13 @@ import { subscribeConfirmRequest, resolvePendingConfirm, ConfirmRequest } from '
 
 export const ConfirmDialogHost: React.FC = () => {
   const [queue, setQueue] = useState<ConfirmRequest[]>([]);
+  const [ketikan, setKetikan] = useState('');
   const req = queue[0] || null;
+
+  // Reset isian ketik setiap request baru tampil.
+  useEffect(() => {
+    setKetikan('');
+  }, [req?.id]);
 
   useEffect(() => {
     const unsub = subscribeConfirmRequest((r) => setQueue((prev) => [...prev, r]));
@@ -42,6 +48,21 @@ export const ConfirmDialogHost: React.FC = () => {
             <p className="mt-1 text-xs leading-relaxed text-slate-600 whitespace-pre-line">{req.message}</p>
           </div>
         </div>
+        {req.requireText && (
+          <div className="mt-3">
+            <label className="block text-[11px] font-bold text-slate-600 mb-1">
+              {req.requireTextLabel || `Ketik "${req.requireText}" untuk melanjutkan`}
+            </label>
+            <input
+              type="text"
+              value={ketikan}
+              onChange={(e) => setKetikan(e.target.value)}
+              placeholder={req.requireText}
+              autoFocus
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-rose-500 focus:outline-none"
+            />
+          </div>
+        )}
         <div className="mt-4 flex justify-end gap-2">
           <button
             onClick={() => answer(false)}
@@ -51,7 +72,8 @@ export const ConfirmDialogHost: React.FC = () => {
           </button>
           <button
             onClick={() => answer(true)}
-            className={`ui-btn ${req.danger ? 'ui-btn-danger' : 'ui-btn-primary'}`}
+            disabled={!!req.requireText && ketikan.trim() !== req.requireText}
+            className={`ui-btn ${req.danger ? 'ui-btn-danger' : 'ui-btn-primary'} disabled:opacity-40 disabled:cursor-not-allowed`}
           >
             {req.confirmLabel}
           </button>

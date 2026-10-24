@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Sun,
   ClipboardList,
@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { Siswa, SekolahProfile, DapodikSyncLog, AppUser, RombelRef } from '../types';
 import { tahunSesiEfektif } from '../utils/sesi';
-import { bacaAutoBackupSetting } from '../utils/autoBackup';
+import { statusBackupTerakhir } from '../utils/autoBackup';
 import {
   DashboardFilter,
   DEFAULT_DASHBOARD_FILTER,
@@ -119,14 +119,24 @@ export const OperatorDashboard: React.FC<OperatorDashboardProps> = ({
     () => hitungArus(siswa, arusDari, arusSampai),
     [siswa, arusDari, arusSampai]
   );
-  const hariSejakBackup = useMemo(() => {
-    try {
-      const terakhir = bacaAutoBackupSetting().terakhirJalan ?? null;
-      if (!terakhir) return null;
-      return Math.floor((Date.now() - new Date(terakhir).getTime()) / 86400000);
-    } catch {
-      return null;
-    }
+  // Sumber tunggal status backup (QA Fase 1.6) — sama dengan Dasbor admin
+  // dan modul Backup: snapshot IndexedDB terbaru, bukan catatan setting.
+  const [hariSejakBackup, setHariSejakBackup] = useState<number | null>(null);
+  useEffect(() => {
+    let hidup = true;
+    statusBackupTerakhir()
+      .then((st) => {
+        if (!hidup) return;
+        setHariSejakBackup(
+          st.waktu ? Math.floor((Date.now() - new Date(st.waktu).getTime()) / 86400000) : null
+        );
+      })
+      .catch(() => {
+        if (hidup) setHariSejakBackup(null);
+      });
+    return () => {
+      hidup = false;
+    };
   }, []);
   const raportTugas = tugas.find((t) => t.id === 'raport-belum');
   const tenggat = useMemo(

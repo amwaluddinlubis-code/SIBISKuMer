@@ -1140,10 +1140,18 @@ export default function App() {
       return;
     }
     const nama = student?.namaLengkap || 'siswa';
-    const ok = await confirmDialog(`Apakah Anda yakin ingin menghapus data "${nama}" dari Buku Induk?`, {
-      confirmLabel: 'Ya, Hapus',
-      danger: true,
-    });
+    // Konfirmasi dua tahap (QA Fase 1): ketik NISN siswa (atau nama lengkap
+    // bila NISN kosong) — menghapus data induk tidak boleh satu klik.
+    const teksKonfirmasi = (student?.nisn || '').trim() || nama;
+    const ok = await confirmDialog(
+      `Hapus data "${nama}" dari Buku Induk secara permanen?\n\nTindakan ini tidak dapat dibatalkan. Untuk melanjutkan, ketik ${student?.nisn ? 'NISN siswa' : 'nama lengkap siswa'} pada kolom di bawah.`,
+      {
+        confirmLabel: 'Ya, Hapus Permanen',
+        danger: true,
+        requireText: teksKonfirmasi,
+        requireTextLabel: student?.nisn ? `Ketik NISN ${teksKonfirmasi} untuk mengonfirmasi` : `Ketik nama lengkap "${teksKonfirmasi}" untuk mengonfirmasi`,
+      }
+    );
     if (ok) {
       startTopProgress();
       try {

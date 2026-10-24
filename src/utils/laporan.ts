@@ -258,8 +258,10 @@ export function bangunStatistik(tersaring: Siswa[], ctx: { tahun: string; tahunA
   return {
     total: tersaring.length,
     perRombel,
-    perAgama: kelompok(tersaring, (s) => s.agama || 'Lainnya'),
-    perJalur: kelompok(tersaring, (s) => s.jalurMasuk || 'Zonasi'),
+    // Nilai kosong dilaporkan apa adanya sebagai 'Belum Diisi' — jangan
+    // dilabeli kategori nyata ('Lainnya'/'Zonasi') yang mengarang isi (Fase 0/1).
+    perAgama: kelompok(tersaring, (s) => s.agama || 'Belum Diisi'),
+    perJalur: kelompok(tersaring, (s) => s.jalurMasuk || 'Belum Diisi'),
     perStatus: kelompok(tersaring, (s) => s.statusSiswa || 'Aktif'),
   };
 }

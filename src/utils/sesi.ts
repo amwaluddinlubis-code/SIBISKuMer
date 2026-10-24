@@ -138,6 +138,15 @@ export function rombelPadaTahun(
 ): string {
   const t = normalizeTahun(tahun);
   if (!t) return s.rombelSaatIni || '-';
+  // SATU SUMBER HITUNG (QA Fase 1): untuk TAHUN AKTIF, rombelSaatIni adalah
+  // kebenaran berjalan dan MENANG atas baris riwayat/raport tahun yang sama
+  // (baris itu bisa basi — dibuat saat penerimaan/promosi dan tidak selalu
+  // diperbarui saat siswa dipindah rombel). Tanpa urutan ini, Rekap/Laporan
+  // menghitung siswa di rombel lama sementara Master Siswa menampilkan
+  // rombel barunya. Tahun lampau tetap dari riwayat → raport.
+  if (t === normalizeTahun(tahunAktif) && (s.rombelSaatIni || '').trim()) {
+    return s.rombelSaatIni;
+  }
   const riw = (s.riwayatTahunAjaran || []).find((r) => normalizeTahun(r.tahunAjaran) === t);
   if (riw?.rombel) return riw.rombel;
   const rap = getRaportList(s).find((r) => normalizeTahun(r.tahunAjaran) === t);

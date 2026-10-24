@@ -120,3 +120,38 @@ export async function daftarSnapshot(): Promise<AutoBackupSnapshot[]> {
     return [];
   }
 }
+
+export interface StatusBackupTerakhir {
+  /** ISO waktu backup terakhir dari SUMBER TUNGGAL: snapshot IndexedDB
+   *  terbaru; catatan setting hanya cadangan bila snapshot kosong. */
+  waktu: string | null;
+  /** Jumlah siswa di dalam snapshot terakhir (null = tak ada snapshot). */
+  jumlahSiswaSnapshot: number | null;
+  status: string | null;
+}
+
+/**
+ * SATU SUMBER status backup (QA Fase 1.6): Dasbor, modul Backup, dan
+ * gerbang Tutup Tahun membaca fungsi ini — bukan sumber masing-masing.
+ * Dulu Dasbor hanya membaca catatan setting di localStorage sehingga bisa
+ * menyatakan "belum pernah ada backup" padahal snapshot IndexedDB ada
+ * (dan sebaliknya tidak tahu snapshot sudah kedaluwarsa oleh perubahan
+ * jumlah siswa).
+ */
+export async function statusBackupTerakhir(): Promise<StatusBackupTerakhir> {
+  const cfg = bacaAutoBackupSetting();
+  const snaps = await daftarSnapshot();
+  const terbaru = snaps[0];
+  if (terbaru) {
+    return {
+      waktu: terbaru.timestamp,
+      jumlahSiswaSnapshot: terbaru.jumlahSiswa,
+      status: cfg.terakhirStatus ?? null,
+    };
+  }
+  return {
+    waktu: cfg.terakhirJalan ?? null,
+    jumlahSiswaSnapshot: null,
+    status: cfg.terakhirStatus ?? null,
+  };
+}

@@ -16,7 +16,8 @@ import {
   ArrowLeftRight
 } from 'lucide-react';
 import { Siswa, SekolahProfile, JenjangSekolah, StatusSiswa } from '../types';
-import { getTingkatOptions, getFaseKurikulum, getTingkatDariRombel } from '../utils/raportUtils';
+import { getTingkatOptions, getFaseKurikulum } from '../utils/raportUtils';
+import { getTingkatAktifSiswa } from '../utils/db';
 import { siswaTerlibatTahun, tahunSiswa } from '../utils/sesi';
 import {
   KONDISI_LABELS,
@@ -219,12 +220,10 @@ export const SiswaList: React.FC<SiswaListProps> = ({
         }
       }
 
-      // Tingkat
+      // Tingkat — sumber hitung yang sama dengan kartu dasbor (QA Fase 1):
+      // tingkat aktif tunggal siswa, bukan gabungan ATAU tiga aturan.
       if (filterTingkat !== 'all') {
-        const inRombel = s.rombelSaatIni?.startsWith(filterTingkat);
-        const inTingkat = s.diterimaDiTingkat === filterTingkat;
-        const inRombelRomawi = getTingkatDariRombel(s.rombelSaatIni) === filterTingkat;
-        if (!inRombel && !inTingkat && !inRombelRomawi) return false;
+        if (getTingkatAktifSiswa(s) !== filterTingkat) return false;
       }
 
       // Gender
@@ -399,7 +398,8 @@ export const SiswaList: React.FC<SiswaListProps> = ({
         {isAdmin && (
           <button
             onClick={onOpenSync}
-            className="ui-btn ui-btn-soft"
+            className="ui-btn ui-btn-outline"
+            title="Buka layar Sinkronisasi Dapodik (penarikan data selalu melalui pratinjau perbandingan di sana)"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Tarik dari Dapodik
@@ -758,12 +758,16 @@ export const SiswaList: React.FC<SiswaListProps> = ({
                         >
                           <Edit className="w-4 h-4" />
                         </button>
+                        {/* Hapus dipisah dari aksi aman + berlabel teks
+                            (QA Fase 1): tidak lagi ikon polos sejajar. */}
+                        <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden="true" />
                         <button
                           onClick={() => onDeleteSiswa(s.id)}
-                          title="Hapus dari Buku Induk"
-                          className="ui-btn ui-btn-ghost ui-btn-icon !text-slate-400 hover:!text-rose-600 hover:!bg-rose-50"
+                          title="Hapus permanen dari Buku Induk (perlu konfirmasi ketik NISN)"
+                          className="ui-btn !bg-rose-50 !text-rose-700 border !border-rose-200 hover:!bg-rose-100 !px-2 !py-1 text-[11px] font-bold"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Hapus
                         </button>
                       </div>
                     </td>

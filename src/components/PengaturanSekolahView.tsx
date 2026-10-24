@@ -4,7 +4,6 @@ import {
   Save, 
   Download, 
   Upload, 
-  RotateCcw, 
   Trash2, 
   ShieldAlert, 
   Database,
@@ -23,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useTheme, UkuranFont } from '../context/ThemeContext';
 import { SekolahProfile, AppUser, DapodikConfig, JenjangSekolah, SchoolEntry, KopSurat, TemaMode } from '../types';
-import { saveSekolahProfile, exportDatabaseBackup, importDatabaseBackup, resetToInitialData, clearDatabase, getActiveSchool, saveSchoolEntry } from '../utils/db';
+import { saveSekolahProfile, exportDatabaseBackup, importDatabaseBackup, getActiveSchool, saveSchoolEntry } from '../utils/db';
 import { fetchDapodikSekolah, convertDapodikToSekolahProfile } from '../utils/dapodikSync';
 import { toast, confirmDialog } from '../utils/notify';
 import { validateSekolahProfile } from '../utils/validation';
@@ -292,31 +291,6 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
     } finally {
       setImporting(false);
       e.target.value = '';
-    }
-  };
-
-  const handleResetSample = async () => {
-    if (!isAdmin) {
-      toast('Tindakan ini memerlukan izin hak akses Administrator.', 'error');
-      return;
-    }
-    if (await confirmDialog('Kembalikan database ke data contoh Kurikulum Merdeka? Data kustom akan digantikan dengan data sampel.', { confirmLabel: 'Ya, Kembalikan' })) {
-      await resetToInitialData();
-      onDataChanged();
-      toast('Data contoh Kurikulum Merdeka berhasil dimuat!', 'success');
-    }
-  };
-
-  const handleClearAll = async () => {
-    if (!isAdmin) {
-      toast('Tindakan ini memerlukan izin hak akses Administrator.', 'error');
-      return;
-    }
-    const ok = await confirmDialog('PERINGATAN: Seluruh data siswa dan riwayat akan dihapus secara permanen dari browser ini! Lanjutkan penghapusan?', { confirmLabel: 'Ya, Hapus Semua' });
-    if (ok) {
-      await clearDatabase();
-      onDataChanged();
-      toast('Database telah dikosongkan.', 'success');
     }
   };
 
@@ -1052,34 +1026,19 @@ export const PengaturanSekolahView: React.FC<PengaturanSekolahViewProps> = ({
           </div>
         </div>
 
-        {/* Reset / Clear Actions */}
-        <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-xs">
-          {isAdmin ? (
-            <>
-              <button
-                onClick={handleResetSample}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-semibold rounded-xl transition cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
-                Muat Ulang Data Sampel Kurikulum Merdeka
-              </button>
-
-              <button
-                onClick={handleClearAll}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 font-semibold rounded-xl transition cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                Kosongkan Database
-              </button>
-            </>
-          ) : (
-            <div className="flex items-center gap-2 text-slate-500 text-[11px] p-2 bg-slate-50 rounded-lg border border-slate-200 w-full">
-              <Lock className="w-3.5 h-3.5 text-amber-600" />
-              <span>
-                Operasi pengosongan database & muat ulang data sampel dibatasi khusus untuk akun <strong>Administrator</strong>.
-              </span>
-            </div>
-          )}
+        {/* Operasi berbahaya TIDAK lagi diletakkan di halaman profil
+            (QA Fase 1): muat ulang data sampel & kosongkan database hanya
+            tersedia di Backup & Restore → Zona Berbahaya, satu tempat
+            dengan konfirmasi berlapis. Di sini cukup penunjuk arah. */}
+        <div className="pt-4 border-t border-slate-100 text-xs">
+          <div className="flex items-center gap-2 text-slate-500 text-[11px] p-2 bg-slate-50 rounded-lg border border-slate-200 w-full">
+            <Lock className="w-3.5 h-3.5 text-amber-600" />
+            <span>
+              Operasi berbahaya (muat ulang data sampel & kosongkan database) hanya tersedia di{' '}
+              <strong>Backup &amp; Restore → Zona Berbahaya</strong> (khusus Administrator), agar tidak
+              berdampingan dengan pengaturan rutin.
+            </span>
+          </div>
         </div>
       </div>
 
