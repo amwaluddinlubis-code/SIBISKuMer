@@ -93,6 +93,11 @@ test('login sandi salah ditolak 401', async () => {
 test('paritas first-run: sekolah baru ter-seed data contoh yang sama', async () => {
   const daftar = await panggil('GET', '/data/siswa', { cookie: cookieAdmin });
   assert.equal(daftar.body.data.length, initialSiswaList.length);
+  // Paritas urutan dengan IndexedDB getAll() klien: menaik menurut id
+  // (regresi QA pasangan S2 — urutan nama membuat baris Master Siswa
+  // berbeda urutan walau isinya sama).
+  const idTerurut = [...initialSiswaList].map((s: any) => s.id).sort();
+  assert.deepEqual(daftar.body.data.map((s: any) => s.id), idTerurut);
 });
 
 test('impor backup asli oleh admin: hitungan cocok, token tidak ikut', async () => {

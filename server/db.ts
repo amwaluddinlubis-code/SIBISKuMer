@@ -152,7 +152,10 @@ export function simpanMeta(db: DatabaseSync, kunci: string, nilai: unknown): voi
 // ---------------- Siswa ----------------
 
 export function semuaSiswa(db: DatabaseSync): any[] {
-  const baris = db.prepare('SELECT payload FROM siswa ORDER BY nama').all() as any[];
+  // Urutan meniru IndexedDB store.getAll() klien: menaik menurut kunci (id).
+  // (QA pasangan S2: ORDER BY nama membuat urutan baris Master Siswa
+  // berbeda dari mode lokal walau isinya identik.)
+  const baris = db.prepare('SELECT payload FROM siswa ORDER BY id').all() as any[];
   return baris.map((b) => JSON.parse(b.payload));
 }
 
@@ -182,7 +185,8 @@ export function jumlahSiswa(db: DatabaseSync): number {
 // ---------------- Users ----------------
 
 export function semuaUsers(db: DatabaseSync): any[] {
-  const baris = db.prepare('SELECT payload FROM users ORDER BY username').all() as any[];
+  // Sama seperti siswa: urutan kunci (id), meniru getAll() IndexedDB klien.
+  const baris = db.prepare('SELECT payload FROM users ORDER BY id').all() as any[];
   return baris.map((b) => JSON.parse(b.payload));
 }
 
