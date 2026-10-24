@@ -21,8 +21,48 @@ klik di laptop mana pun (tidak perlu Node/npm):
 
 Cara kerja: `electron/main.ts` mencari port bebas → menjalankan `dist/server.cjs`
 (Express produksi) di dalam aplikasi → window membuka `http://127.0.0.1:PORT`.
-Satu instance saja (dibuka 2x = window lama difokuskan). Data tetap di
-IndexedDB per laptop; sinkron antar-laptop via Sinkron Cloud (§4b), bukan via exe.
+Satu instance saja (dibuka 2x = window lama difokuskan).
+
+Sejak migrasi SQLite (Fase S1–S5), data aplikasi desktop tersimpan di berkas
+SQLite yang dilayani server terbundel — **bukan** lagi IndexedDB. Kemasan
+desktop otomatis mulai pada **Mode Utama: Server Penuh**; instalasi lama yang
+datanya masih di IndexedDB ditawari migrasi otomatis pada masuk pertama
+(data contoh server digantikan oleh data perangkat, snapshot pengaman dibuat
+server lebih dulu). Rincian lokasi & pemulihan: §1b.
+
+## 1b. Lokasi Data, Cadangan & Pemulihan (era SQLite)
+
+**Lokasi folder data** (satu berkas SQLite per sekolah: `bukuinduk-<id>.db`,
+plus `bukuinduk-registry.db` dan subfolder `snapshots/`):
+
+| Cara menjalankan | Folder data |
+|---|---|
+| Aplikasi desktop (.exe) | `%APPDATA%\Buku Induk Siswa Merdeka\data\` (folder userData Electron; diatur `electron/main.ts` lewat env `SIBISKUMER_DATA_DIR`) |
+| Server manual / dev (`npm start`, `npm run dev`) | Folder `data\` di direktori kerja proses, atau env `SIBISKUMER_DATA_DIR` bila diatur |
+
+**Cadangan resmi** (urutan kekuatan):
+1. **Salin seluruh folder data** saat aplikasi tertutup — cadangan paling
+   lengkap (basis data + registry + semua snapshot berkas).
+2. Tombol **Unduh .db** di modul Backup (mode server) — satu berkas basis
+   data sekolah aktif yang konsisten.
+3. Ekspor **File JSON** (BackupPayload) — portabel antar-instalasi; impornya
+   membuat snapshot pengaman `pengaman-impor-…` di dalam basis data tujuan.
+
+**Snapshot berkas otomatis**: server membuat snapshot harian per sekolah
+(subfolder `snapshots\<sekolah>\`, maks. 10 berkas label `otomatis`) dan
+snapshot pengaman `pra-pulih` setiap pemulihan. Pemulihan snapshot berkas
+membatalkan semua sesi (pengguna masuk ulang).
+
+**Lupa kata sandi administrator** (prosedur resmi): tutup aplikasi →
+ganti nama folder data (mis. `data` → `data-cadangan`) → nyalakan aplikasi
+(server menanam benih awal; masuk `administrator / administrator` dan ganti
+kata sandi saat diminta) → impor File JSON cadangan terakhir dari folder
+lama lewat modul Backup. Folder lama jangan dihapus sebelum impor terverifikasi.
+
+**Catatan multi-sekolah**: mode server saat ini memetakan sekolah bawaan
+(`utama`); pengelolaan banyak sekolah pada satu instalasi server penuh
+belum dirutekan (registry sekolah masih per perangkat). Satu instalasi =
+satu sekolah adalah konfigurasi yang didukung resmi.
 
 ## 2. Skrip (`package.json`)
 

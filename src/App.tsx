@@ -519,32 +519,13 @@ export default function App() {
     if (!isAdministrator(currentUser)) return;
     migrasiDicekRef.current = true;
     (async () => {
-      // Diagnostik QA (dibaca halaman diag-migrasi.html; dihapus bersama
-      // halaman reset QA setelah gerbang migrasi tuntas).
-      const diag = (kode: string) => {
-        try {
-          localStorage.setItem('bukuinduk_migrasi_diag', `${kode}@${new Date().toISOString()}`);
-        } catch {
-          /* abaikan */
-        }
-      };
       try {
-        if (localStorage.getItem('bukuinduk_migrasi_server')) {
-          diag('flag-ada');
-          return;
-        }
+        if (localStorage.getItem('bukuinduk_migrasi_server')) return;
         const sesi = await ambilSesiServer().catch(() => null);
-        if (!sesi?.benihAwal) {
-          diag(sesi ? 'bukan-benih' : 'sesi-gagal');
-          return;
-        }
+        if (!sesi?.benihAwal) return;
         const lokal = await eksporDataLokalSaja();
         const jumlahLokal = lokal.siswa?.length || 0;
-        if (jumlahLokal === 0) {
-          diag('lokal-kosong');
-          return;
-        }
-        diag('dialog-tampil');
+        if (jumlahLokal === 0) return;
         const ok = await confirmDialog(
           `Basis data server masih berisi data contoh, sedangkan perangkat ini menyimpan ${jumlahLokal} siswa dari instalasi sebelumnya. Impor data perangkat ini ke server sekarang? Data contoh di server akan digantikan (snapshot pengaman dibuat otomatis di server).`,
           { confirmLabel: 'Ya, Impor ke Server', cancelLabel: 'Nanti Saja' }

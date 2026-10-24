@@ -56,9 +56,30 @@ export function daftarLayarPilot(): Array<{ layar: LayarPilot; label: string }> 
 // Saklar per layar di atas hanya relevan pada mode utama 'lokal'.
 export const MODE_UTAMA_KEY = 'bukuinduk_mode_utama';
 
+/** True bila berjalan di dalam kemasan desktop Electron (preload
+ *  mengekspos window.appDesktop). Di browser biasa selalu false. */
+export function adalahDesktop(): boolean {
+  try {
+    return (
+      typeof window !== 'undefined' &&
+      (window as unknown as { appDesktop?: { isDesktop?: boolean } }).appDesktop
+        ?.isDesktop === true
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function modeUtama(): ModeData {
   try {
-    return localStorage.getItem(MODE_UTAMA_KEY) === 'server' ? 'server' : 'lokal';
+    const tersimpan = localStorage.getItem(MODE_UTAMA_KEY);
+    if (tersimpan === 'server') return 'server';
+    if (tersimpan === 'lokal') return 'lokal';
+    // Belum pernah diatur: kemasan desktop membawa server SQLite terbundel,
+    // jadi mode server adalah bawaannya (Fase S5). Instalasi desktop lama
+    // yang datanya masih di IndexedDB akan ditawari migrasi otomatis oleh
+    // penawaran Fase S4 pada masuk pertama. Browser web tetap lokal.
+    return adalahDesktop() ? 'server' : 'lokal';
   } catch {
     return 'lokal';
   }

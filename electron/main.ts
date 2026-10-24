@@ -29,6 +29,13 @@ async function urlBackend(): Promise<string> {
   const port = await cariPortBebas();
   process.env.PORT = String(port);
   process.env.NODE_ENV = 'production';
+  // Fase S5 (migrasi SQLite): data aplikasi desktop tinggal di folder
+  // userData — persisten lintas pembaruan, dapat ditulis pengguna, dan
+  // TIDAK bergantung pada folder instalasi/cwd tempat exe dijalankan.
+  // Berkas basis data: <userData>/data/bukuinduk-*.db (+ snapshots/).
+  if (!process.env.SIBISKUMER_DATA_DIR) {
+    process.env.SIBISKUMER_DATA_DIR = path.join(app.getPath('userData'), 'data');
+  }
   // dist-electron/main.cjs  →  ../dist/server.cjs (ikut dipaketkan, lihat electron-builder.yml)
   const serverCjs = path.join(__dirname, '..', 'dist', 'server.cjs');
   // eslint-disable-next-line @typescript-eslint/no-require-imports
