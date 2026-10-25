@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, KeyRound, UserCheck, AlertCircle, LogIn, Sparkles, School, Users, Award, RefreshCw, BarChart3, Printer, Database, WifiOff, CalendarRange, ArrowLeft } from 'lucide-react';
+import { Shield, KeyRound, UserCheck, AlertCircle, LogIn, School, Users, Award, RefreshCw, BarChart3, Printer, Database, WifiOff, CalendarRange, ArrowLeft } from 'lucide-react';
 import { AppUser } from '../types';
 import { getAllUsers, saveUser, getSekolahProfile, getTutupTahun, getAllPetaKelas, setSessionTahunAjaran, getSessionTahunAjaran } from '../utils/db';
 import { verifyPassword, hashPassword } from '../utils/password';
@@ -385,89 +385,16 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     setError(null);
   };
 
-  // Tombol akun hanya mengisi form — pengguna tetap harus menekan
-  // "Masuk ke Sistem" agar password selalu diverifikasi (tidak ada bypass).
-  const handleQuickLogin = (targetUsername: string) => {
-    const userList = internalUsers && internalUsers.length > 0 ? internalUsers : initialUsersList;
-    const matched = userList.find((u) => u.username.toLowerCase() === targetUsername.toLowerCase());
-    if (matched) {
-      setUsername(matched.username);
-      setError(null);
-      document.getElementById('login-password')?.focus();
-    }
-  };
-
-  const quickAccounts = [
-    {
-      username: 'administrator',
-      title: 'Administrator',
-      sub: 'Hak akses penuh & CRUD',
-      badge: 'administrator',
-      avatarBg: 'bg-gradient-to-br from-purple-500 to-purple-700',
-      icon: Shield,
-      hover: 'hover:border-purple-300 hover:bg-purple-50/60',
-    },
-    {
-      username: 'operator_bukuinduk',
-      title: 'Siti Rahmawati, S.Kom.',
-      sub: 'operator_bukuinduk • Petugas Buku Induk',
-      badge: 'operator',
-      avatarBg: 'bg-gradient-to-br from-emerald-500 to-teal-600',
-      icon: UserCheck,
-      hover: 'hover:border-emerald-300 hover:bg-emerald-50/60',
-    },
-    {
-      username: 'operator_kesiswaan',
-      title: 'Budi Santoso, S.Pd.',
-      sub: 'operator_kesiswaan • Staf Kesiswaan',
-      badge: 'operator',
-      avatarBg: 'bg-gradient-to-br from-amber-500 to-orange-600',
-      icon: UserCheck,
-      hover: 'hover:border-amber-300 hover:bg-amber-50/60',
-    },
-  ];
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950 overflow-y-auto">
-      <div className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-white/20 overflow-hidden my-8 anim-scale-in grid md:grid-cols-[1fr_1.1fr]">
-        {/* Panel branding */}
-        <div className="hidden md:flex flex-col justify-between relative overflow-hidden bg-gradient-to-b from-navy-800 via-navy-900 to-[#0b1e4b] text-white p-7">
-          <div className="absolute -top-16 -right-16 w-56 h-56 rounded-full bg-blue-500/20 blur-3xl" />
-          <div className="absolute -bottom-20 -left-10 w-56 h-56 rounded-full bg-gold-400/10 blur-3xl" />
-          <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-gold-500 via-gold-300 to-gold-500" />
-          <div className="relative">
-            <div className="w-13 h-13 p-3 rounded-2xl bg-white/10 border border-white/15 inline-flex shadow-lg">
-              <School className="w-7 h-7 text-gold-300" />
-            </div>
-            <p className="mt-4 text-[11px] font-extrabold uppercase tracking-[0.2em] text-gold-300">
-              Sistem Buku Induk Siswa
-            </p>
-            <h2 className="mt-1 text-2xl font-extrabold leading-tight tracking-tight">
-              Kurikulum<br />Merdeka
-            </h2>
-            <p className="mt-1 text-xs text-slate-300 font-semibold">
-              SD & SMP • Fase A–D • Standar Dinas
-            </p>
-          </div>
-          <ul className="relative mt-6 space-y-2.5">
-            {HIGHLIGHTS.map((h) => (
-              <li key={h.text} className="flex items-center gap-2.5 text-xs font-semibold text-slate-200">
-                <span className="w-7 h-7 rounded-lg bg-white/10 border border-white/10 flex items-center justify-center shrink-0">
-                  <h.icon className="w-3.5 h-3.5 text-gold-300" />
-                </span>
-                {h.text}
-              </li>
-            ))}
-          </ul>
-          <p className="relative mt-6 flex items-center gap-1.5 text-[11px] text-slate-400">
-            <WifiOff className="w-3.5 h-3.5" />
-            Dapat berjalan offline penuh (PWA + IndexedDB)
-          </p>
-        </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center md:justify-end p-4 sm:p-6 lg:pr-16 overflow-y-auto bg-navy-950">
+      {/* Wallpaper halaman masuk: pemandangan sekolah + Gordang Sambilan (9) */}
+      <img src="/login-wallpaper.jpg" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover" />
+      <div className="absolute inset-0 bg-gradient-to-l from-navy-950/50 via-navy-950/15 to-transparent" />
+      <div className="relative w-full max-w-md bg-white/75 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 overflow-hidden my-8 anim-scale-in">
 
         {/* Panel form */}
         <div className="p-6 sm:p-7">
-          <div className="md:hidden flex items-center gap-3 mb-5">
+          <div className="flex items-center gap-3 mb-5">
             <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-navy-900 flex items-center justify-center shadow-md shrink-0">
               <School className="w-5 h-5 text-gold-300" />
             </div>
@@ -477,10 +404,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             </div>
           </div>
 
-          <h2 className="hidden md:block text-lg font-extrabold text-slate-900 tracking-tight">
+          <h2 className="text-lg font-extrabold text-slate-900 tracking-tight">
             {step === 'tahun' ? 'Pilih Tahun Ajaran Sesi' : 'Masuk ke Sistem'}
           </h2>
-          <p className="hidden md:block text-xs text-slate-500 mt-0.5 mb-4">
+          <p className="text-xs text-slate-500 mt-0.5 mb-4">
             {step === 'tahun'
               ? `Akun @${verifiedUser?.username || ''} terverifikasi — pilih tahun ajaran untuk sesi kerja ini.`
               : 'Gunakan akun administrator atau operator Anda.'}
@@ -654,43 +581,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             </button>
           </form>
 
-          <div className="mt-5 pt-4 border-t border-slate-100">
-            <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 mb-2">
-              <Sparkles className="w-3.5 h-3.5 text-gold-500" />
-              Isi cepat — klik akun
-            </p>
-            <div className="space-y-2">
-              {quickAccounts.map((a) => (
-                <button
-                  key={a.username}
-                  type="button"
-                  onClick={() => {
-                    handleQuickLogin(a.username);
-                  }}
-                  className={`w-full text-left p-2.5 bg-slate-50/70 border border-slate-200 rounded-xl flex items-center gap-2.5 transition group cursor-pointer ${a.hover}`}
-                  title="Isi username ke form, lalu masukkan kata sandi dan tekan Masuk"
-                >
-                  <div className={`w-8 h-8 rounded-lg ${a.avatarBg} text-white flex items-center justify-center shrink-0 shadow-sm`}>
-                    <a.icon className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-bold text-slate-800 truncate">
-                      {a.title}
-                      <span className="ml-1.5 px-1.5 py-px rounded text-[10px] bg-slate-200/70 text-slate-600 font-bold font-mono">
-                        {a.badge}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 truncate font-mono">{a.sub}</p>
-                  </div>
-                  <span className="text-xs font-bold text-slate-400 group-hover:text-navy-800 group-hover:translate-x-0.5 transition-all shrink-0">
-                    Isi →
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {canClose && onClose && step === 'akun' && (
+{canClose && onClose && step === 'akun' && (
             <button
               type="button"
               onClick={onClose}
@@ -701,6 +592,24 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           )}
           </>
           )}
+        </div>
+
+        {/* Sorotan fitur — ringkas di kaki panel kaca */}
+        <div className="px-6 sm:px-7 pb-6">
+          <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 pt-4 border-t border-slate-900/10">
+            {HIGHLIGHTS.map((h) => (
+              <li key={h.text} className="flex items-center gap-2 text-[11px] font-semibold text-slate-600">
+                <span className="w-6 h-6 rounded-md bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
+                  <h.icon className="w-3 h-3 text-blue-700" />
+                </span>
+                {h.text}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+            <WifiOff className="w-3.5 h-3.5" />
+            Dapat berjalan offline penuh (PWA + IndexedDB)
+          </p>
         </div>
       </div>
     </div>
