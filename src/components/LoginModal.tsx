@@ -61,6 +61,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [daftarTA, setDaftarTA] = useState<string[]>([]);
   const [tahunDipilih, setTahunDipilih] = useState('');
   const [loadingTA, setLoadingTA] = useState(false);
+  // S2 migrasi SQLite: kata sandi final (hasil ketik / hasil ganti paksa)
+  // disimpan sesaat di ref agar sesi server dapat dibuka dengan kredensial
+  // yang sama persis; dibersihkan begitu dipakai.
+  // WAJIB di atas `if (!isOpen) return null` — hook di bawah early return
+  // menyebabkan "Rendered fewer hooks than expected" (layar putih total)
+  // saat modal ditutup seusai login berhasil.
+  const kataSandiFinalRef = useRef('');
 
   useEffect(() => {
     if (users && users.length > 0) {
@@ -91,11 +98,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       onLogin(user, tahunAjaran);
     }
   };
-
-  // S2 migrasi SQLite: kata sandi final (hasil ketik / hasil ganti paksa)
-  // disimpan sesaat di ref agar sesi server dapat dibuka dengan kredensial
-  // yang sama persis; dibersihkan begitu dipakai.
-  const kataSandiFinalRef = useRef('');
 
   /** Bangun daftar TA sesi setelah kredensial terverifikasi. */
   const masukKePilihTahun = async (user: AppUser) => {
