@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import fs from 'fs';
 import path from 'path';
 import { createDapodikProxyGuard, validateDapodikProxyConfig } from './server/dapodikProxyConfig';
 import { buatRouterV1 } from './server/api';
@@ -290,7 +291,21 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    // Resolusi folder statis TIDAK boleh bergantung pada cwd: aplikasi
+    // desktop (Electron) dapat dijalankan dari direktori kerja mana pun,
+    // dan process.cwd() di sana bukan folder aplikasi (gerbang S5:
+    // jendela exe menampilkan 404 "Not Found" karena dist tak ditemukan).
+    // Urutan kandidat: folder berkas server terbundel itu sendiri
+    // (dist/server.cjs berada DI DALAM dist/), lalu <akar>/dist untuk
+    // sumber tsx, terakhir cwd lama sebagai cadangan.
+    const kandidatDist = [
+      __dirname,
+      path.join(__dirname, 'dist'),
+      path.join(process.cwd(), 'dist'),
+    ];
+    const distPath =
+      kandidatDist.find((p) => fs.existsSync(path.join(p, 'index.html'))) ??
+      kandidatDist[0];
     app.use(express.static(distPath));
     // Pakai middleware fallback (bukan app.get('*')) agar kompatibel
     // Express 4 maupun Express 5 (di v5 pola '*' melempar PathError).
