@@ -390,6 +390,17 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       {/* Wallpaper halaman masuk: pemandangan sekolah + Gordang Sambilan (9) */}
       <img src="/login-wallpaper.jpg" alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover" />
       <div className="absolute inset-0 bg-gradient-to-l from-navy-950/50 via-navy-950/15 to-transparent" />
+      {/* Judul aplikasi — teks CSS di dalam lencana kaca (border radius + blur) di atas wallpaper */}
+      <div className="absolute inset-x-0 top-6 sm:top-9 px-4 flex justify-center pointer-events-none select-none">
+        <div className="inline-flex flex-col items-center text-center rounded-[2rem] border border-white/25 bg-navy-950/30 px-6 py-3.5 sm:px-10 sm:py-4 shadow-2xl backdrop-blur-md">
+          <h1 className="font-display text-3xl sm:text-5xl lg:text-6xl font-bold tracking-wide text-white [text-shadow:0_1px_3px_rgba(2,16,48,0.45)]">
+            <span className="text-gold-300">e-</span>Buku Induk Siswa
+          </h1>
+          <p className="mt-1.5 text-[11px] sm:text-sm font-medium text-white/90">
+            created by : <span className="font-bold text-gold-300">@iamlubis</span>
+          </p>
+        </div>
+      </div>
       <div className="relative w-full max-w-md bg-white/75 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/50 overflow-hidden my-8 anim-scale-in">
 
         {/* Panel form */}
