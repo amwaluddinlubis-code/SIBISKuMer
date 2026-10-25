@@ -10,7 +10,7 @@
 | 01 | [Spesifikasi Kebutuhan (SRS)](01-srs.md) | Tujuan, ruang lingkup 7 pilar, kebutuhan fungsional + kriteria terima, kebutuhan non-fungsional, batasan, glosarium | Semua pihak |
 | 02 | [Arsitektur & Desain (SDD)](02-arsitektur.md) | Tumpukan teknologi, diagram konteks/kontainer/komponen (13 tab + Dasbor Operasional + GTK + Arsip + Pemetaan), aliran data, multi-sekolah, keputusan arsitektur (ADR) | Pengembang |
 | 03 | [Model Data](03-model-data.md) | ERD, skema IndexedDB v4, kamus entitas A–I + SchoolEntry multi-sekolah + arsip TutupTahunAjaran, aturan validasi, versi & migrasi DB | Pengembang |
-| 04 | [Kontrak API Backend](04-api.md) | Endpoint Express, param semesterId, format request/response, error handling, metode Web Service Dapodik | Pengembang, integrasi |
+| 04 | [Kontrak API Backend](04-api.md) | API data SQLite `/api/v1` (auth sesi, CRUD, snapshot, backup) + endpoint proxy Dapodik, format request/response, error handling, metode Web Service Dapodik | Pengembang, integrasi |
 | 05 | [Operasional & SOP](05-operasional.md) | Instalasi, env, skrip, SOP backup/restore, SOP tutup tahun ajaran (ritme Dapodik), matriks peran, troubleshooting Dapodik | Operator, admin |
 | 06 | [Roadmap Pengembangan](06-roadmap.md) | Status Tahap 1–2 (selesai, termasuk Dasbor/GTK/multi-sekolah), backlog Tahap 3–5, definisi selesai (DoD) | Pengembang, pemilik produk |
 
@@ -30,7 +30,7 @@
 4. **Rekapitulasi** — statistik rombel/agama/PPDB/P5 untuk dinas & akreditasi.
 5. **Cetak standar dinas** — lembar buku induk, kartu pelajar, raport.
 6. **Multi-user** — administrator vs operator (batas rombel) + impersonate.
-7. **Offline-first** — IndexedDB + PWA + backup/restore JSON (& Google Drive).
+7. **Offline-first** — SQLite via server terbundel (mode utama aplikasi desktop & mode server) + IndexedDB (mode lokal, masa tenggang) + PWA + backup/restore JSON (& Google Drive).
 
 Rincian tiap pilar ada di `01-srs.md` (kebutuhan) dan `02-arsitektur.md` (realisasi teknis).
 
@@ -45,3 +45,15 @@ Rincian tiap pilar ada di `01-srs.md` (kebutuhan) dan `02-arsitektur.md` (realis
 > `src/utils/db.ts`, `src/main.tsx`). Repo kini **menyertakan `@types/react` +
 > `@types/react-dom`** sehingga klaim lama "tanpa @types/react / pola ComponentBase"
 > sudah kedaluwarsa — `ErrorBoundary.tsx` memakai `Component` React standar.
+
+> **Catatan kondisi aktual (2026-10-25):** migrasi penyimpanan ke **SQLite
+> selesai Fase S0–S5** — server Express kini melayani API data `/api/v1`
+> (`server/db.ts`, `server/auth.ts`, `server/api.ts`; driver `node:sqlite`,
+> satu berkas per sekolah di folder data) dengan auth sesi + otorisasi yang
+> ditegakkan server. Aplikasi berjalan dalam dua mode utama
+> (`src/utils/modeData.ts`): **server** (bawaan kemasan desktop; data SQLite)
+> dan **lokal** (IndexedDB, dipertahankan selama satu rilis tenggang sebelum
+> Fase S6 mencabutnya). Instalasi lama berbasis IndexedDB ditawari migrasi
+> otomatis pada masuk pertama mode server. Lokasi data, cadangan, dan SOP
+> pemulihan: `05-operasional.md` §1a–§1b; kontrak API: `04-api.md` §1A;
+> skema SQLite: `03-model-data.md` §2b; keputusan: ADR-10 di `02-arsitektur.md`.

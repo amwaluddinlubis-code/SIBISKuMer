@@ -1,7 +1,9 @@
-# 04 — Kontrak API Backend (Express Proxy Dapodik)
+# 04 — Kontrak API Backend
 
-> **Status:** Aktif · **Revisi:** 2026-09-15 · **Implementasi:** `server.ts` (port 3000)
-> Frontend memanggil endpoint ini via `fetch()` agar bebas CORS dan token terpusat di server.
+> **Status:** Aktif · **Revisi:** 2026-10-25 · **Implementasi:** `server.ts` (port 3000)
+> Dua keluarga API: **§1A API data SQLite `/api/v1`** (lapisan data aplikasi pada
+> mode server, Fase S1) dan **§1–§5 proxy Dapodik** (frontend memanggilnya via
+> `fetch()` agar bebas CORS dan token terpusat di server).
 
 ## 1. Konvensi Umum
 
@@ -19,7 +21,50 @@
   (khusus `getSekolah`, termasuk kasus `{rows:{...}}` satu objek). Respons list kosong
   dicatat `console.warn`, bukan error.
 
-## 2. Endpoint
+## 1A. API Data SQLite — `/api/v1` (`server/api.ts`, `server/auth.ts`)
+
+**Konvensi.** Envelope seragam: sukses `{ ok: true, data }`, gagal
+`{ ok: false, pesan }` dengan status HTTP yang sesuai. Parser JSON rute ini
+25 MB (di atas parser global). Klien resmi: `src/utils/dataApi.ts`.
+
+**Auth & sesi.** `POST /auth/login` `{ sekolahId?, username, password }` →
+menanam cookie `sibis_sesi` (HttpOnly, SameSite=Lax, 12 jam; token acak
+32-byte hex di tabel `sesi` registry); header `Authorization: Bearer <token>`
+juga diterima. Login memakai verifikasi password yang sama dengan klien
+(PBKDF2; warisan plaintext diterima sekali lalu di-hash ulang transparan).
+5x gagal per (sekolah, username) → kunci 15 menit (HTTP 423). Akun nonaktif
+ditolak; pesan gagal generik (anti-enumerasi). Semua endpoint selain
+`GET /health`, `GET/POST /sekolah`, dan `POST /auth/login` mensyaratkan sesi
+(401 tanpa sesi sah). Respons tidak pernah memuat field password
+(`userPublik`). `benihAwal` pada respons login/sesi = basis data masih benih
+awal (lihat `03-model-data.md` §2b).
+
+| Method & Path | Sesi/Peran | Keterangan |
+|---------------|-----------|------------|
+| `GET /health` | publik | `{ status, skema, sekolah }` |
+| `GET /sekolah` | publik | Daftar sekolah terdaftar di registry |
+| `POST /sekolah` | admin | Daftarkan sekolah baru |
+| `POST /auth/login` | publik | Buat sesi (cookie) |
+| `POST /auth/logout` | sesi | Hapus sesi |
+| `GET /auth/sesi` | sesi | Profil sesi + `benihAwal` (+ profil penyamar bila sedang menyamar) |
+| `POST /auth/ganti-sandi` | sesi | Ganti sandi sendiri (min. 8 karakter; menghapus `mustChangePassword`) |
+| `POST /auth/impersonate` / `POST /auth/impersonate/berhenti` | sesi (penyamar tercatat) | Sesi menyamar menyimpan `impersonator_id` + `token_induk`; target admin/diri sendiri/nonaktif ditolak |
+| `GET/POST /data/siswa`, `GET/PUT/DELETE /data/siswa/:id`, `POST /data/siswa/bulk` | sesi | Baca tersaring `rombelAkses` sesi (siswa tanpa rombel tetap terlihat); tulis memeriksa rombel lama & baru; bulk = impor massal |
+| `GET /data/koleksi/:entitas`, `PUT/DELETE /data/koleksi/:entitas/:id`, `POST /data/koleksi/:entitas/bulk` | sesi | Entitas: `rombel`, `ptk`, `peta_kelas`, `tutup_tahun`, `sync_logs`, `audit_logs`; bulk mode `ganti` = ganti total koleksi |
+| `GET/PUT /data/profil` | sesi; tulis admin/operator | Profil sekolah |
+| `GET/PUT /data/config/:kunci` | sesi; tulis admin/operator | Config (mis. `dapodik`) |
+| `GET/POST /data/users`, `PUT/DELETE /data/users/:id` | sesi; tulis khusus admin | DELETE menjaga akun sendiri & admin aktif terakhir |
+| `GET/POST /data/snapshot`, `POST /data/snapshot/:id/pulihkan`, `DELETE /data/snapshot/:id` | sesi; pulih/hapus hati-hati | Snapshot di dalam basis data (termasuk `pengaman-impor-*`) |
+| `GET /snapshot/berkas`, `POST /snapshot/berkas`, `POST /snapshot/berkas/:nama/pulihkan`, `DELETE /snapshot/berkas/:nama`, `GET /snapshot/berkas/:nama/unduh` | baca: sesi; tulis/unduh: admin | Snapshot berkas `.db` (VACUUM INTO); pulih membuat pengaman `pra-pulih` + membatalkan semua sesi sekolah |
+| `GET /backup/ekspor` | sesi | BackupPayload utuh (token Dapodik dikosongkan; blok integritas ditambahkan) |
+| `POST /backup/impor` | admin | Impor ganti-total tervalidasi (struktur + kompatibilitas `BACKUP_APP_NAME`/versi + checksum; payload tanpa checksum diterima); snapshot pengaman `pengaman-impor-<ts>` dibuat sebelum menimpa; menandai `data_nyata` |
+| `GET /backup/unduh-db` | admin | Unduh berkas `.db` konsisten sekolah aktif sesi |
+
+**Penanda data nyata.** Setiap mutasi berhasil ke `/data` atau `/snapshot`
+menyalakan penanda `data_nyata` (status benih berakhir) — kecuali entri
+`audit_logs`, karena aplikasi menulis audit pada setiap login.
+
+## 2. Endpoint (Proxy Dapodik)
 
 | Method & Path | Body | Upstream | Keterangan |
 |---------------|------|----------|------------|
@@ -68,3 +113,7 @@ konversi ada di `src/utils/dapodikSync.ts` (`convertDapodikToSiswa`, `...Sekolah
 
 - Dev (`NODE_ENV !== 'production'`): middleware Vite; Produksi: statis `dist/` + fallback
   `index.html` (SPA). Mulai prod: `npm run build && npm start`.
+- Folder statis produksi dicari berurutan: folder berkas server terbundel
+  (`dist/server.cjs` tinggal di dalam `dist/`), `<cwd>/dist` sebagai cadangan —
+  TIDAK bergantung pada direktori kerja proses (aplikasi desktop dapat
+  dijalankan dari folder mana pun; perbaikan gerbang S5, 2026-10-25).

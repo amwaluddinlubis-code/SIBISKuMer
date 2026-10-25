@@ -1,6 +1,6 @@
 # 06 — Roadmap Pengembangan
 
-> **Status:** Aktif · **Revisi:** 2026-09-16
+> **Status:** Aktif · **Revisi:** 2026-10-25
 
 ## Definisi Selesai / DoD (berlaku tiap tahap)
 
@@ -268,3 +268,28 @@ tahap ini melengkapi keduanya menjadi pemeriksa terpadu:
 Keputusan: pemeriksa tidak pernah mengubah/menghapus data; duplikat hanya
 "kemungkinan" (tanpa gabung/hapus otomatis); cek per-record hanya siswa
 Aktif; status penanganan hanya menyimpan ID + alasan (tanpa data pribadi).
+
+## Tahap 8 — Migrasi Penyimpanan SQLite (Fase S0–S5) ✅ SELESAI (2026-10-25)
+
+Program mengganti lapisan data IndexedDB dengan SQLite di server terbundel,
+bertahap dengan gerbang QA browser di tiap fase (rencana induk di luar repo;
+keputusan ADR-10 di `02-arsitektur.md`):
+
+| Fase | Hasil |
+|------|-------|
+| S0 Spike | `node:sqlite` terbukti di Node terbundel Electron 44 (WAL, transaksi); impor BackupPayload asli utuh |
+| S1 Server data | `server/db.ts`/`auth.ts`/`api.ts`: registry + DB per sekolah, API `/api/v1`, sesi cookie HttpOnly, kunci login server |
+| S2 Percontohan | Saklar baca per layar (dasbor/siswa) + QA pasangan identik |
+| S3 Mode penuh | ±28 fungsi `db.ts` dirutekan ke API; login/ganti-sandi/impersonate server; otorisasi ditegakkan server |
+| S4 Backup & migrasi | Snapshot berkas + otomatis harian, Unduh .db, Sinkron Cloud dibekukan di mode server, penawaran migrasi otomatis instalasi IDB (terverifikasi ujung-ke-ujung) |
+| S5 Pengemasan | Data desktop di `userData`, Mode Utama bawaan desktop = server, dokumentasi operasional era SQLite (`05-operasional.md` §1a–§1b) |
+
+Temuan lintas-fase yang ikut tertambal: payload rakitan tangan wajib memakai
+konstanta kanonis backup; penanda status benih tidak boleh menghitung tulisan
+audit login; `confirmDialog` dibuffer agar tidak hilang di tengah transisi
+layar (berdampak ke semua dialog konfirmasi aplikasi).
+
+**Tersisa:** Fase S6 — cabut IndexedDB + saklar mode (db.ts menjadi murni
+klien API) setelah **satu rilis masa tenggang** tanpa laporan kehilangan
+data; perutean impor mode gabung di mode server; registry banyak-sekolah
+penuh di server (saat ini resmi satu instalasi = satu sekolah).

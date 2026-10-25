@@ -1,6 +1,6 @@
 # 03 — Model Data
 
-> **Status:** Aktif · **Revisi:** 2026-09-15 · **Sumber kebenaran:** `src/types/index.ts`, `src/utils/db.ts`
+> **Status:** Aktif · **Revisi:** 2026-10-25 · **Sumber kebenaran:** `src/types/index.ts`, `src/utils/db.ts`, `server/db.ts`
 
 > **Catatan Issue #2 (Dasbor pusat kendali):** tidak ada perubahan model
 > data. Dasbor hanya membaca field `Siswa` yang sudah ada
@@ -70,6 +70,39 @@ siswa contoh opsional), `saveSchoolEntry`,
 `setActiveSchool`, `switchActiveSchool` (set + `initStorage` + validasi sesi,
 mengembalikan `{entry, keptSession}`), `ensureSchoolsInit` (adopsi DB lama bila registry kosong),
 `getActiveDbName`, `getSchoolSiswaCount(dbName)`. Hapus fisik DB menyusul bila diminta eksplisit.
+
+## 2b. Skema SQLite (mode server, Fase S1 — `server/db.ts`)
+
+Penyimpanan mode server: driver `node:sqlite`, mode WAL + `synchronous NORMAL`,
+`SKEMA_VERSI = 1`. Folder data dari env `SIBISKUMER_DATA_DIR` (bawaan `<cwd>/data`;
+kemasan desktop: `<userData>/data`). Entitas berbentuk JSON utuh disimpan per baris —
+kolom identitas diekstrak untuk indeks/penyaringan, isi entitas pada kolom payload.
+
+**Registry** (`bukuinduk-registry.db`):
+
+| Tabel | Isi |
+|-------|-----|
+| `sekolah_registry` | `id` (PK; sekolah bawaan `utama`), `nama`, `dibuat_pada` |
+| `sesi` | `token` (PK, acak 32-byte hex), `sekolah_id`, `user_id`, `dibuat_pada`, `impersonator_id` (NULL bila bukan menyamar), `token_induk` (token sesi admin asal saat menyamar) |
+| `kunci_login` | `sekolah_id` + `username` (PK gabungan), `gagal` (hitungan), `terkunci_sampai` (ISO; kunci 15 menit setelah 5x gagal) |
+| `meta` | `kunci` (PK), `nilai` (JSON) |
+
+**Per sekolah** (`bukuinduk-<idSekolah>.db`, id disanitasi `idSekolahAman`):
+
+| Tabel | Isi |
+|-------|-----|
+| `meta` | `kunci` (PK), `nilai` (JSON): `profil_sekolah`, `config:<kunci>`, `seed_awal` (penanda penanaman awal), `skema`, `data_nyata` (penanda basis data sudah dipakai menulis — bersama `seed_awal` menentukan status `benihAwal` untuk penawaran migrasi) |
+| `siswa` | `id` (PK), `nisn`, `rombel` (rombelSaatIni), `payload` (JSON `Siswa` utuh) |
+| `users` | `id` (PK), `username` (unik), `payload` (JSON `AppUser` termasuk hash password — field password tidak pernah keluar API, dibuang `userPublik`) |
+| `baris` | Koleksi generik: `entitas` (`rombel`/`ptk`/`peta_kelas`/`tutup_tahun`/`sync_logs`/`audit_logs`), `id`, `payload` (JSON); PK (`entitas`, `id`) |
+| `snapshot` | Snapshot di dalam basis data (termasuk pengaman impor `pengaman-impor-<ts>` dan `pengaman-restore`): `id` (PK), `dibuat_pada`, `jumlah_siswa`, `payload` |
+
+**Snapshot berkas** (bukan tabel): berkas `.db` hasil `VACUUM INTO` di
+`snapshots/<idSekolah>/snap-<YYYYMMDD-HHMMSS>-<label>.db` (label: `otomatis`,
+`pra-pulih`, atau nama pembuat); pemulihan mengganti berkas sekolah dan
+membatalkan semua sesinya. Penanaman awal (`pastikanSiap` di `server/auth.ts`,
+idempoten): registry `utama` + profil/config bawaan + users `initialUsersList`
+(ter-hash) + siswa contoh — hanya bila penanda `seed_awal` belum ada.
 
 ## 3. Kamus Entitas
 

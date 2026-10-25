@@ -1,6 +1,6 @@
 # 01 — Spesifikasi Kebutuhan Perangkat Lunak (SRS)
 
-> **Status:** Aktif · **Revisi:** 2026-09-16 · **Acuan standar:** IEEE 830 (ringkas, disesuaikan proyek kecil)
+> **Status:** Aktif · **Revisi:** 2026-10-25 · **Acuan standar:** IEEE 830 (ringkas, disesuaikan proyek kecil)
 > **Aplikasi:** Buku Induk Siswa Kurikulum Merdeka (SD & SMP) — `metadata.json`, `package.json`
 
 ## 1. Tujuan
@@ -22,7 +22,7 @@ di lingkungan sekolah dengan koneksi terbatas.
 | P4 | Rekapitulasi | Statistik rombel, agama, jalur PPDB, capaian P5 |
 | P5 | Cetak standar dinas | Lembar buku induk, kartu pelajar, raport |
 | P6 | Multi-user | Administrator vs operator (batas rombel) + impersonate |
-| P7 | Offline-first | IndexedDB + PWA + backup/restore JSON (& Google Drive) |
+| P7 | Offline-first | SQLite via server terbundel (mode server/desktop) + IndexedDB (mode lokal, masa tenggang) + PWA + backup/restore JSON (& Google Drive) |
 
 **Di luar lingkup:** e-rapor resmi Dapodik/ARD, PPDB online, pembayaran/SPP, absensi harian
 real-time, aplikasi mobile native.
@@ -194,17 +194,20 @@ Alternatif Dapodik offline: unggah `.csv` / `.xlsx` berisi data siswa, petakan k
 | FR-P16-08 | Cegah unggah ulang: sidik jari SHA-256 berkas yang sudah diterapkan disimpan (`bukuinduk_impor_sidik`, maks 50); unggah ulang diblokir kecuali centang impor ulang | Peringatan menyebut tanggal penerapan sebelumnya |
 | FR-P16-09 | Otorisasi: impor untuk administrator + operator; baris di luar `rombelAkses` operator dilewati (`canUserAccessRombel`) | Operator tidak dapat menambah/mengubah siswa di luar rombelnya |
 | FR-P16-10 | Template + contoh: unduh Template CSV / Excel (sheet Template + Panduan, 2 baris contoh fiktif); `docs/contoh-impor-siswa.csv` di repo | Contoh baris lolos validasi (dibuktikan tes) |
-| FR-P16-11 | Batasan jujur: tidak ada backend — "otorisasi server" pada issue diterjemahkan menjadi penegakan di lapisan aplikasi (UI + rekonsiliasi + tulis), sama seperti seluruh penegakan peran di aplikasi offline-first ini | Didokumentasikan di `05-operasional.md` §5b |
+| FR-P16-11 | Batasan jujur: penegakan impor berada di lapisan aplikasi (UI + rekonsiliasi + tulis) memakai aturan peran yang sama dengan input manual; pada mode server, tulis bulk hasil impor divalidasi ulang oleh server (FR-P7-06), pada mode lokal tidak ada lapisan server | Didokumentasikan di `05-operasional.md` §5b |
 
 ### P7 — Offline-First & Backup (`src/utils/db.ts`, `BackupRestoreModule.tsx`, `PengaturanSekolahView.tsx`)
 
 | ID | Kebutuhan | Kriteria terima |
 |----|-----------|-----------------|
-| FR-P7-01 | Seluruh data di IndexedDB (`BukuInduk_Merdeka_DB` v3) + fallback localStorage | Aplikasi dapat dibuka & dipakai tanpa internet |
+| FR-P7-01 | Dua mode penyimpanan (`src/utils/modeData.ts`): **mode server** — seluruh data di SQLite lewat API `/api/v1` (satu berkas per sekolah di folder data; bawaan kemasan desktop); **mode lokal** — data di IndexedDB (`BukuInduk_Merdeka_DB` v5) + fallback localStorage (jalur lama, dipertahankan selama masa tenggang sebelum Fase S6) | Aplikasi dapat dibuka & dipakai tanpa internet pada kedua mode; fungsi `db.ts` bertanda tangan sama di kedua mode |
 | FR-P7-02 | PWA terinstal (manifest `BukuInduk`, service worker generateSW) | Ikon + mode standalone |
 | FR-P7-03 | Backup JSON lokal (unduh) + restore (impor) + reset contoh + kosongkan DB (konfirmasi danger) | Restore invalid ditolak dengan pesan |
 | FR-P7-04 | Backup/restore via Google Drive (Firebase Auth + scope `drive.file`, `src/utils/googleDriveAuth.ts`, `googleDriveService.ts`, config `firebase-applet-config.json`) | Gagal auth menampilkan pesan, bukan crash |
 | FR-P7-05 | Indikator offline + tombol instal PWA (`OfflineIndicator.tsx`, `PWAInstallButton.tsx`, `useOnlineStatus.ts`, `usePWAInstall.ts`) | — |
+| FR-P7-06 | Mode server: auth sesi server (cookie HttpOnly), otorisasi ditegakkan server (saringan rombel pada baca/tulis siswa, peran pada tulis config/users/snapshot), kunci login server 5x gagal → 15 menit, impersonate tercatat di sesi server | Sesi tidak sah ditolak 401; tulis di luar kewenangan ditolak; detail kontrak di `04-api.md` §1A |
+| FR-P7-07 | Migrasi otomatis instalasi lama: pada masuk pertama mode server, bila basis data server masih benih awal dan IndexedDB perangkat berisi data, administrator ditawari impor sekali (snapshot pengaman server dibuat sebelum data contoh digantikan); kegagalan ditampilkan, penanda hanya ditulis setelah berhasil/ditolak eksplisit | Data lama berpindah utuh; penawaran tidak menagih ulang setelah selesai/ditolak |
+| FR-P7-08 | Snapshot & cadangan server (mode server): snapshot berkas (buat/pulihkan/hapus/unduh .db), snapshot otomatis harian maks. 10 per sekolah, Sinkron Cloud dibekukan pada mode server (satu sumber kebenaran) | Pulih snapshot membatalkan semua sesi sekolah itu; prosedur di `05-operasional.md` §1b |
 
 ### P8 — Dasbor Operasional & GTK (`src/components/OperatorDashboard.tsx`, `GtkView.tsx`, `DashboardStats.tsx`)
 
@@ -222,7 +225,7 @@ Alternatif Dapodik offline: unggah `.csv` / `.xlsx` berisi data siswa, petakan k
 | ID | Kebutuhan | Kriteria terima |
 |----|-----------|-----------------|
 | FR-P9-01 | Registry `SchoolEntry` (`id, nama, npsn, jenjang, dbName, createdAt/updatedAt`) di localStorage `bukuinduk_schools`; sekolah aktif di `bukuinduk_active_school`; NPSN non-kosong unik (validasi UI + `createSchoolEntry`) | `getSchools`/`getActiveSchool`/`createSchoolEntry`/`setActiveSchool` berfungsi; duplikat ditolak dengan pesan |
-| FR-P9-02 | Tiap sekolah punya database IndexedDB sendiri (`BukuInduk_Merdeka_DB` untuk sekolah pertama/legacy, `BukuInduk_Merdeka_DB_<schoolId>` untuk tambahan); fallback localStorage di-scope per-DB; hapus fisik opsional (IDB + kunci ter-scope + cache memori) | Data antar-sekolah tidak tercampur; `deleteSchoolEntry(id, {deletePhysical})` membersihkan tuntas |
+| FR-P9-02 | Tiap sekolah punya database IndexedDB sendiri (`BukuInduk_Merdeka_DB` untuk sekolah pertama/legacy, `BukuInduk_Merdeka_DB_<schoolId>` untuk tambahan); fallback localStorage di-scope per-DB; hapus fisik opsional (IDB + kunci ter-scope + cache memori). **Pada mode server**, sekolah dipetakan ke berkas SQLite `bukuinduk-<id>.db` di folder data server; konfigurasi resmi yang didukung saat ini satu instalasi = satu sekolah (bawaan `utama`) — registry banyak-sekolah di server belum dirutekan | Data antar-sekolah tidak tercampur; `deleteSchoolEntry(id, {deletePhysical})` membersihkan tuntas |
 | FR-P9-03 | Boot: `main.tsx` menjalankan `ensureSchoolsInit()` (mengadopsi DB lama sebagai sekolah pertama) → `initStorage()` sebelum render; provisi DB baru sesuai jenjang (`provisionSchoolDatabase`, SD memakai `presetSekolahSD`) + opsi data contoh | Instalasi lama tetap terbaca; sekolah SD baru ter-seed profil SD |
 | FR-P9-04 | UI khusus administrator: pemilih di topbar + sidebar + kartu Profil Sekolah (`SchoolSwitcher.tsx`, `SchoolManagerModal.tsx`); tambah (nama/NPSN/jenjang + opsi contoh), jadikan aktif, hapus (registry/fisik); lencana jumlah siswa per-DB (`getSchoolSiswaCount`) | Operator tidak melihat pemilih; ganti sekolah mereset tab ke Dasbor + membersihkan modal |
 | FR-P9-05 | Sesi lintas-sekolah: `switchActiveSchool()` mempertahankan login bila username sama aktif di DB target, selain itu paksa login ulang; impersonate selalu dibersihkan | Tidak ada kebocoran akun operator antar-sekolah |

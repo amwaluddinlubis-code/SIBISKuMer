@@ -1,6 +1,6 @@
 # 05 — Operasional & SOP
 
-> **Status:** Aktif · **Revisi:** 2026-09-16
+> **Status:** Aktif · **Revisi:** 2026-10-25
 
 ## 1. Prasyarat & Instalasi
 
@@ -127,10 +127,11 @@ Satu file backup JSON (`BackupPayload` v`1.3.0`) berisi **seluruh database
 sekolah aktif**: profil sekolah, siswa (termasuk foto `fotoUrl`/`fotoMini`
 yang tersimpan di record), nilai raport, riwayat, akun pengguna (password
 dalam bentuk hash), referensi rombel, PTK, tutup tahun, peta kelas, log
-sinkron, dan log audit (maks 500 entri terbaru). Server `server.ts` bersifat
-stateless (hanya proxy Dapodik + penyaji file statis) — tidak ada data yang
-dicadangkan dari server; yang dicadangkan adalah IndexedDB per-DB sekolah
-aktif di browser/perangkat.
+sinkron, dan log audit (maks 500 entri terbaru). Sumber backup mengikuti
+mode utama: pada **mode server**, isi berkas berasal dari basis data SQLite
+server (ekspor dirakit server; token Dapodik dikosongkan) dan server juga
+menyediakan cadangan berkas `.db` + snapshot (§1b); pada **mode lokal**,
+yang dicadangkan adalah IndexedDB per-DB sekolah aktif di browser/perangkat.
 
 **Yang TIDAK ikut backup:** token Web Service Dapodik (dieksklusi saat ekspor
 — masukkan ulang setelah restore), snapshot auto-backup itu sendiri,
@@ -360,13 +361,13 @@ Alur: Pilih berkas → Pemetaan kolom → Pratinjau & rekonsiliasi → Konfirmas
    konflik / error / di luar kewenangan beserta alasannya — perbaiki di
    berkas, lalu impor ulang (baris yang sudah masuk akan terklasifikasi
    `sama` / `beda`, tidak ganda).
-10. **Batasan jujur — otorisasi:** aplikasi ini offline-first tanpa backend,
-    sehingga tidak ada "otorisasi server" dalam arti server memvalidasi
-    tiap tulis. Penegakan impor dilakukan di lapisan aplikasi (UI +
-    rekonsiliasi + tulis), sama seperti seluruh penegakan peran yang sudah
-    ada (`canUserAccessRombel`, `filterSiswaByAccess`). Jangan anggap berkas
-    impor sebagai jalur yang melewati hak akses — ia memakai aturan yang
-    sama dengan input manual.
+10. **Batasan jujur — otorisasi:** penegakan impor dilakukan di lapisan
+    aplikasi (UI + rekonsiliasi + tulis) memakai aturan peran yang sama
+    dengan input manual (`canUserAccessRombel`, `filterSiswaByAccess`) —
+    berkas impor bukan jalur yang melewati hak akses. Pada **mode server**,
+    tulis hasil impor (bulk) selain itu divalidasi ulang oleh server
+    (kewenangan rombel per baris, lihat `04-api.md` §1A); pada **mode lokal**
+    tidak ada lapisan server di antara aplikasi dan IndexedDB.
 
 ## 5a. Multi-Sekolah (satu laptop, banyak DB) — khusus Administrator
 
