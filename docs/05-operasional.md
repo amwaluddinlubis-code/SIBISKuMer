@@ -129,6 +129,21 @@ Keputusan yang didokumentasikan (permintaan eksplisit issue):
   audit dari semua peran — risiko sisa: PUT bersifat upsert per id sehingga
   satu entri bisa ditimpa; audit append-only penuh adalah pekerjaan lanjutan.
 
+**Kebijakan isi Log Audit (Issue #30).** Setiap entri mencatat aktor, peran,
+aksi, entitas, waktu, dan hasil; perubahan penting menyertakan diff
+sebelum–sesudah lewat `diffAudit` (allowlist field + sanitasi: NIK, NISN,
+No. KK, alamat, telepon, token, dan kata sandi disensor; kedalaman > 4 dan
+array > 50 dipotong). Nama siswa BOLEH tampil di ringkasan sebagai identitas
+entitas (mis. mutasi, raport) — log hanya bisa dibaca administrator, dan
+nilai sensitifnya sendiri tidak pernah tersimpan. Retensi: store IDB maks
+2000 entri (cermin localStorage 300 terbaru); log ikut backup/restore.
+Isolasi saat restore: entri audit dari berkas hanya diimpor bila `sekolahId`
+cocok dengan sekolah aktif (atau, untuk entri lawas tanpa `sekolahId`, bila
+NPSN berkas = NPSN aktif), maks 500 entri; mode ganti-total menghapus log
+aktif TETAPI kondisi pra-restore tersimpan di snapshot pengaman (yang
+payload-nya memuat log lama), dan peristiwa restore sendiri tercatat sebagai
+`backup_pulihkan` setelah restore.
+
 ### 3.0 Pemberian & pencabutan izin (proses operasional)
 
 1. Administrator membuka tab **Manajemen Pengguna** (hanya admin) → Tambah

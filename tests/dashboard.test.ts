@@ -136,10 +136,10 @@ describe('ringkasan', () => {
 
 describe('filter roster', () => {
   const list = [
-    buatSiswa({ rombelSaatIni: '7A', statusSiswa: 'Aktif', riwayatSemester: [{ tahunAjaran: '2026/2027', semester: '1' }] }),
-    buatSiswa({ rombelSaatIni: '7B', statusSiswa: 'Aktif', riwayatSemester: [{ tahunAjaran: '2025/2026', semester: '2' }] }),
-    buatSiswa({ rombelSaatIni: '8A', statusSiswa: 'Lulus', riwayatSemester: [{ tahunAjaran: '2026/2027', semester: '1' }] }),
-    buatSiswa({ rombelSaatIni: '', statusSiswa: 'Aktif', riwayatSemester: [{ tahunAjaran: '2026/2027', semester: '1' }] }),
+    buatSiswa({ rombelSaatIni: '7A', statusSiswa: 'Aktif', riwayatSemester: [{ id: 'rw-1', tahunAjaran: '2026/2027', semester: '1', tingkat: '7', sakit: 0, izin: 0, alpa: 0, statusKenaikan: 'Belum Ditentukan', catatanWaliKelas: '' }] }),
+    buatSiswa({ rombelSaatIni: '7B', statusSiswa: 'Aktif', riwayatSemester: [{ id: 'rw-2', tahunAjaran: '2025/2026', semester: '2', tingkat: '7', sakit: 0, izin: 0, alpa: 0, statusKenaikan: 'Belum Ditentukan', catatanWaliKelas: '' }] }),
+    buatSiswa({ rombelSaatIni: '8A', statusSiswa: 'Lulus', riwayatSemester: [{ id: 'rw-3', tahunAjaran: '2026/2027', semester: '1', tingkat: '8', sakit: 0, izin: 0, alpa: 0, statusKenaikan: 'Lulus', catatanWaliKelas: '' }] }),
+    buatSiswa({ rombelSaatIni: '', statusSiswa: 'Aktif', riwayatSemester: [{ id: 'rw-4', tahunAjaran: '2026/2027', semester: '1', tingkat: '7', sakit: 0, izin: 0, alpa: 0, statusKenaikan: 'Belum Ditentukan', catatanWaliKelas: '' }] }),
   ];
 
   test('tahun memakai keterlibatan tahun (riwayat/raport), bukan hanya rombel berjalan', () => {

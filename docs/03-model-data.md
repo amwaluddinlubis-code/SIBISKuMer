@@ -30,7 +30,7 @@ Relasi bersifat logis (tanpa foreign key DB): `RaportSemester.siswaId → Siswa.
 `RombelRef.nama ↔ Siswa.rombelSaatIni`, `RombelRef.waliKelas ↔ PtkRef.nama`
 (`getRombelBinaan`), `AppUser.rombelAkses[] ↔ Siswa.rombelSaatIni`.
 
-## 2. Store IndexedDB (`BukuInduk_Merdeka_DB`, versi 5)
+## 2. Store IndexedDB (`BukuInduk_Merdeka_DB`, versi 8)
 
 | Store | keyPath | Indeks | Isi |
 |-------|---------|--------|-----|
@@ -43,11 +43,12 @@ Relasi bersifat logis (tanpa foreign key DB): `RaportSemester.siswaId → Siswa.
 | `ptk` | `id` | `nama`, `nip` | `PtkRef[]` |
 | `tutup_tahun` | `tahunAjaran` | — | `TutupTahunAjaran[]` (arsip terkunci per tahun) |
 | `peta_kelas` | `id` | `tahunAjaran`, `rombel` | `PetaKelas[]` (rombel resmi per tahun) |
+| `audit_logs` (DB v7) | `id` | `timestamp`, `aksi` | `AuditLog[]` (maks 2000 di IDB; cermin localStorage 300 terbaru) |
+| `auto_backup` (DB v7) | `id` | `timestamp` | `AutoBackupSnapshot[]` (snapshot otomatis + pengaman pra-restore) |
 | `tenggat_tugas` (DB v8) | `id` | `tanggalJatuhTempo`, `status` | `TugasAdministrasi[]` (kalender tenggat) |
 
-> Catatan versi: judul §2 di atas masih menyebut "versi 5" (stale); store
-> `audit_logs` + `auto_backup` masuk di v7, `tenggat_tugas` di v8. Upgrade
-> IndexedDB menambah store baru tanpa menghapus store lama.
+> Riwayat versi: `audit_logs` + `auto_backup` masuk di v7, `tenggat_tugas`
+> di v8. Upgrade IndexedDB menambah store baru tanpa menghapus store lama.
 
 Fallback: `localStorage` kunci `bukuinduk_*` (siswa, sekolah, config, logs, users, rombel,
 ptk, current_user, impersonate_from) + registry `bukuinduk_schools` /

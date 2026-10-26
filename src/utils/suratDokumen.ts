@@ -523,7 +523,7 @@ export async function unduhSuratWord(dok: DokumenSurat, sekolah: SekolahProfile)
   }
   if (dok.kepada.length > 0) anak.push(new Paragraph({ text: '' }));
 
-  anak.push(new Paragraph({ alignment: AlignmentType.JUSTIFY, children: [new TextRun({ text: dok.pembuka, size: 22 })] }));
+  anak.push(new Paragraph({ alignment: AlignmentType.JUSTIFIED, children: [new TextRun({ text: dok.pembuka, size: 22 })] }));
 
   if (dok.tabel) {
     const headerRow = new TableRow({
@@ -543,10 +543,10 @@ export async function unduhSuratWord(dok: DokumenSurat, sekolah: SekolahProfile)
   }
 
   for (const p of dok.paragraf) {
-    anak.push(new Paragraph({ alignment: AlignmentType.JUSTIFY, children: [new TextRun({ text: p, size: 22 })] }));
+    anak.push(new Paragraph({ alignment: AlignmentType.JUSTIFIED, children: [new TextRun({ text: p, size: 22 })] }));
   }
   anak.push(
-    new Paragraph({ alignment: AlignmentType.JUSTIFY, children: [new TextRun({ text: dok.penutup, size: 22 })] }),
+    new Paragraph({ alignment: AlignmentType.JUSTIFIED, children: [new TextRun({ text: dok.penutup, size: 22 })] }),
     new Paragraph({ text: '' }),
     new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: dok.kotaTanggal, size: 22 })] }),
     new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: dok.penandatangan.jabatan, size: 22 })] }),

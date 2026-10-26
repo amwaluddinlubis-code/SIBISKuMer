@@ -230,3 +230,20 @@ describe('akses baca audit', () => {
     assert.equal(bolehMelihatAuditLog(undefined), false);
   });
 });
+
+describe('batas sanitasi audit (Issue #30)', () => {
+  it('kedalaman > 4 runtuh menjadi sensor di level ke-5', () => {
+    const hasil = sanitasiNilaiAudit({
+      a: { b: { c: { d: { e: { nik: '1234567890123456' } } } } },
+    }) as Record<string, any>;
+    assert.deepEqual(hasil.a.b.c.d, { e: '[disensor]' });
+  });
+
+  it('array dipotong 50 elemen, elemen sensitif tetap disensor', () => {
+    const banyak = Array.from({ length: 60 }, (_, i) => ({ i, nik: '1234567890123456' }));
+    const hasil = sanitasiNilaiAudit(banyak) as Array<Record<string, unknown>>;
+    assert.equal(hasil.length, 50);
+    assert.equal(hasil[0].nik, '[disensor]');
+    assert.equal(hasil[49].i, 49);
+  });
+});
