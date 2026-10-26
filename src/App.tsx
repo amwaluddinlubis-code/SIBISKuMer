@@ -106,7 +106,7 @@ const GeneratorDokumen = lazyView(() => import('./components/GeneratorDokumen'),
 const ImporSiswaView = lazyView(() => import('./components/ImporSiswaView'), 'ImporSiswaView');
 const KalenderTugasView = lazyView(() => import('./components/KalenderTugasView'), 'KalenderTugasView');
 import type { RencanaRombel } from './components/ArsipView';
-import type { DokumenMutasiKeluar } from './components/MutasiWizard';
+import type { DokumenMutasiKeluar, DokumenMutasiStatus } from './components/MutasiWizard';
 import { ToastHost } from './components/ToastHost';
 import { ConfirmDialogHost } from './components/ConfirmDialogHost';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -123,6 +123,7 @@ import { catatAudit, diffAudit } from './utils/audit';
 import { catatHapusCloud } from './utils/tombstone';
 import { centangAutoBackup } from './utils/autoBackup';
 import { hitungJumlahPengingatAktif, hitungPengingat, tugasTerlihat } from './utils/kalender';
+import { batalkanMutasiTerakhir, buatEntriMutasiMasuk, nisnSudahTerdaftar, terapkanMutasiKeSiswa } from './utils/mutasi';
 import { validateSchoolEntryInput } from './utils/validation';
 
 const TAB_META: Record<string, { title: string; subtitle: string; accent: 'blue' | 'indigo' | 'emerald' | 'amber' | 'rose' | 'purple' | 'slate'; icon: typeof Users }> = {
@@ -1201,6 +1202,13 @@ export default function App() {
       toast(`Akses ditolak: rombel ${baru.rombelSaatIni} di luar kewenangan Anda.`, 'error');
       return;
     }
+    // Issue #5: pemeriksaan duplikasi diulang saat apply (bukan hanya di
+    // wizard) agar pengiriman ulang / data yang berubah di tengah jalan
+    // tidak menciptakan siswa ganda.
+    if (baru.nisn && nisnSudahTerdaftar(siswaList || [], baru.nisn, baru.id)) {
+      toast(`NISN ${baru.nisn} sudah terdaftar di database ini. Pendaftaran dibatalkan.`, 'error');
+      return;
+    }
     const sesiLabel = sesiEfektif || sessionTahun || sekolah.tahunAjaran || '-';
     const ok = await confirmDialog(
       `"${baru.namaLengkap.trim()}" (pindahan dari ${baru.asalMutasi || '-'}) akan didaftarkan pada tahun sesi aktif (TA ${sesiLabel}). Lanjutkan?`,
@@ -1209,13 +1217,31 @@ export default function App() {
     if (!ok) return;
     startTopProgress();
     try {
-      await saveSiswa(baru);
+      // Satu write: siswa + entri riwayat mutasi 'masuk' dalam satu objek.
+      const { siswa } = buatEntriMutasiMasuk(
+        baru,
+        {
+          tanggalEfektif: baru.tanggalDiterima || new Date().toISOString().slice(0, 10),
+          alasan: `Pindahan dari ${baru.asalMutasi || '-'}`,
+          sekolahAsal: baru.asalMutasi || '',
+          noSurat: baru.noSuratPenerimaan || '',
+        },
+        { id: currentUser?.id, nama: currentUser?.namaLengkap || currentUser?.username },
+        { sesiAktif: sesiLabel !== '-' ? sesiLabel : undefined },
+      );
+      await saveSiswa(siswa);
       await loadData();
-      catatAudit('mutasi_masuk', {
-        entitas: 'siswa',
-        entitasId: baru.id,
-        ringkasan: `Mutasi masuk "${baru.namaLengkap}" dari ${baru.asalMutasi || '-'} → ${baru.rombelSaatIni}`,
-      });
+      try {
+        catatAudit('mutasi_masuk', {
+          entitas: 'siswa',
+          entitasId: baru.id,
+          ringkasan: `Mutasi masuk "${baru.namaLengkap}" dari ${baru.asalMutasi || '-'} → ${baru.rombelSaatIni}`,
+        });
+      } catch {
+        // Audit gagal setelah siswa tersimpan: jangan diam — riwayat mutasi
+        // di record siswa tetap menjadi jejak yang dapat direkonsiliasi.
+        toast('Siswa tersimpan, tetapi log audit gagal ditulis. Periksa menu Audit Trail.', 'warning');
+      }
       toast(`Siswa pindahan "${baru.namaLengkap}" terdaftar di ${baru.rombelSaatIni}.`, 'success');
     } catch (err: unknown) {
       toast(`Gagal mendaftarkan siswa pindahan: ${err instanceof Error ? err.message : String(err)}`, 'error');
@@ -1225,6 +1251,8 @@ export default function App() {
   };
 
   // Handle Mutasi Keluar (dari wizard): status + dokumen serah terima.
+  // Issue #5: logika dipusatkan di terapkanMutasiKeSiswa — validasi transisi,
+  // idempotensi, dan entri riwayat mutasi dalam SATU objek siswa (satu write).
   const handleApplyMutasiKeluar = async (id: string, dok: DokumenMutasiKeluar) => {
     const student = (siswaList || []).find((s) => s.id === id);
     if (!student) {
@@ -1237,53 +1265,168 @@ export default function App() {
     }
     startTopProgress();
     try {
+      const sesiAktif = (sesiEfektif || sessionTahun || sekolah.tahunAjaran || '').trim();
+      const { siswa, sudahAda } = terapkanMutasiKeSiswa(
+        student,
+        {
+          siswaId: id,
+          jenis: 'keluar',
+          statusSebelum: student.statusSiswa,
+          statusSesudah: 'Mutasi Keluar',
+          tanggalEfektif: dok.tanggalKeluar,
+          alasan: dok.alasanKeluar,
+          sekolahTujuan: dok.sekolahTujuan,
+          noSurat: dok.noSuratMutasi,
+        },
+        { id: currentUser?.id, nama: currentUser?.namaLengkap || currentUser?.username },
+        { sesiAktif: sesiAktif || undefined },
+      );
+      if (sudahAda) {
+        toast(`Mutasi keluar "${student.namaLengkap}" sudah tercatat sebelumnya (pengiriman ulang diabaikan).`, 'warning');
+        return;
+      }
       // F8: tulis entri riwayat tahun ajaran berjalan (status 'Mutasi Keluar')
-      // agar riwayat tidak berlubang — mutasi keluar sebelumnya hanya mengisi
-      // tanggalKeluar/sekolahTujuan tanpa menyentuh riwayatTahunAjaran.
-      const taBerjalan = (sesiEfektif || sessionTahun || sekolah.tahunAjaran || '').trim();
+      // agar riwayat tidak berlubang — tanpa mengubah entri tahun lama.
+      const taBerjalan = sesiAktif;
       const sudahTercatat = taBerjalan
-        ? (student.riwayatTahunAjaran || []).some(
+        ? (siswa.riwayatTahunAjaran || []).some(
             (r) =>
               r.tahunAjaran === taBerjalan &&
               (r.statusAkhirTahun === 'Mutasi Keluar' || r.statusKenaikan === 'Mutasi Keluar')
           )
-        : true; // tanpa tahun sesi yang jelas → jangan tulis entri tanpa tahun
-      const riwayatBaru: RiwayatTahunAjaran[] = sudahTercatat
-        ? student.riwayatTahunAjaran || []
-        : [
-            ...(student.riwayatTahunAjaran || []),
-            {
-              id: `rth-mutasi-${Date.now()}-${student.id}`,
-              tahunAjaran: taBerjalan,
-              tingkat: getTingkatAktifSiswa(student),
-              rombel: student.rombelSaatIni,
-              statusAkhirTahun: 'Mutasi Keluar',
-              statusKenaikan: 'Mutasi Keluar',
-              catatan: `Mutasi keluar ke ${dok.sekolahTujuan || '-'} (${dok.tanggalKeluar || '-'})`,
-            } as RiwayatTahunAjaran,
-          ];
-      await saveSiswa({
-        ...student,
-        statusSiswa: 'Mutasi Keluar',
-        tanggalKeluar: dok.tanggalKeluar,
-        sekolahTujuan: dok.sekolahTujuan,
-        noSuratMutasi: dok.noSuratMutasi,
-        alasanKeluar: dok.alasanKeluar,
-        riwayatTahunAjaran: riwayatBaru,
-        updatedAt: new Date().toISOString(),
-      });
+        : true;
+      const siswaAkhir: Siswa = sudahTercatat
+        ? siswa
+        : {
+            ...siswa,
+            riwayatTahunAjaran: [
+              ...(siswa.riwayatTahunAjaran || []),
+              {
+                id: `rth-mutasi-${Date.now()}-${student.id}`,
+                tahunAjaran: taBerjalan,
+                tingkat: getTingkatAktifSiswa(student),
+                rombel: student.rombelSaatIni,
+                statusAkhirTahun: 'Mutasi Keluar',
+                statusKenaikan: 'Mutasi Keluar',
+                catatan: `Mutasi keluar ke ${dok.sekolahTujuan || '-'} (${dok.tanggalKeluar || '-'})`,
+              } as RiwayatTahunAjaran,
+            ],
+          };
+      await saveSiswa(siswaAkhir);
       await loadData();
-      catatAudit('mutasi_keluar', {
-        entitas: 'siswa',
-        entitasId: id,
-        ringkasan: `Mutasi keluar "${student.namaLengkap}" → ${dok.sekolahTujuan}`,
-        detail: dok.noSuratMutasi ? `No. surat: ${dok.noSuratMutasi}` : undefined,
-        sebelum: { statusSiswa: student.statusSiswa },
-        sesudah: { statusSiswa: 'Mutasi Keluar' },
-      });
+      try {
+        catatAudit('mutasi_keluar', {
+          entitas: 'siswa',
+          entitasId: id,
+          ringkasan: `Mutasi keluar "${student.namaLengkap}" → ${dok.sekolahTujuan}`,
+          detail: dok.noSuratMutasi ? `No. surat: ${dok.noSuratMutasi}` : undefined,
+          sebelum: { statusSiswa: student.statusSiswa },
+          sesudah: { statusSiswa: 'Mutasi Keluar' },
+        });
+      } catch {
+        toast('Mutasi tersimpan, tetapi log audit gagal ditulis. Jejak tersedia di Riwayat Mutasi siswa.', 'warning');
+      }
       toast(`"${student.namaLengkap}" dimutasi keluar ke ${dok.sekolahTujuan}.`, 'success');
     } catch (err: unknown) {
       toast(`Gagal memproses mutasi keluar: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      doneTopProgress();
+    }
+  };
+
+  // Handle Ubah Status (dari wizard, Issue #5): Mengundurkan Diri /
+  // Meninggal Dunia / Lulus sebagai peristiwa mutasi dengan riwayat.
+  const handleApplyMutasiStatus = async (id: string, dok: DokumenMutasiStatus) => {
+    const student = (siswaList || []).find((s) => s.id === id);
+    if (!student) {
+      toast('Data siswa tidak ditemukan.', 'error');
+      return;
+    }
+    if (!canUserAccessRombel(currentUser, student.rombelSaatIni)) {
+      toast('Akses ditolak: data ini di luar kewenangan rombel Anda.', 'error');
+      return;
+    }
+    startTopProgress();
+    try {
+      const sesiAktif = (sesiEfektif || sessionTahun || sekolah.tahunAjaran || '').trim();
+      const jenis = dok.target === 'Lulus' ? 'lulus' : 'ubah_status';
+      const { siswa, sudahAda } = terapkanMutasiKeSiswa(
+        student,
+        {
+          siswaId: id,
+          jenis,
+          statusSebelum: student.statusSiswa,
+          statusSesudah: dok.target,
+          tanggalEfektif: dok.tanggalEfektif,
+          alasan: dok.alasan,
+          noSurat: dok.noSurat,
+        },
+        { id: currentUser?.id, nama: currentUser?.namaLengkap || currentUser?.username },
+        { sesiAktif: sesiAktif || undefined },
+      );
+      if (sudahAda) {
+        toast(`Perubahan status "${student.namaLengkap}" sudah tercatat sebelumnya (pengiriman ulang diabaikan).`, 'warning');
+        return;
+      }
+      await saveSiswa(siswa);
+      await loadData();
+      try {
+        catatAudit('mutasi_status', {
+          entitas: 'siswa',
+          entitasId: id,
+          ringkasan: `Status "${student.namaLengkap}" → ${dok.target} (${dok.tanggalEfektif})`,
+          detail: dok.noSurat ? `No. surat: ${dok.noSurat}` : undefined,
+          sebelum: { statusSiswa: student.statusSiswa },
+          sesudah: { statusSiswa: dok.target },
+        });
+      } catch {
+        toast('Perubahan status tersimpan, tetapi log audit gagal ditulis. Jejak tersedia di Riwayat Mutasi siswa.', 'warning');
+      }
+      toast(`Status "${student.namaLengkap}" diubah menjadi ${dok.target}.`, 'success');
+    } catch (err: unknown) {
+      toast(`Gagal mengubah status: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      doneTopProgress();
+    }
+  };
+
+  // Handle Batal Mutasi (dari detail siswa, Issue #5): kembalikan status
+  // ke Aktif lewat entri 'batal' — riwayat lama tidak dihapus/diubah.
+  const handleBatalkanMutasi = async (id: string) => {
+    const student = (siswaList || []).find((s) => s.id === id);
+    if (!student) {
+      toast('Data siswa tidak ditemukan.', 'error');
+      return;
+    }
+    if (!canUserAccessRombel(currentUser, student.rombelSaatIni)) {
+      toast('Akses ditolak: data ini di luar kewenangan rombel Anda.', 'error');
+      return;
+    }
+    const ok = await confirmDialog(
+      `Batalkan mutasi terakhir "${student.namaLengkap}" dan kembalikan statusnya menjadi Aktif? Riwayat lama tetap tersimpan sebagai jejak.`,
+      { confirmLabel: 'Ya, Batalkan' }
+    );
+    if (!ok) return;
+    startTopProgress();
+    try {
+      const { siswa } = batalkanMutasiTerakhir(student, { id: currentUser?.id, nama: currentUser?.namaLengkap || currentUser?.username });
+      await saveSiswa(siswa);
+      await loadData();
+      if (detailSiswa?.id === id) setDetailSiswa(siswa);
+      try {
+        catatAudit('mutasi_batal', {
+          entitas: 'siswa',
+          entitasId: id,
+          ringkasan: `Mutasi "${student.namaLengkap}" dibatalkan; status kembali Aktif`,
+          sebelum: { statusSiswa: student.statusSiswa },
+          sesudah: { statusSiswa: 'Aktif' },
+        });
+      } catch {
+        toast('Pembatalan tersimpan, tetapi log audit gagal ditulis. Jejak tersedia di Riwayat Mutasi siswa.', 'warning');
+      }
+      toast(`Mutasi "${student.namaLengkap}" dibatalkan; status kembali Aktif.`, 'success');
+    } catch (err: unknown) {
+      toast(`Gagal membatalkan mutasi: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       doneTopProgress();
     }
@@ -2001,6 +2144,7 @@ export default function App() {
             setPrintSiswa(s);
           }}
           onDelete={handleDeleteSiswa}
+          onBatalkanMutasi={handleBatalkanMutasi}
         />
       )}
 
@@ -2032,6 +2176,7 @@ export default function App() {
           tahunAjaran={sessionTahun || sekolah.tahunAjaran}
           onApplyMasuk={handleApplyMutasiMasuk}
           onApplyKeluar={handleApplyMutasiKeluar}
+          onApplyStatus={handleApplyMutasiStatus}
           onClose={() => setMutasiOpen(false)}
         />
       )}

@@ -23,6 +23,8 @@ export const AKSI_LABEL: Record<AuditAksi, string> = {
   data_sensitif_dilihat: 'Data sensitif dilihat',
   mutasi_masuk: 'Mutasi masuk',
   mutasi_keluar: 'Mutasi keluar',
+  mutasi_status: 'Perubahan status siswa',
+  mutasi_batal: 'Mutasi dibatalkan',
   tutup_tahun: 'Tutup tahun',
   buka_tahun: 'Buka kunci tahun',
   sinkron_terapkan: 'Sinkron diterapkan',

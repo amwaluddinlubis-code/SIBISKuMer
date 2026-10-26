@@ -1,6 +1,51 @@
 export type JenisKelamin = 'L' | 'P';
 export type Agama = 'Islam' | 'Kristen' | 'Katholik' | 'Hindu' | 'Buddha' | 'Khonghucu' | 'Kepercayaan' | 'Lainnya';
 export type StatusSiswa = 'Aktif' | 'Lulus' | 'Mutasi Keluar' | 'Mengundurkan Diri' | 'Meninggal Dunia';
+
+/**
+ * Jenis peristiwa mutasi (Issue #5).
+ * - masuk: siswa pindahan diterima (status awal di sekolah ini).
+ * - keluar: pindah ke sekolah lain (status menjadi 'Mutasi Keluar').
+ * - ubah_status: perubahan status langsung (Mengundurkan Diri / Meninggal Dunia).
+ * - lulus: kelulusan sebagai peristiwa mutasi (status menjadi 'Lulus').
+ * - batal: pembatalan peristiwa sebelumnya; status kembali 'Aktif'.
+ */
+export type JenisMutasi = 'masuk' | 'keluar' | 'ubah_status' | 'lulus' | 'batal';
+
+/**
+ * Satu entri riwayat mutasi. Append-only: setelah ditulis, field-field
+ * entri TIDAK BOLEH diubah — kecuali penanda pembatalan (dibatalkanOleh /
+ * dibatalkanPada) yang ditulis tepat satu kali saat entri dibatalkan.
+ */
+export interface RiwayatMutasi {
+  id: string;
+  siswaId: string;
+  jenis: JenisMutasi;
+  /** Status sebelum peristiwa; null untuk 'masuk' (belum ada status di sekolah ini). */
+  statusSebelum: StatusSiswa | null;
+  statusSesudah: StatusSiswa;
+  /** Tanggal efektif peristiwa, format YYYY-MM-DD. */
+  tanggalEfektif: string;
+  /** Alasan peristiwa; wajib diisi untuk semua jenis. */
+  alasan: string;
+  sekolahAsal?: string;
+  sekolahTujuan?: string;
+  /** Nomor surat pendukung (surat mutasi / surat penerimaan / SK). Boleh kosong. */
+  noSurat?: string;
+  /** Referensi dokumen pendukung lain (nama/uraian singkat). */
+  dokumen: string[];
+  operatorId?: string;
+  operatorNama?: string;
+  /** Waktu pencatatan (ISO). Berbeda dari tanggalEfektif bila dicatat susulan. */
+  dicatatPada: string;
+  /** Kunci idempotensi: pengiriman ulang dengan kunci sama = no-op, bukan duplikat. */
+  kunciIdempotensi: string;
+  /** Bila entri ini dibatalkan: id entri 'batal' yang membatalkannya. */
+  dibatalkanOleh?: string;
+  dibatalkanPada?: string;
+  /** Bila jenis = 'batal': id entri asal yang dibatalkan. */
+  membatalkanId?: string;
+}
 export type JenjangSekolah = 'SD' | 'SMP';
 export type TingkatKelasSD = '1' | '2' | '3' | '4' | '5' | '6';
 export type TingkatKelasSMP = '7' | '8' | '9';
@@ -261,6 +306,15 @@ export interface Siswa {
   alasanKeluar?: string;
   sekolahTujuan?: string;
   noSuratMutasi?: string;
+  /**
+   * Riwayat mutasi & perubahan status lintas waktu (Issue #5).
+   * Append-only: entri lama TIDAK PERNAH diubah/dihapus; pembatalan
+   * menambah entri baru jenis 'batal' yang merujuk entri asal.
+   * Disimpan bersama record siswa (satu write dengan status) agar
+   * operasi mutasi konsisten — tidak ada riwayat tanpa status baru,
+   * dan tidak ada status baru tanpa riwayat.
+   */
+  riwayatMutasi?: RiwayatMutasi[];
   noIjazahSmp?: string;
   tanggalIjazahSmp?: string;
 
@@ -652,6 +706,8 @@ export type AuditAksi =
   | 'data_sensitif_dilihat'
   | 'mutasi_masuk'
   | 'mutasi_keluar'
+  | 'mutasi_status'
+  | 'mutasi_batal'
   | 'tutup_tahun'
   | 'buka_tahun'
   | 'sinkron_terapkan'

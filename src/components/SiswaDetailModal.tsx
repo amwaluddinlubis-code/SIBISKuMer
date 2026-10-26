@@ -14,11 +14,13 @@ import {
   MapPin,
   FileText,
   Eye,
-  EyeOff
+  EyeOff,
+  ArrowLeftRight
 } from 'lucide-react';
 import { Siswa, SekolahProfile } from '../types';
 import { formatAlamatLengkap, sensorNilai } from '../utils/format';
 import { catatAudit } from '../utils/audit';
+import { entriDapatDibatalkan, labelJenisMutasi } from '../utils/mutasi';
 
 interface SiswaDetailModalProps {
   siswa: Siswa;
@@ -27,6 +29,8 @@ interface SiswaDetailModalProps {
   onEdit: (siswa: Siswa) => void;
   onPrintLembar: (siswa: Siswa) => void;
   onDelete: (id: string) => void;
+  /** Issue #5: pembatalan mutasi terakhir (opsional; tombol hanya muncul bila ada). */
+  onBatalkanMutasi?: (id: string) => Promise<void> | void;
 }
 
 export const SiswaDetailModal: React.FC<SiswaDetailModalProps> = ({
@@ -35,7 +39,8 @@ export const SiswaDetailModal: React.FC<SiswaDetailModalProps> = ({
   onClose,
   onEdit,
   onPrintLembar,
-  onDelete
+  onDelete,
+  onBatalkanMutasi,
 }) => {
   // Fase 2 §11: NIK / No. KK / telepon orang tua disensor bawaan; tombol
   // "Lihat" membuka semuanya sekaligus dan TERCATAT di log audit.
@@ -266,6 +271,46 @@ export const SiswaDetailModal: React.FC<SiswaDetailModalProps> = ({
               </div>
             ) : (
               <p className="text-slate-400 italic text-[11px]">Belum ada data projek P5.</p>
+            )}
+          </div>
+
+          {/* Riwayat Mutasi & Perubahan Status (Issue #5, append-only) */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-2">
+            <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-1.5">
+              <ArrowLeftRight className="w-4 h-4 text-indigo-600" />
+              Riwayat Mutasi &amp; Status
+            </h4>
+            {siswa.riwayatMutasi && siswa.riwayatMutasi.length > 0 ? (
+              <div className="space-y-2">
+                {[...siswa.riwayatMutasi].reverse().map((e) => (
+                  <div key={e.id} className="p-2.5 rounded-lg border border-slate-200 text-[11px]">
+                    <div className="flex justify-between font-bold text-slate-900">
+                      <span>{labelJenisMutasi(e.jenis)}</span>
+                      <span className="text-slate-500 font-normal">{formatDateIndo(e.tanggalEfektif)}</span>
+                    </div>
+                    <p className="text-slate-600 mt-0.5">
+                      {e.statusSebelum ? `${e.statusSebelum} → ` : ''}<strong>{e.statusSesudah}</strong>
+                      {e.sekolahTujuan ? ` • Tujuan: ${e.sekolahTujuan}` : ''}
+                      {e.sekolahAsal ? ` • Asal: ${e.sekolahAsal}` : ''}
+                      {e.noSurat ? ` • No. surat: ${e.noSurat}` : ''}
+                    </p>
+                    <p className="text-slate-600 italic">"{e.alasan}"{e.operatorNama ? ` • oleh ${e.operatorNama}` : ''}</p>
+                    {e.dibatalkanOleh && (
+                      <p className="text-rose-600 font-semibold mt-0.5">Dibatalkan (lihat entri pembatalan di bawah).</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-slate-400 italic text-[11px]">Belum ada peristiwa mutasi. Mutasi lama (sebelum fitur ini) hanya tercatat di Log Audit.</p>
+            )}
+            {onBatalkanMutasi && entriDapatDibatalkan(siswa) && (
+              <button
+                onClick={() => void onBatalkanMutasi(siswa.id)}
+                className="ui-btn ui-btn-outline !text-rose-700 !border-rose-300"
+              >
+                Batalkan Mutasi Terakhir (kembali Aktif)
+              </button>
             )}
           </div>
         </div>

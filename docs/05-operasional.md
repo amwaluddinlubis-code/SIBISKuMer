@@ -234,7 +234,30 @@ Jangan percaya backup yang belum pernah diuji dipulihkan. Prosedur uji
 2. **Mutasi masuk:** Mutasi → Mutasi Masuk → identitas → sekolah asal + tanggal
    diterima + rombel tujuan → konfirmasi. Terdaftar sebagai Pindahan; lengkapi
    data lain via Edit.
-3. **Leger:** tab Leger Nilai → pilih tahun + semester + tingkat/rombel → periksa
+3. **Ubah status (Issue #5):** Mutasi → Ubah Status → pilih siswa aktif → pilih
+   target (Mengundurkan Diri / Meninggal Dunia / Lulus) + tanggal efektif +
+   alasan (wajib) + no. surat pendukung → konfirmasi. Status berubah dan
+   peristiwa tercatat di Riwayat Mutasi siswa.
+4. **Melihat riwayat & membatalkan (Issue #5):** buka detail siswa → bagian
+   "Riwayat Mutasi & Status" (urut terbaru dulu). Tombol "Batalkan Mutasi
+   Terakhir" hanya muncul bila ada peristiwa keluar/ubah status/lulus yang
+   belum dibatalkan; setelah konfirmasi, status kembali Aktif, field keluar
+   dibersihkan, dan entri asal ditandai dibatalkan — entri lama TIDAK
+   dihapus. Mutasi masuk tidak dapat dibatalkan (pembatalannya = hapus
+   siswa lewat alur hapus yang sudah ada).
+5. **Pemulihan & rekonsiliasi (Issue #5):**
+   - Pengiriman ulang (klik ganda / kirim ulang setelah gagal ambigu):
+     dikenali lewat kunci idempotensi dan diabaikan dengan peringatan —
+     tidak pernah membuat entri ganda.
+   - Bila penyimpanan gagal: tidak ada perubahan sama sekali (status dan
+     riwayat ditulis sekaligus). Ulangi dari wizard.
+   - Bila Log Audit gagal setelah siswa tersimpan: aplikasi menampilkan
+     peringatan; jejak sahih ada di Riwayat Mutasi record siswa, dan
+     audit dapat dicocokkan ulang dari sana (siswaId + tanggal efektif +
+     operator).
+   - Laporan periode lalu tidak berubah oleh mutasi/pembatalan baru:
+     riwayat tahun/semester yang sudah ada tidak pernah ditulis ulang.
+6. **Leger:** tab Leger Nilai → pilih tahun + semester + tingkat/rombel → periksa
    rata-rata & peringkat → Ekspor CSV / Cetak. Nilai <70 ditandai merah.
 
 ## 4b. SOP Sinkron Cloud Antar-Perangkat (Firebase gratis, tanpa kartu kredit)

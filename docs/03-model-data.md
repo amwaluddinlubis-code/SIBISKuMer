@@ -264,6 +264,50 @@ DB v8 + cermin localStorage ter-scope). Logika murni di
 (`PengingatTerkirim`, maks 500): `getPengingatTerkirim` /
 `tambahPengingatTerkirim` (idempoten).
 
+### 3.10 `RiwayatMutasi` (riwayat mutasi & status — Issue #5)
+
+`RiwayatMutasi` (di `src/types/index.ts`, logika murni di
+`src/utils/mutasi.ts`): `id`, `siswaId`, `jenis` (`masuk` | `keluar` |
+`ubah_status` | `lulus` | `batal`), `statusSebelum` (null untuk `masuk`),
+`statusSesudah`, `tanggalEfektif` (`YYYY-MM-DD`), `alasan` (wajib),
+`sekolahAsal?`, `sekolahTujuan?`, `noSurat?`, `dokumen` (referensi dokumen
+pendukung), `operatorId?`, `operatorNama?`, `dicatatPada` (ISO, waktu
+pencatatan — dapat berbeda dari tanggal efektif bila dicatat susulan),
+`kunciIdempotensi`, `dibatalkanOleh?`, `dibatalkanPada?`,
+`membatalkanId?` (untuk jenis `batal`).
+
+Penyimpanan: **menempel di record `Siswa`** (`siswa.riwayatMutasi`), BUKAN
+store baru — sehingga berlaku di kedua mode tanpa migrasi (IndexedDB:
+satu `put` per record; server: payload JSON utuh). Status baru + entri
+riwayat selalu ditulis dalam SATU objek siswa (satu `saveSiswa`): gagal
+simpan = tidak ada perubahan sama sekali (tanpa kegagalan parsial).
+
+Aturan yang dipegang:
+- **Append-only.** Entri lama tidak pernah diubah/dihapus. Satu-satunya
+  penanda yang boleh ditambahkan kemudian adalah `dibatalkanOleh` /
+  `dibatalkanPada` pada entri yang dibatalkan.
+- **Transisi diizinkan** (`TRANSISI_DIIZINKAN`): `Aktif` → `Mutasi Keluar` /
+  `Mengundurkan Diri` / `Meninggal Dunia` / `Lulus`. Status non-Aktif
+  bersifat final; hanya entri `batal` yang mengembalikan ke `Aktif`.
+- **Idempotensi.** Kunci = `siswaId|jenis|tanggalEfektif|statusSesudah|noSurat`
+  (noSurat dinormalisasi huruf kecil). Pengiriman ulang dengan kunci sama
+  adalah no-op (dikembalikan sebagai `sudahAda`), bukan duplikat.
+- **Tanggal batas.** Tanggal efektif wajib format valid, tidak melebihi
+  hari ini (WIB), dan — bila sesi aktif tersedia — memetakan ke tahun
+  ajaran sesi tersebut (batas 1 Juli: 30 Juni = TA lama, 1 Juli = TA baru).
+- **Laporan periode lalu tidak berubah.** Fungsi mutasi tidak pernah
+  menyentuh `riwayatTahunAjaran` / `riwayatSemester` yang sudah ada.
+  Pembatalan tidak menghapus entri tahun berjalan; jejaknya hanya ada di
+  `riwayatMutasi` + Log Audit.
+- **Duplikasi.** NISN ganda ditolak saat mutasi masuk (diperiksa di wizard
+  DAN diulang saat apply); nomor surat mutasi yang sudah dipakai siswa
+  lain ditolak (nomor dari entri yang sudah dibatalkan bebas dipakai lagi).
+- **Audit.** Setiap peristiwa menulis Log Audit: `mutasi_masuk`,
+  `mutasi_keluar`, `mutasi_status`, `mutasi_batal` (dengan sebelum/sesudah).
+  Bila audit gagal setelah siswa tersimpan, aplikasi menampilkan
+  peringatan (tidak diam) — riwayat di record siswa menjadi jejak
+  rekonsiliasi.
+
 ## 4. Aturan Validasi (`src/utils/validation.ts`)
 
 Impor Excel/CSV memakai aturan yang sama + aturan berkas (`src/utils/imporSiswa.ts`):
