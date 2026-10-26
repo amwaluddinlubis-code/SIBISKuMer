@@ -51,6 +51,7 @@ import {
   getPengingatTerkirim,
   tambahPengingatTerkirim
 } from './utils/db';
+import { bolehTulis, bolehKelolaAdmin } from './utils/akses';
 import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, PetaKelas, ModeTampilan, RiwayatTahunAjaran, TugasAdministrasi, PengaturanKalender } from './types';
 import { buildSnapshot, tingkatAkhir } from './utils/arsip';
 import { batalkanPromosi, terapkanRencanaPromosi, validasiRencanaPromosi } from './utils/promosi';
@@ -739,6 +740,11 @@ export default function App() {
     tahunBaru: string;
     groups: RencanaRombel[];
   }) => {
+    // Issue #12: tutup tahun hanya administrator (matriks akses).
+    if (!bolehKelolaAdmin(currentUser)) {
+      toast('Hanya administrator yang dapat menutup tahun ajaran.', 'error');
+      return;
+    }
     // Ritual tutup tahun hanya dalam sesi tahun yang ditutup.
     const sesi = tahunSesiEfektif(sessionTahun, sekolah.tahunAjaran);
     if (sesi && args.tahunTutup.trim() !== sesi) {
@@ -857,6 +863,11 @@ export default function App() {
   }, [sekolah, currentUser, loadData, sessionTahun, tutupTahun, petaKelas]);
 
   const handleBukaTahun = useCallback(async (tahunAjaran: string) => {
+    // Issue #12: buka kunci hanya administrator (matriks akses).
+    if (!bolehKelolaAdmin(currentUser)) {
+      toast('Hanya administrator yang dapat membuka kunci tahun ajaran.', 'error');
+      throw new Error('Bukan administrator.');
+    }
     // Buka kunci hanya dalam sesi tahun tersebut.
     const sesi = tahunSesiEfektif(sessionTahun, sekolah.tahunAjaran);
     if (sesi && tahunAjaran.trim() !== sesi) {
@@ -1173,6 +1184,11 @@ export default function App() {
   // dari record lama bila sudah terisi (anti-bypass devtools); sinkron Dapodik tetap
   // berkuasa via convertDapodikToSiswa.
   const handleSaveSiswa = async (siswaData: Siswa) => {
+    // Issue #12: peran pimpinan hanya membaca (matriks akses).
+    if (!bolehTulis(currentUser)) {
+      toast('Peran pimpinan hanya dapat membaca data.', 'error');
+      throw new Error('__SIMPAN_DIBATALKAN__');
+    }
     if (!canUserAccessRombel(currentUser, siswaData.rombelSaatIni)) {
       toast(`Akses ditolak: rombel ${siswaData.rombelSaatIni} di luar kewenangan Anda.`, 'error');
       // Lempar penanda batal agar form TIDAK ikut tertutup / membuang draft.
@@ -1231,6 +1247,10 @@ export default function App() {
   // Handle Update Foto Siswa dari kolom aksi (crop 4:6, maks 500 KB sudah di proses di caller).
   // Sukses/gagal dinotifikasi oleh pemanggil (SiswaList); handler ini hanya melempar Error.
   const handleUpdateFoto = async (siswa: Siswa, fotoUrl: string) => {
+    // Issue #12: peran pimpinan hanya membaca (matriks akses).
+    if (!bolehTulis(currentUser)) {
+      throw new Error('Peran pimpinan hanya dapat membaca data.');
+    }
     if (!canUserAccessRombel(currentUser, siswa.rombelSaatIni)) {
       throw new Error('Akses ditolak: data ini di luar kewenangan rombel Anda.');
     }
@@ -1246,6 +1266,11 @@ export default function App() {
 
   // Handle Mutasi Masuk (dari wizard): registrasi pindahan ringkas.
   const handleApplyMutasiMasuk = async (baru: Siswa) => {
+    // Issue #12: peran pimpinan hanya membaca (matriks akses).
+    if (!bolehTulis(currentUser)) {
+      toast('Peran pimpinan hanya dapat membaca data.', 'error');
+      return;
+    }
     if (!canUserAccessRombel(currentUser, baru.rombelSaatIni)) {
       toast(`Akses ditolak: rombel ${baru.rombelSaatIni} di luar kewenangan Anda.`, 'error');
       return;
@@ -1302,6 +1327,11 @@ export default function App() {
   // Issue #5: logika dipusatkan di terapkanMutasiKeSiswa — validasi transisi,
   // idempotensi, dan entri riwayat mutasi dalam SATU objek siswa (satu write).
   const handleApplyMutasiKeluar = async (id: string, dok: DokumenMutasiKeluar) => {
+    // Issue #12: peran pimpinan hanya membaca (matriks akses).
+    if (!bolehTulis(currentUser)) {
+      toast('Peran pimpinan hanya dapat membaca data.', 'error');
+      return;
+    }
     const student = (siswaList || []).find((s) => s.id === id);
     if (!student) {
       toast('Data siswa tidak ditemukan.', 'error');
@@ -1385,6 +1415,11 @@ export default function App() {
   // Handle Ubah Status (dari wizard, Issue #5): Mengundurkan Diri /
   // Meninggal Dunia / Lulus sebagai peristiwa mutasi dengan riwayat.
   const handleApplyMutasiStatus = async (id: string, dok: DokumenMutasiStatus) => {
+    // Issue #12: peran pimpinan hanya membaca (matriks akses).
+    if (!bolehTulis(currentUser)) {
+      toast('Peran pimpinan hanya dapat membaca data.', 'error');
+      return;
+    }
     const student = (siswaList || []).find((s) => s.id === id);
     if (!student) {
       toast('Data siswa tidak ditemukan.', 'error');
@@ -1441,6 +1476,11 @@ export default function App() {
   // Handle Batal Mutasi (dari detail siswa, Issue #5): kembalikan status
   // ke Aktif lewat entri 'batal' — riwayat lama tidak dihapus/diubah.
   const handleBatalkanMutasi = async (id: string) => {
+    // Issue #12: peran pimpinan hanya membaca (matriks akses).
+    if (!bolehTulis(currentUser)) {
+      toast('Peran pimpinan hanya dapat membaca data.', 'error');
+      return;
+    }
     const student = (siswaList || []).find((s) => s.id === id);
     if (!student) {
       toast('Data siswa tidak ditemukan.', 'error');
@@ -1482,6 +1522,11 @@ export default function App() {
 
   // Handle Delete Siswa — operator hanya boleh hapus rombel aksesnya
   const handleDeleteSiswa = async (id: string) => {
+    // Issue #12: peran pimpinan hanya membaca (matriks akses).
+    if (!bolehTulis(currentUser)) {
+      toast('Peran pimpinan hanya dapat membaca data.', 'error');
+      return;
+    }
     const student = (siswaList || []).find((s) => s.id === id);
     if (!canUserAccessRombel(currentUser, student?.rombelSaatIni)) {
       toast('Akses ditolak: data ini di luar kewenangan rombel Anda.', 'error');
@@ -1562,6 +1607,11 @@ export default function App() {
     !loading && !!currentUser && !isAdmin && dbEmpty;
 
   const handleUpdateSekolah = async (updated: SekolahProfile) => {
+    // Issue #12: profil sekolah hanya diubah administrator (matriks akses).
+    if (!bolehKelolaAdmin(currentUser)) {
+      toast('Hanya administrator yang dapat mengubah profil sekolah.', 'error');
+      return;
+    }
     startTopProgress();
     try {
       setSekolah(updated);

@@ -75,19 +75,75 @@ satu sekolah adalah konfigurasi yang didukung resmi.
 | `npm run lint` | `tsc --noEmit` — **wajib lolos tiap perubahan** |
 | `npm run clean` | Hapus `dist/` dan `server.js` (`rm -rf dist server.js`) |
 
-## 3. Matriks Peran & Akses
+## 3. Matriks Peran & Akses (Issue #12)
 
-| Kemampuan | Administrator | Operator (rombongan X) |
-|-----------|:---:|:---:|
-| Dasbor Operasional, Master Siswa, Nilai Raport, Rekap, Cetak, Referensi + GTK (lihat; GTK manual hanya admin) | ✅ semua rombel | ✅ hanya rombel X |
-| Tambah/ubah/hapus siswa + wizard mutasi masuk/keluar + leger nilai | ✅ | ✅ hanya rombel X (`canUserAccessRombel`) |
-| Impor Excel/CSV siswa (pemetaan + pratinjau + rekonsiliasi) | ✅ semua rombel | ✅ hanya rombel X (baris di luar kewenangan dilewati) |
-| Sinkron Dapodik, Profil Sekolah, Backup, Manajemen Pengguna, Pemetaan Kelas, Tutup Tahun, Tema Tampilan, Log Audit | ✅ (via dropdown pengguna topbar) | ❌ (notice `AccessDeniedNotice` + redirect Dasbor) |
-| Arsip tahun ajaran (lihat roster terkunci) | ✅ | ✅ (sebatas rombel kewenangan) |
-| Kalender & pengingat tenggat: buat/ubah/hapus tenggat | ✅ | ❌ |
-| Kalender & pengingat tenggat: tandai selesai, lihat tugas | ✅ semua tugas | ✅ tugas yang ditugaskan kepadanya + tugas umum |
-| Impersonate (lihat sebagai operator) | ✅ | ❌ |
-| Ganti password sendiri (dropdown topbar) | ✅ | ✅ |
+Empat peran, satu peran per akun (lihat keputusan di bawah). Sumber kebenaran
+matriks di klien: `src/utils/akses.ts` (`IZIN_PERAN`, `bolehAksi`,
+`bolehTulis`, `bolehKelolaAdmin`, `rombelTerlihat`). Server mencerminkannya
+lewat gate `perluAdmin`/`perluTulis`/gate per-entitas koleksi di
+`server/api.ts` — **server adalah batas enforcement di mode server**; guard
+handler di App/views adalah pertahanan lapis kedua di mode lokal (di perangkat
+sendiri, IndexedDB tidak bisa dibentengi dari pemilik perangkat; yang
+dibentengi adalah akun lain via server).
+
+| Kemampuan | Administrator | Operator | Wali Kelas | Pimpinan |
+|-----------|:---:|:---:|:---:|:---:|
+| Baca siswa, raport, leger, rekap, laporan, cetak, referensi, GTK | ✅ semua rombel | ✅ rombel kewenangan | ✅ hanya rombel yang ditugaskan | ✅ semua rombel (baca saja) |
+| Tambah/ubah/hapus siswa + wizard mutasi masuk/keluar/status/batal | ✅ | ✅ rombel kewenangan | ✅ hanya rombel yang ditugaskan | ❌ |
+| Impor Excel/CSV siswa (pemetaan + pratinjau + rekonsiliasi) | ✅ semua rombel | ✅ rombel kewenangan (baris luar kewenangan dilewati) | ✅ hanya rombel yang ditugaskan | ❌ |
+| Ekspor/unduh/cetak laporan & daftar siswa | ✅ | ✅ rombel kewenangan | ✅ rombel yang ditugaskan | ✅ semua rombel (ekspor tidak mengubah data) |
+| Sinkron Dapodik, Profil Sekolah, Backup & Restore, Manajemen Pengguna, Pemetaan Kelas, Tutup/Buka Tahun, Batal Promosi, Log Audit (baca) | ✅ (via dropdown pengguna topbar) | ❌ (notice `AccessDeniedNotice` + redirect Dasbor) | ❌ | ❌ |
+| Konfigurasi layanan (tab Pengaturan → config) | ✅ ubah | ✅ ubah | ❌ (baca saja) | ❌ (baca saja) |
+| Arsip tahun ajaran (lihat roster terkunci) | ✅ | ✅ (sebatas rombel kewenangan) | ✅ (sebatas rombel yang ditugaskan) | ✅ semua rombel |
+| Kalender & pengingat: buat/ubah/hapus tenggat | ✅ | ❌ | ❌ | ❌ |
+| Kalender & pengingat: tandai selesai, lihat tugas | ✅ semua tugas | ✅ tugas yang ditugaskan kepadanya + tugas umum | ✅ sama | ✅ sama (tugas yang ditugaskan kepadanya + tugas umum) |
+| Impersonate (lihat sebagai peran lain) | ✅ semua peran non-admin | ❌ | ❌ | ❌ |
+| Ganti password sendiri (dropdown topbar) | ✅ | ✅ | ✅ | ✅ |
+
+Cakupan rombel (`rombelAkses`, `canUserAccessRombel` / `rombelTerlihat`):
+administrator & pimpinan = semua rombel; operator dengan `rombelAkses`
+kosong = semua rombel (perilaku lama); **wali kelas dengan `rombelAkses`
+kosong = tidak dapat melihat siswa mana pun** — formulir Manajemen Pengguna
+menolak menyimpan wali kelas tanpa rombel. Siswa tanpa rombel (F16) tetap
+terlihat semua peran baca, tetapi tidak bisa diubah pengguna terbatas
+(server menolak rombel kosong untuk mereka). Batas tahun ajaran
+(`tahunAkses`) berlaku sama untuk semua peran non-admin; kosong = semua tahun.
+
+Keputusan yang didokumentasikan (permintaan eksplisit issue):
+- **Satu peran per akun, bukan peran ganda.** Orang dengan dua topi memakai
+  akun berperingkat lebih tinggi, atau dua akun. Alasannya: sesi server
+  menyimpan satu `peran`, seluruh gate memeriksa satu peran, dan peran ganda
+  memaksa migrasi users + sesi + semua gate tanpa manfaat nyata —
+  `rombelAkses`/`tahunAkses` sudah menutup kebutuhan pembatasan di sekolah.
+- **Pimpinan hanya membaca.** Tidak ada tambah/ubah/hapus/kelola di sumber
+  mana pun; satu-satunya `ubah` yang lolos adalah tandai selesai tugas
+  kalender yang ditugaskan kepadanya (berbasis username, bukan peran).
+- **Gate server menutup celah koleksi generik** yang ditemukan saat #12:
+  tulis `rombel`/`ptk`/`peta_kelas`/`tutup_tahun`/`sync_logs` hanya
+  administrator; hapus koleksi apa pun hanya administrator; baca
+  `audit_logs` hanya administrator; ekspor backup penuh hanya administrator.
+  Pengecualian yang didokumentasikan: tulis `audit_logs` dibuka untuk semua
+  sesi terautentikasi karena jalur itu dipakai klien untuk MENGIRIM entri
+  audit dari semua peran — risiko sisa: PUT bersifat upsert per id sehingga
+  satu entri bisa ditimpa; audit append-only penuh adalah pekerjaan lanjutan.
+
+### 3.0 Pemberian & pencabutan izin (proses operasional)
+
+1. Administrator membuka tab **Manajemen Pengguna** (hanya admin) → Tambah
+   / Edit akun: isi username, nama, peran, jabatan (default mengikuti peran),
+   Penugasan Rombel, dan Akses Tahun Ajaran.
+2. Wali kelas wajib memilih minimal satu rombel; formulir menolak bila kosong.
+3. Setiap perubahan peran/status/jabatan/rombel/tahun **tercatat otomatis di
+   Log Audit** sebagai `akun_ubah` beserta diff sebelum–sesudah
+   (`UserManagementView` + `diffAudit`). Perubahan peran tidak berlaku surut
+   ke riwayat yang sudah tercatat.
+4. Pencabutan: ubah status akun menjadi `nonaktif` (atau hapus akun, kecuali
+   akun sendiri dan administrator aktif terakhir — keduanya ditolak server).
+   Akun nonaktif langsung kehilangan akses: sesi yang sedang berjalan ikut
+   ditolak (401) dan login berikutnya ditolak.
+5. Sesi berakhir: sesi server kedaluwarsa 12 jam (`SESI_JAM` di
+   `server/auth.ts`); permintaan sesudahnya dijawab 401 dan pengguna wajib
+   masuk kembali. 5x salah login mengunci akun 15 menit per database.
 
 Sidebar memuat 10 menu utama (`dasbor, siswa, raport, leger, rekap, cetak,
 referensi, gtk, arsip, kalender`); 6 menu admin disembunyikan dari sidebar dan hanya ada di
@@ -98,6 +154,8 @@ Akun bawaan (seed `src/data/initialData.ts : initialUsersList`):
 `administrator / administrator` (penuh),
 `operator_bukuinduk / operator123` (rombel 7A,7B,8A,8B,9A,9B),
 `operator_kesiswaan / operator123` (rombel 7A, 7B). **Ganti password bawaan saat serah terima.**
+Akun wali kelas & pimpinan TIDAK di-seed — administrator membuatnya lewat
+Manajemen Pengguna sesuai kebutuhan sekolah.
 Password tersimpan sebagai hash (bukan plaintext); 5x salah login mengunci akun
 15 menit per database — tercatat di tab **Log Audit** (khusus administrator).
 

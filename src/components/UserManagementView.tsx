@@ -22,6 +22,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { AppUser, UserRole, JenjangSekolah } from '../types';
+import { labelPeran } from '../utils/akses';
 import { getAllUsers, saveUser, deleteUser } from '../utils/db';
 import { hashPassword } from '../utils/password';
 import { getDefaultRombelOptions } from '../utils/raportUtils';
@@ -70,7 +71,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
 
   const users = internalUsers || [];
   const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'administrator' | 'operator'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
 
   // Modal State for Add / Edit
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -151,6 +152,11 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       toast(issues[0], issues[0].startsWith('Mohon') ? 'warning' : 'error');
       return;
     }
+    // Issue #12: wali kelas tanpa rombel = tidak bisa melihat siswa mana pun.
+    if (formData.role === 'wali_kelas' && (!formData.rombelAkses || formData.rombelAkses.length === 0)) {
+      toast('Wali kelas wajib ditugaskan minimal satu rombel (lihat Penugasan Rombel di bawah).', 'error');
+      return;
+    }
 
     const now = new Date().toISOString();
 
@@ -209,7 +215,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
         role: formData.role || 'operator',
         email: formData.email || '',
         nomorTelepon: formData.nomorTelepon || '',
-        jabatan: formData.jabatan || 'Operator Data Pokok',
+        jabatan: formData.jabatan || (formData.role === 'wali_kelas' ? 'Wali Kelas' : formData.role === 'pimpinan' ? 'Kepala Sekolah' : formData.role === 'administrator' ? 'Administrator Sistem' : 'Operator Data Pokok'),
         rombelAkses: formData.rombelAkses || [],
         tahunAkses: normalizeTahunAkses(formData.tahunAkses),
         status: formData.status || 'aktif',
@@ -362,6 +368,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
   });
 
   const operatorList = users.filter((u) => u.role === 'operator' && u.status === 'aktif');
+  // Issue #12: impersonate mencakup semua peran non-admin (verifikasi tampilan wali/pimpinan).
+  const nonAdminList = users.filter((u) => u.role !== 'administrator' && u.status === 'aktif');
 
   return (
     <div className="space-y-6">
@@ -430,8 +438,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 e.target.value = '';
               }}
             >
-              <option value="" disabled>-- Pilih Operator untuk Disamar --</option>
-              {operatorList.map((op) => (
+              <option value="" disabled>-- Pilih Pengguna untuk Disamar --</option>
+              {nonAdminList.map((op) => (
                 <option key={op.id} value={op.id}>
                   {op.namaLengkap} (@{op.username}) - {op.jabatan || 'Operator'}
                 </option>
@@ -482,6 +490,22 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                 }`}
               >
                 Operator
+              </button>
+              <button
+                onClick={() => setRoleFilter('wali_kelas')}
+                className={`px-3 py-1 rounded-lg transition ${
+                  roleFilter === 'wali_kelas' ? 'bg-white text-slate-900 shadow-xs' : 'hover:text-slate-900'
+                }`}
+              >
+                Wali Kelas
+              </button>
+              <button
+                onClick={() => setRoleFilter('pimpinan')}
+                className={`px-3 py-1 rounded-lg transition ${
+                  roleFilter === 'pimpinan' ? 'bg-white text-slate-900 shadow-xs' : 'hover:text-slate-900'
+                }`}
+              >
+                Pimpinan
               </button>
             </div>
           </div>
@@ -555,7 +579,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                               ? 'bg-blue-100 text-blue-800 border border-blue-200'
                               : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                           }`}>
-                            {u.role}
+                            {labelPeran(u.role)}
                           </span>
                           <p className="text-slate-600 font-medium">{u.jabatan || 'Pengelola Data'}</p>
                         </div>
@@ -651,8 +675,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                       {/* Actions & Impersonate */}
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* Impersonate button (only for operators) */}
-                          {u.role === 'operator' && (
+                          {/* Impersonate button (only for non-admin roles) */}
+                          {u.role !== 'administrator' && (
                             <button
                               type="button"
                               onClick={() => setImpersonateTarget(u)}
@@ -713,7 +737,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
         <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
           <Shield className="w-4 h-4 text-blue-700" />
-          Matriks Hak Akses & Pembagian Use Case (Peran Administrator vs Operator)
+          Matriks Hak Akses & Pembagian Use Case (4 Peran)
         </h3>
         <p className="text-xs text-slate-500 mb-4">
           Standar operasional pengelolaan Buku Induk Siswa Kurikulum Merdeka pada tingkat Satuan Pendidikan {jenjang}:
@@ -749,10 +773,40 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
             <ul className="space-y-2 text-slate-700 list-disc list-inside">
               <li><strong>Pencatatan Buku Induk Siswa</strong>: Menambah dan memperbarui biodata lengkap siswa (Bagian A-I, data ortu/wali, kesehatan, beasiswa).</li>
               <li><strong>Pencatatan Projek P5</strong>: Mengisi dimensi dan tema Projek Penguatan Profil Pelajar Pancasila.</li>
+              <li><strong>Mutasi Siswa</strong>: Mencatat masuk/keluar dan perubahan status dalam rombel kewenangan.</li>
               <li><strong>Cetak Dokumen Resmi</strong>: Mencetak Lembar Buku Induk Kurikulum Merdeka dan Kartu Tanda Pelajar (KTP Siswa).</li>
               <li><strong>Rekapitulasi Kesiswaan</strong>: Melihat statistik gender, agama, jalur masuk, dan status kelulusan/mutasi.</li>
-              <li><strong>Sinkronisasi Siswa dari Dapodik</strong>: Menjalankan penarikan data peserta didik baru dari Dapodik lokal.</li>
               <li><span className="text-rose-700 font-semibold">Batasan</span>: Tidak dapat mengakses manajemen pengguna, tidak dapat mengosongkan database, dan tidak dapat mengubah token inti server.</li>
+            </ul>
+          </div>
+
+          {/* Wali Kelas Use Cases */}
+          <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/40 space-y-3">
+            <div className="flex items-center gap-2 font-bold text-amber-900">
+              <div className="w-6 h-6 rounded-lg bg-amber-700 text-white flex items-center justify-center text-xs">
+                W
+              </div>
+              <h4>Wali Kelas (Guru Kelas)</h4>
+            </div>
+            <ul className="space-y-2 text-slate-700 list-disc list-inside">
+              <li><strong>Sama seperti Operator</strong>, tetapi <strong>hanya untuk rombel yang ditugaskan</strong> (lihat Penugasan Rombel saat membuat akun).</li>
+              <li><strong>Pencatatan & mutasi siswa</strong> di kelasnya sendiri, termasuk nilai raport kelasnya.</li>
+              <li><span className="text-rose-700 font-semibold">Batasan keras</span>: Akun tanpa rombel yang ditugaskan tidak dapat melihat siswa mana pun. Tidak dapat mengubah konfigurasi, backup, tutup tahun, atau manajemen pengguna.</li>
+            </ul>
+          </div>
+
+          {/* Pimpinan Use Cases */}
+          <div className="p-4 rounded-xl border border-violet-200 bg-violet-50/40 space-y-3">
+            <div className="flex items-center gap-2 font-bold text-violet-900">
+              <div className="w-6 h-6 rounded-lg bg-violet-700 text-white flex items-center justify-center text-xs">
+                P
+              </div>
+              <h4>Pimpinan (Kepala Sekolah)</h4>
+            </div>
+            <ul className="space-y-2 text-slate-700 list-disc list-inside">
+              <li><strong>Baca se-sekolah</strong>: Dasbor, master siswa, raport, leger, rekap, laporan, dan cetak — semua rombel, tanpa batas rombel.</li>
+              <li><strong>Unduh & cetak laporan</strong> untuk pengawasan (ekspor tidak mengubah data).</li>
+              <li><span className="text-rose-700 font-semibold">Batasan keras</span>: Tidak dapat menambah, mengubah, atau menghapus data apa pun. Perubahan harus lewat operator/administrator — dan tercatat di Log Audit.</li>
             </ul>
           </div>
         </div>
@@ -835,6 +889,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                     className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="operator">Operator (Buku Induk & Kesiswaan)</option>
+                    <option value="wali_kelas">Wali Kelas (hanya rombel yang ditugaskan)</option>
+                    <option value="pimpinan">Pimpinan (baca saja se-sekolah)</option>
                     <option value="administrator">Administrator (Akses Penuh)</option>
                   </select>
                 </div>
@@ -931,7 +987,9 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                   })}
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">
-                  * Jika semua dipilih atau dikosongkan, operator memiliki akses umum ke semua rombel.
+                  {formData.role === 'wali_kelas'
+                    ? '* Wali kelas WAJIB memilih minimal satu rombel — jika dikosongkan, akun tidak dapat melihat siswa mana pun.'
+                    : '* Jika semua dipilih atau dikosongkan, operator memiliki akses umum ke semua rombel.'}
                 </p>
               </div>
 

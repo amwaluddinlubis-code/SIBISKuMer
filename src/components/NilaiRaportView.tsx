@@ -55,6 +55,7 @@ import { PageControl } from './PageControl';
 import { KopSuratView } from './KopSuratView';
 import { GtkAutocomplete } from './GtkAutocomplete';
 import { toast, confirmDialog } from '../utils/notify';
+import { bolehTulis } from '../utils/akses';
 import { validateRaportForm } from '../utils/validation';
 import { catatAudit } from '../utils/audit';
 import { startTopProgress, doneTopProgress } from '../utils/progress';
@@ -278,6 +279,11 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
   const handleSaveRaport = async () => {
     if (!editingRaportSiswa || !activeRaportForm) return;
 
+    // Issue #12: peran pimpinan hanya membaca (matriks akses).
+    if (!bolehTulis(currentUser)) {
+      toast('Peran pimpinan hanya dapat membaca data.', 'error');
+      return;
+    }
     if (!canUserAccessTahun(currentUser, activeRaportForm.tahunAjaran)) {
       toast(`Akses ditolak: akun @${currentUser?.username} tidak memiliki akses ke tahun ${activeRaportForm.tahunAjaran}.`, 'error');
       return;

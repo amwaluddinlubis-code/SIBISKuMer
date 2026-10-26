@@ -23,6 +23,7 @@ import { toast, confirmDialog } from '../utils/notify';
 import { PageControl } from './PageControl';
 import { unduhExcel } from '../utils/excel';
 import { catatAudit } from '../utils/audit';
+import { bolehTulis } from '../utils/akses';
 import { jalankanAutoBackup } from '../utils/autoBackup';
 import {
   saveSiswaBulk,
@@ -288,6 +289,11 @@ export const ImporSiswaView: React.FC<ImporSiswaViewProps> = ({
     }
     if (ringkasan.akanTambah + ringkasan.akanPerbarui === 0) {
       toast('Tidak ada baris yang akan diterapkan (semuanya dilewati).', 'warning');
+      return;
+    }
+    // Issue #12: peran pimpinan hanya membaca (matriks akses).
+    if (!bolehTulis(currentUser)) {
+      toast('Peran pimpinan hanya dapat membaca data.', 'error');
       return;
     }
     setMenerapkan(true);

@@ -3011,18 +3011,23 @@ export function isAdministrator(user: AppUser | null | undefined): boolean {
   return !!user && user.role === 'administrator';
 }
 
-/** Operator hanya boleh mengakses rombel yang terdaftar di rombelAkses.
- *  Array kosong / undefined = akses semua rombel. Administrator = semua. */
+/** Cakupan rombel per peran (Issue #12; detail di src/utils/akses.ts).
+ *  Administrator & pimpinan = semua rombel. Operator: array kosong /
+ *  undefined = semua rombel (perilaku lama). Wali kelas: HANYA rombelAkses;
+ *  kosong = tidak ada akses (least privilege). Tanpa user = tak dibatasi
+ *  (konteks sistem/pra-login; gate terautentikasi ada di akses.ts). */
 export function canUserAccessRombel(user: AppUser | null | undefined, rombel?: string): boolean {
-  if (!user || user.role === 'administrator') return true;
+  if (!user || user.role === 'administrator' || user.role === 'pimpinan') return true;
   const akses = user.rombelAkses;
+  if (user.role === 'wali_kelas') return !!rombel && (akses || []).includes(rombel);
   if (!akses || akses.length === 0) return true;
   return !!rombel && akses.includes(rombel);
 }
 
 export function filterSiswaByAccess(siswa: Siswa[], user: AppUser | null | undefined): Siswa[] {
-  if (!user || user.role === 'administrator') return siswa;
+  if (!user || user.role === 'administrator' || user.role === 'pimpinan') return siswa;
   const akses = user.rombelAkses;
+  if (user.role === 'wali_kelas' && (!akses || akses.length === 0)) return [];
   if (!akses || akses.length === 0) return siswa;
   // F16: siswa TANPA rombel (legacy / impor lama) tetap terlihat operator.
   // Tanpa rombelSaatIni tidak ada pembatasan yang bisa diterapkan, jadi

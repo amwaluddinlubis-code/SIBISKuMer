@@ -54,6 +54,7 @@ import {
   bolehAksesRombel,
   siswaTerlihat,
   adalahAdmin,
+  bolehTulis,
   type SesiServer,
 } from './auth';
 import { hashPassword, isHashedPassword } from '../src/utils/password';
@@ -123,6 +124,57 @@ async function perluSesi(req: ReqBersesi, res: Response, next: NextFunction): Pr
 function perluAdmin(req: ReqBersesi, res: Response, next: NextFunction): void {
   if (!adalahAdmin(req.user)) {
     kirimGagal(res, 403, 'Hanya administrator yang dapat melakukan tindakan ini.');
+    return;
+  }
+  next();
+}
+
+/** Gate tulis umum (Issue #12): administrator, operator, wali_kelas. Pimpinan → 403. */
+function perluTulis(req: ReqBersesi, res: Response, next: NextFunction): void {
+  if (!bolehTulis(req.user)) {
+    kirimGagal(res, 403, 'Peran Anda hanya dapat membaca data.');
+    return;
+  }
+  next();
+}
+
+/** Gate ubah konfigurasi: administrator + operator (perilaku lama, kini eksplisit). */
+function perluUbahConfig(req: ReqBersesi, res: Response, next: NextFunction): void {
+  if (!adalahAdmin(req.user) && req.user?.role !== 'operator') {
+    kirimGagal(res, 403, 'Peran Anda tidak berhak mengubah konfigurasi.');
+    return;
+  }
+  next();
+}
+
+/** Gate tulis koleksi generik (Issue #12) — mencerminkan matriks akses.
+ *  rombel/ptk/peta_kelas/tutup_tahun/sync_logs: hanya administrator (tab
+ *  terkait admin-only di klien; tulis langsung via API sebelumnya terbuka
+ *  untuk semua sesi login — celah yang ditutup di sini).
+ *  audit_logs: PUT/bulk dibuka untuk semua sesi terautentikasi karena jalur
+ *  ini dipakai klien untuk MENGIRIM entri audit dari semua peran; hapus
+ *  tetap administrator (anti-tamper). Risiko sisa yang didokumentasikan:
+ *  PUT bersifat upsert per id sehingga satu entri bisa ditimpa — audit
+ *  append-only penuh adalah pekerjaan lanjutan, bukan #12. */
+const KOLEKSI_TULIS_ADMIN: readonly string[] = ['rombel', 'ptk', 'peta_kelas', 'tutup_tahun', 'sync_logs'];
+function perluTulisKoleksi(req: ReqBersesi, res: Response, next: NextFunction): void {
+  const entitas = req.params.entitas;
+  if (entitas === 'audit_logs') return next();
+  if (KOLEKSI_TULIS_ADMIN.includes(entitas) && !adalahAdmin(req.user)) {
+    kirimGagal(res, 403, `Entitas ${entitas} hanya dapat diubah administrator.`);
+    return;
+  }
+  if (!bolehTulis(req.user)) {
+    kirimGagal(res, 403, 'Peran Anda hanya dapat membaca data.');
+    return;
+  }
+  next();
+}
+
+/** Hapus koleksi apa pun: hanya administrator. */
+function perluHapusKoleksi(req: ReqBersesi, res: Response, next: NextFunction): void {
+  if (!adalahAdmin(req.user)) {
+    kirimGagal(res, 403, 'Hapus koleksi hanya dapat dilakukan administrator.');
     return;
   }
   next();
@@ -379,7 +431,7 @@ export function buatRouterV1(): Router {
     kirimOk(res, s);
   });
 
-  r.put('/data/siswa/:id', perluSesi, (req: ReqBersesi, res) => {
+  r.put('/data/siswa/:id', perluSesi, perluTulis, (req: ReqBersesi, res) => {
     const db = dbSekolah(req.sesi!.sekolahId);
     const siswa = { ...(req.body || {}), id: req.params.id };
     if (!siswa.namaLengkap) return kirimGagal(res, 400, 'Data siswa tidak lengkap (nama kosong).');
@@ -394,7 +446,7 @@ export function buatRouterV1(): Router {
     kirimOk(res, siswaById(db, req.params.id));
   });
 
-  r.post('/data/siswa/bulk', perluSesi, (req: ReqBersesi, res) => {
+  r.post('/data/siswa/bulk', perluSesi, perluTulis, (req: ReqBersesi, res) => {
     const db = dbSekolah(req.sesi!.sekolahId);
     const items: any[] = Array.isArray(req.body?.items) ? req.body.items : [];
     for (const s of items) {
@@ -408,7 +460,7 @@ export function buatRouterV1(): Router {
     kirimOk(res, { tersimpan: items.length });
   });
 
-  r.delete('/data/siswa/:id', perluSesi, (req: ReqBersesi, res) => {
+  r.delete('/data/siswa/:id', perluSesi, perluTulis, (req: ReqBersesi, res) => {
     const db = dbSekolah(req.sesi!.sekolahId);
     const lama = siswaById(db, req.params.id);
     if (!lama) return kirimGagal(res, 404, 'Siswa tidak ditemukan.');
@@ -425,10 +477,13 @@ export function buatRouterV1(): Router {
     if (!(ENTITAS_KOLEKSI as readonly string[]).includes(entitas)) {
       return kirimGagal(res, 404, 'Entitas tidak dikenal.');
     }
+    if (entitas === 'audit_logs' && !adalahAdmin(req.user)) {
+      return kirimGagal(res, 403, 'Log audit hanya dapat dibaca administrator.');
+    }
     kirimOk(res, semuaKoleksi(dbSekolah(req.sesi!.sekolahId), entitas));
   });
 
-  r.put('/data/koleksi/:entitas/:id', perluSesi, (req: ReqBersesi, res) => {
+  r.put('/data/koleksi/:entitas/:id', perluSesi, perluTulisKoleksi, (req: ReqBersesi, res) => {
     const entitas = req.params.entitas;
     if (!(ENTITAS_KOLEKSI as readonly string[]).includes(entitas)) {
       return kirimGagal(res, 404, 'Entitas tidak dikenal.');
@@ -437,7 +492,7 @@ export function buatRouterV1(): Router {
     kirimOk(res, { tersimpan: true });
   });
 
-  r.post('/data/koleksi/:entitas/bulk', perluSesi, (req: ReqBersesi, res) => {
+  r.post('/data/koleksi/:entitas/bulk', perluSesi, perluTulisKoleksi, (req: ReqBersesi, res) => {
     const entitas = req.params.entitas;
     if (!(ENTITAS_KOLEKSI as readonly string[]).includes(entitas)) {
       return kirimGagal(res, 404, 'Entitas tidak dikenal.');
@@ -454,7 +509,7 @@ export function buatRouterV1(): Router {
     kirimOk(res, { tersimpan: items.length });
   });
 
-  r.delete('/data/koleksi/:entitas/:id', perluSesi, (req: ReqBersesi, res) => {
+  r.delete('/data/koleksi/:entitas/:id', perluSesi, perluHapusKoleksi, (req: ReqBersesi, res) => {
     const entitas = req.params.entitas;
     if (!(ENTITAS_KOLEKSI as readonly string[]).includes(entitas)) {
       return kirimGagal(res, 404, 'Entitas tidak dikenal.');
@@ -482,10 +537,7 @@ export function buatRouterV1(): Router {
     kirimOk(res, ambilMeta(dbSekolah(req.sesi!.sekolahId), `config_${req.params.kunci}`));
   });
 
-  r.put('/data/config/:kunci', perluSesi, (req: ReqBersesi, res, next) => {
-    if (adalahAdmin(req.user) || req.user?.role === 'operator') return next();
-    kirimGagal(res, 403, 'Peran Anda tidak berhak mengubah konfigurasi.');
-  }, (req: ReqBersesi, res) => {
+  r.put('/data/config/:kunci', perluSesi, perluUbahConfig, (req: ReqBersesi, res) => {
     const db = dbSekolah(req.sesi!.sekolahId);
     simpanMeta(db, `config_${req.params.kunci}`, req.body || {});
     kirimOk(res, ambilMeta(db, `config_${req.params.kunci}`));
@@ -500,11 +552,32 @@ export function buatRouterV1(): Router {
     const db = dbSekolah(req.sesi!.sekolahId);
     const user = { ...(req.body || {}), id: req.params.id };
     if (!user.username) return kirimGagal(res, 400, 'Username wajib diisi.');
+    // Issue #12: tolak peran/status tak dikenal (sebelumnya string apa pun diterima).
+    const PERAN_SAH: readonly string[] = ['administrator', 'operator', 'wali_kelas', 'pimpinan'];
+    if (user.role && !PERAN_SAH.includes(user.role)) {
+      return kirimGagal(res, 400, `Peran tidak dikenal: ${user.role}.`);
+    }
+    if (user.status && !['aktif', 'nonaktif'].includes(user.status)) {
+      return kirimGagal(res, 400, `Status tidak dikenal: ${user.status}.`);
+    }
+    const lama = userById(db, req.params.id);
+    // Cegah administrator aktif terakhir kehilangan perannya (cermin guard hapus di bawah).
+    if (lama && lama.role === 'administrator' && lama.status === 'aktif') {
+      const akanNonAdmin =
+        (user.role && user.role !== 'administrator') || user.status === 'nonaktif';
+      if (akanNonAdmin) {
+        const adminLain = semuaUsers(db).some(
+          (u) => u.role === 'administrator' && u.id !== lama.id && u.status === 'aktif'
+        );
+        if (!adminLain) {
+          return kirimGagal(res, 400, 'Tidak dapat menonaktifkan/menurunkan administrator aktif terakhir.');
+        }
+      }
+    }
     if (user.password && !isHashedPassword(user.password)) {
       user.password = await hashPassword(String(user.password));
     }
     if (!user.password) {
-      const lama = userById(db, req.params.id);
       if (lama) user.password = lama.password;
     }
     simpanUser(db, user);
@@ -585,7 +658,7 @@ export function buatRouterV1(): Router {
     kirimOk(res, daftarSnapshot(dbSekolah(req.sesi!.sekolahId)));
   });
 
-  r.post('/data/snapshot', perluSesi, (req: ReqBersesi, res) => {
+  r.post('/data/snapshot', perluSesi, perluAdmin, (req: ReqBersesi, res) => {
     const db = dbSekolah(req.sesi!.sekolahId);
     const { id, payload, jumlahSiswa: js } = req.body || {};
     if (!id || typeof payload !== 'string') return kirimGagal(res, 400, 'Snapshot tidak lengkap.');
@@ -613,7 +686,7 @@ export function buatRouterV1(): Router {
   });
 
   // ---------- Backup ----------
-  r.get('/backup/ekspor', perluSesi, async (req: ReqBersesi, res) => {
+  r.get('/backup/ekspor', perluSesi, perluAdmin, async (req: ReqBersesi, res) => {
     const payload = await rakitPayloadBackup(req.sesi!.sekolahId);
     kirimOk(res, payload);
   });

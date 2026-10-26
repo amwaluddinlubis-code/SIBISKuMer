@@ -428,6 +428,115 @@ test('logout mengakhiri sesi', async () => {
   assert.equal(sesi.status, 401);
 });
 
+test('RBAC Issue #12: pimpinan baca saja, wali terikat rombel, koleksi admin-only, admin terakhir terkunci', async () => {
+  const admin = await login('administrator', 'administrator');
+  assert.equal(admin.status, 200);
+  const ca = admin.cookie!;
+
+  const buatP = await panggil('PUT', '/data/users/pim-uji', {
+    cookie: ca,
+    body: { id: 'pim-uji', username: 'pimuji', password: 'rahasia123', nama: 'Pimpinan Uji', role: 'pimpinan', status: 'aktif' },
+  });
+  assert.equal(buatP.status, 200);
+  const buatW = await panggil('PUT', '/data/users/wali-uji', {
+    cookie: ca,
+    body: { id: 'wali-uji', username: 'waliuji', password: 'rahasia123', nama: 'Wali Uji', role: 'wali_kelas', status: 'aktif', rombelAkses: ['7A'] },
+  });
+  assert.equal(buatW.status, 200);
+  const buatO = await panggil('PUT', '/data/users/op-rbac', {
+    cookie: ca,
+    body: { id: 'op-rbac', username: 'oprbac', password: 'rahasia123', nama: 'Operator RBAC', role: 'operator', status: 'aktif' },
+  });
+  assert.equal(buatO.status, 200);
+
+  // Peran / status tak dikenal ditolak.
+  const peranJahat = await panggil('PUT', '/data/users/jahat', {
+    cookie: ca,
+    body: { id: 'jahat', username: 'jahat', password: 'rahasia123', role: 'superuser', status: 'aktif' },
+  });
+  assert.equal(peranJahat.status, 400);
+  // Administrator aktif terakhir tidak bisa diturunkan perannya.
+  const turun = await panggil('PUT', '/data/users/usr-admin-01', {
+    cookie: ca,
+    body: { id: 'usr-admin-01', username: 'administrator', role: 'operator', status: 'aktif' },
+  });
+  assert.equal(turun.status, 400);
+
+  // Pimpinan: baca boleh, semua tulis ditolak.
+  const masukP = await login('pimuji', 'rahasia123');
+  assert.equal(masukP.status, 200);
+  const cp = masukP.cookie!;
+  const daftar = await panggil('GET', '/data/siswa', { cookie: cp });
+  assert.equal(daftar.status, 200);
+  assert.ok(daftar.body.data.length > 0);
+  const tulisP = await panggil('PUT', '/data/siswa/rbac-pim', {
+    cookie: cp,
+    body: { id: 'rbac-pim', namaLengkap: 'Coba Tulis Pimpinan', rombelSaatIni: '7A' },
+  });
+  assert.equal(tulisP.status, 403);
+  const hapusP = await panggil('DELETE', `/data/siswa/${daftar.body.data[0].id}`, { cookie: cp });
+  assert.equal(hapusP.status, 403);
+  const tutupP = await panggil('PUT', '/data/koleksi/tutup_tahun/tutup-2025', {
+    cookie: cp,
+    body: { tahunAjaran: '2025/2026' },
+  });
+  assert.equal(tutupP.status, 403);
+  const cfgP = await panggil('PUT', '/data/config/tema', { cookie: cp, body: { tema: 'gelap' } });
+  assert.equal(cfgP.status, 403);
+  const eksporP = await panggil('GET', '/backup/ekspor', { cookie: cp });
+  assert.equal(eksporP.status, 403);
+  const snapP = await panggil('POST', '/data/snapshot', { cookie: cp, body: { id: 'snap-pim', payload: '{}', jumlahSiswa: 0 } });
+  assert.equal(snapP.status, 403);
+  // Log audit: baca ditolak, kirim entri (transport) diizinkan.
+  const auditBaca = await panggil('GET', '/data/koleksi/audit_logs', { cookie: cp });
+  assert.equal(auditBaca.status, 403);
+  const auditTulis = await panggil('PUT', '/data/koleksi/audit_logs/audit-pim-1', {
+    cookie: cp,
+    body: { id: 'audit-pim-1', aksi: 'lihat', timestamp: new Date().toISOString() },
+  });
+  assert.equal(auditTulis.status, 200);
+
+  // Wali kelas: dalam rombel boleh, luar rombel ditolak.
+  const masukW = await login('waliuji', 'rahasia123');
+  assert.equal(masukW.status, 200);
+  const cw = masukW.cookie!;
+  const daftarW = await panggil('GET', '/data/siswa', { cookie: cw });
+  assert.ok(daftarW.body.data.every((s: any) => !s.rombelSaatIni || s.rombelSaatIni === '7A'));
+  const tulisDalam = await panggil('PUT', '/data/siswa/rbac-wali-7a', {
+    cookie: cw,
+    body: { id: 'rbac-wali-7a', namaLengkap: 'Wali 7A', rombelSaatIni: '7A' },
+  });
+  assert.equal(tulisDalam.status, 200);
+  const tulisLuar = await panggil('PUT', '/data/siswa/rbac-wali-8a', {
+    cookie: cw,
+    body: { id: 'rbac-wali-8a', namaLengkap: 'Wali 8A', rombelSaatIni: '8A' },
+  });
+  assert.equal(tulisLuar.status, 403);
+
+  // Operator: koleksi admin-only + hapus koleksi ditolak.
+  const masukO = await login('oprbac', 'rahasia123');
+  assert.equal(masukO.status, 200);
+  const co = masukO.cookie!;
+  const petaO = await panggil('PUT', '/data/koleksi/peta_kelas/pk-rbac', {
+    cookie: co,
+    body: { id: 'pk-rbac' },
+  });
+  assert.equal(petaO.status, 403);
+  const hapusKoleksiO = await panggil('DELETE', '/data/koleksi/rombel/rbl-8a', { cookie: co });
+  assert.equal(hapusKoleksiO.status, 403);
+
+  // Akun nonaktif: sesi yang sudah ada ikut mati (401) + login ditolak.
+  const nonaktif = await panggil('PUT', '/data/users/wali-uji', {
+    cookie: ca,
+    body: { id: 'wali-uji', username: 'waliuji', role: 'wali_kelas', status: 'nonaktif', rombelAkses: ['7A'] },
+  });
+  assert.equal(nonaktif.status, 200);
+  const sesudahNonaktif = await panggil('GET', '/data/siswa', { cookie: cw });
+  assert.equal(sesudahNonaktif.status, 401);
+  const loginNonaktif = await login('waliuji', 'rahasia123');
+  assert.equal(loginNonaktif.status, 401);
+});
+
 test.after(() => {
   server.close();
   tutupSemuaDb();

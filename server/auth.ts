@@ -299,21 +299,30 @@ export function akhiriImpersonate(sesi: SesiServer): string | null {
   return sesiDariToken(induk) ? induk : null;
 }
 
-// ---------------- Aturan akses (cermin utils/db.ts klien) ----------------
+// ---------------- Aturan akses (cermin utils/db.ts klien + utils/akses.ts) ----------------
+// Peran baru Issue #12: pimpinan membaca semua rombel; wali_kelas HANYA
+// rombelAkses (kosong = tidak ada akses); operator kosong = semua (lama).
 
 export function bolehAksesRombel(user: any, rombel?: string): boolean {
-  if (!user || user.role === 'administrator') return true;
+  if (!user || user.role === 'administrator' || user.role === 'pimpinan') return true;
   const akses: string[] | undefined = user.rombelAkses;
+  if (user.role === 'wali_kelas') return !!rombel && (akses || []).includes(rombel);
   if (!akses || akses.length === 0) return true;
   return !!rombel && akses.includes(rombel);
 }
 
-/** Siswa tanpa rombel tetap terlihat operator (F16 klien). */
+/** Siswa tanpa rombel tetap terlihat pengguna terbatas (F16 klien). */
 export function siswaTerlihat(user: any, siswa: any): boolean {
-  if (!user || user.role === 'administrator') return true;
+  if (!user || user.role === 'administrator' || user.role === 'pimpinan') return true;
   const akses: string[] | undefined = user.rombelAkses;
+  if (user.role === 'wali_kelas' && (!akses || akses.length === 0)) return false;
   if (!akses || akses.length === 0) return true;
   return !siswa.rombelSaatIni || akses.includes(siswa.rombelSaatIni);
+}
+
+/** Boleh mengubah data: administrator, operator, wali_kelas. Pimpinan baca saja. */
+export function bolehTulis(user: any): boolean {
+  return !!user && (user.role === 'administrator' || user.role === 'operator' || user.role === 'wali_kelas');
 }
 
 export function adalahAdmin(user: any): boolean {

@@ -423,7 +423,7 @@ export interface SekolahProfile {  nama: string;
   tema?: TemaKustom;
 }
 
-export type UserRole = 'administrator' | 'operator';
+export type UserRole = 'administrator' | 'operator' | 'wali_kelas' | 'pimpinan';
 
 export interface AppUser {
   id: string;
@@ -434,7 +434,7 @@ export interface AppUser {
   email: string;
   nomorTelepon?: string;
   jabatan?: string;
-  rombelAkses?: string[]; // empty array or undefined means all rombels
+  rombelAkses?: string[]; // Operator: kosong/undefined = semua rombel. Wali kelas: kosong = tanpa akses (Issue #12).
   /** Batas tahun ajaran login. Kosong/undefined = semua tahun. Cth. ["2026/2027"]. */
   tahunAkses?: string[];
   status: 'aktif' | 'nonaktif';

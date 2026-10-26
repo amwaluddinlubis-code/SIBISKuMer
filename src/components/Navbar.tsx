@@ -38,6 +38,7 @@ import { SchoolSwitcher } from './SchoolSwitcher';
 import { getAllUsers, saveUser, setCurrentUserSession } from '../utils/db';
 import { verifyPassword, hashPassword } from '../utils/password';
 import { catatAudit } from '../utils/audit';
+import { labelPeran } from '../utils/akses';
 
 interface NavbarProps {
   sekolah: SekolahProfile;
@@ -215,7 +216,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             ? 'bg-purple-100 text-purple-800'
             : 'bg-blue-100 text-blue-800'
         }`}>
-          {currentUser?.role === 'administrator' ? 'Administrator' : 'Operator'}
+          {labelPeran(currentUser?.role)}
         </span>
         {currentUser?.rombelAkses && currentUser.rombelAkses.length > 0 && (
           <p className="mt-1.5 text-[11px] text-slate-500">
@@ -497,7 +498,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {currentUser?.namaLengkap || 'Pengguna'}
                 </p>
                 <p className="text-[10px] text-slate-400 truncate">
-                  {isAdmin ? 'Administrator' : 'Operator'}
+                  {labelPeran(currentUser?.role)}
                 </p>
               </div>
             </div>
