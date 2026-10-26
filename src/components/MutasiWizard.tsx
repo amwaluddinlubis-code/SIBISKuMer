@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { ArrowLeftRight, LogIn, LogOut, Search, X, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
-import { Siswa, AppUser, JenjangSekolah, TingkatKelas } from '../types';
+import { Siswa, AppUser, JenjangSekolah, TingkatKelas, StatusSiswa } from '../types';
 import { canUserAccessRombel } from '../utils/db';
+import { hariIniWIB, noSuratTerpakai } from '../utils/mutasi';
 import { getDefaultRombelOptions, getTingkatOptions } from '../utils/raportUtils';
 import { tahunAjaranDariTanggal } from '../utils/tahunAjaran';
 import { siswaTerlihatSesi } from '../utils/sesi';
@@ -14,6 +15,14 @@ export interface DokumenMutasiKeluar {
   alasanKeluar: string;
 }
 
+/** Dokumen perubahan status (Issue #5): target status + tanggal efektif + alasan + no. surat. */
+export interface DokumenMutasiStatus {
+  target: 'Mengundurkan Diri' | 'Meninggal Dunia' | 'Lulus';
+  tanggalEfektif: string;
+  alasan: string;
+  noSurat: string;
+}
+
 interface MutasiWizardProps {
   /** Daftar siswa dalam kewenangan user (sudah terfilter akses). */
   siswa: Siswa[];
@@ -22,10 +31,11 @@ interface MutasiWizardProps {
   tahunAjaran: string;
   onApplyMasuk: (baru: Siswa) => Promise<void> | void;
   onApplyKeluar: (id: string, dokumen: DokumenMutasiKeluar) => Promise<void> | void;
+  onApplyStatus: (id: string, dokumen: DokumenMutasiStatus) => Promise<void> | void;
   onClose: () => void;
 }
 
-type Mode = 'masuk' | 'keluar';
+type Mode = 'masuk' | 'keluar' | 'status';
 
 function hariIni(): string {
   return new Date().toISOString().slice(0, 10);
@@ -43,6 +53,7 @@ export const MutasiWizard: React.FC<MutasiWizardProps> = ({
   tahunAjaran,
   onApplyMasuk,
   onApplyKeluar,
+  onApplyStatus,
   onClose,
 }) => {
   const [mode, setMode] = useState<Mode>('keluar');
@@ -57,6 +68,14 @@ export const MutasiWizard: React.FC<MutasiWizardProps> = ({
     tanggalKeluar: hariIni(),
     noSuratMutasi: '',
     alasanKeluar: 'Pindah mengikuti orang tua',
+  });
+
+  // --- Ubah Status (Issue #5) ---
+  const [dokStatus, setDokStatus] = useState<DokumenMutasiStatus>({
+    target: 'Mengundurkan Diri',
+    tanggalEfektif: hariIni(),
+    alasan: '',
+    noSurat: '',
   });
 
   // --- Masuk ---
@@ -123,11 +142,55 @@ export const MutasiWizard: React.FC<MutasiWizardProps> = ({
       toast('Tanggal keluar wajib diisi.', 'warning');
       return false;
     }
+    // Issue #5: tanggal efektif tidak boleh melebihi hari ini.
+    if (dokKeluar.tanggalKeluar > hariIniWIB()) {
+      toast('Tanggal keluar tidak boleh melebihi hari ini.', 'error');
+      return false;
+    }
+    // Issue #5: cegah duplikasi nomor surat mutasi.
+    if (dokKeluar.noSuratMutasi.trim() && noSuratTerpakai(siswa || [], dokKeluar.noSuratMutasi, siswaDipilih?.id)) {
+      toast('Nomor surat mutasi sudah dipakai siswa lain.', 'error');
+      return false;
+    }
     // Mutasi keluar tercatat pada sesi aktif.
     const sesi = (tahunAjaran || '').trim();
     const taKeluar = tahunAjaranDariTanggal(dokKeluar.tanggalKeluar);
     if (sesi && taKeluar && taKeluar !== sesi) {
       toast(`Tanggal keluar (TA ${taKeluar}) di luar sesi aktif (TA ${sesi}). Pindah sesi dulu.`, 'error');
+      return false;
+    }
+    return true;
+  };
+
+  const validasiStatusStep1 = (): boolean => {
+    if (!siswaDipilih) {
+      toast('Pilih dulu siswa yang akan diubah statusnya.', 'warning');
+      return false;
+    }
+    return true;
+  };
+
+  const validasiStatusStep2 = (): boolean => {
+    if (!dokStatus.alasan.trim()) {
+      toast('Alasan perubahan status wajib diisi.', 'warning');
+      return false;
+    }
+    if (!dokStatus.tanggalEfektif) {
+      toast('Tanggal efektif wajib diisi.', 'warning');
+      return false;
+    }
+    if (dokStatus.tanggalEfektif > hariIniWIB()) {
+      toast('Tanggal efektif tidak boleh melebihi hari ini.', 'error');
+      return false;
+    }
+    if (dokStatus.noSurat.trim() && noSuratTerpakai(siswa || [], dokStatus.noSurat, siswaDipilih?.id)) {
+      toast('Nomor surat sudah dipakai siswa lain.', 'error');
+      return false;
+    }
+    const sesi = (tahunAjaran || '').trim();
+    const taEfektif = tahunAjaranDariTanggal(dokStatus.tanggalEfektif);
+    if (sesi && taEfektif && taEfektif !== sesi) {
+      toast(`Tanggal efektif (TA ${taEfektif}) di luar sesi aktif (TA ${sesi}). Pindah sesi dulu.`, 'error');
       return false;
     }
     return true;
@@ -176,6 +239,11 @@ export const MutasiWizard: React.FC<MutasiWizardProps> = ({
       toast('Tanggal diterima wajib diisi.', 'warning');
       return false;
     }
+    // Issue #5: tanggal diterima tidak boleh melebihi hari ini.
+    if (fTglMasuk > hariIniWIB()) {
+      toast('Tanggal diterima tidak boleh melebihi hari ini.', 'error');
+      return false;
+    }
     const sesi = (tahunAjaran || '').trim();
     const taMasuk = tahunAjaranDariTanggal(fTglMasuk);
     if (sesi && taMasuk && taMasuk !== sesi) {
@@ -195,6 +263,22 @@ export const MutasiWizard: React.FC<MutasiWizardProps> = ({
         tanggalKeluar: dokKeluar.tanggalKeluar,
         noSuratMutasi: dokKeluar.noSuratMutasi.trim(),
         alasanKeluar: dokKeluar.alasanKeluar.trim(),
+      });
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const terapkanStatus = async () => {
+    if (!siswaDipilih) return;
+    setSaving(true);
+    try {
+      await onApplyStatus(siswaDipilih.id, {
+        target: dokStatus.target,
+        tanggalEfektif: dokStatus.tanggalEfektif,
+        alasan: dokStatus.alasan.trim(),
+        noSurat: dokStatus.noSurat.trim(),
       });
       onClose();
     } finally {
@@ -299,6 +383,9 @@ export const MutasiWizard: React.FC<MutasiWizardProps> = ({
     if (mode === 'keluar') {
       if (step === 1 && validasiKeluarStep1()) setStep(2);
       else if (step === 2 && validasiKeluarStep2()) setStep(3);
+    } else if (mode === 'status') {
+      if (step === 1 && validasiStatusStep1()) setStep(2);
+      else if (step === 2 && validasiStatusStep2()) setStep(3);
     } else {
       if (step === 1 && validasiMasukStep1()) setStep(2);
       else if (step === 2 && validasiMasukStep2()) setStep(3);
@@ -307,7 +394,9 @@ export const MutasiWizard: React.FC<MutasiWizardProps> = ({
 
   const langkah = mode === 'keluar'
     ? ['Pilih Siswa', 'Dokumen Mutasi', 'Konfirmasi']
-    : ['Identitas', 'Asal & Penerimaan', 'Konfirmasi'];
+    : mode === 'status'
+      ? ['Pilih Siswa', 'Status & Dokumen', 'Konfirmasi']
+      : ['Identitas', 'Asal & Penerimaan', 'Konfirmasi'];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -325,7 +414,7 @@ export const MutasiWizard: React.FC<MutasiWizardProps> = ({
 
         <div className="px-5 pt-4">
           {/* Mode */}
-          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl mb-4">
+          <div className="grid grid-cols-3 gap-2 p-1 bg-slate-100 rounded-xl mb-4">
             <button
               onClick={() => gantiMode('keluar')}
               className={`py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer ${mode === 'keluar' ? 'bg-white shadow text-amber-700' : 'text-slate-500'}`}
@@ -337,6 +426,12 @@ export const MutasiWizard: React.FC<MutasiWizardProps> = ({
               className={`py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer ${mode === 'masuk' ? 'bg-white shadow text-emerald-700' : 'text-slate-500'}`}
             >
               <LogIn className="w-4 h-4" /> Mutasi Masuk
+            </button>
+            <button
+              onClick={() => gantiMode('status')}
+              className={`py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer ${mode === 'status' ? 'bg-white shadow text-indigo-700' : 'text-slate-500'}`}
+            >
+              <ArrowLeftRight className="w-4 h-4" /> Ubah Status
             </button>
           </div>
 
@@ -422,6 +517,74 @@ export const MutasiWizard: React.FC<MutasiWizardProps> = ({
               <p><span className="text-slate-500">Tujuan:</span> <strong>{dokKeluar.sekolahTujuan}</strong></p>
               <p><span className="text-slate-500">Tanggal:</span> {dokKeluar.tanggalKeluar}{dokKeluar.noSuratMutasi && <span className="text-slate-500"> • No. surat: {dokKeluar.noSuratMutasi}</span>}</p>
               <p className="text-amber-700 font-semibold pt-1">Status siswa menjadi "Mutasi Keluar" — tidak lagi muncul di roster aktif.</p>
+            </div>
+          )}
+
+          {mode === 'status' && step === 1 && (
+            <>
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari nama / NISN / rombel…" className="ui-input !pl-9" aria-label="Cari siswa" />
+              </div>
+              <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-64 overflow-y-auto">
+                {kandidatKeluar.length === 0 ? (
+                  <p className="p-4 text-xs text-slate-500 text-center">Tidak ada siswa aktif yang cocok.</p>
+                ) : (
+                  kandidatKeluar.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => setPilihId(s.id)}
+                      className={`w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 transition cursor-pointer ${pilihId === s.id ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}
+                    >
+                      <span>
+                        <span className="block text-sm font-bold text-slate-900">{s.namaLengkap}</span>
+                        <span className="block text-[11px] text-slate-500 font-mono">{s.nisn || '-'} • {s.rombelSaatIni || '-'}</span>
+                      </span>
+                      {pilihId === s.id && <CheckCircle2 className="w-5 h-5 text-indigo-600 shrink-0" />}
+                    </button>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+
+          {mode === 'status' && step === 2 && (
+            <>
+              <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-900">
+                Perubahan status: <strong>{siswaDipilih?.namaLengkap}</strong> ({siswaDipilih?.rombelSaatIni}) — tercatat sebagai peristiwa mutasi dengan riwayat.
+              </div>
+              <div>
+                <label className="ui-label">Status Baru *</label>
+                <select value={dokStatus.target} onChange={(e) => setDokStatus({ ...dokStatus, target: e.target.value as DokumenMutasiStatus['target'] })} className="ui-select">
+                  <option value="Mengundurkan Diri">Mengundurkan Diri</option>
+                  <option value="Meninggal Dunia">Meninggal Dunia</option>
+                  <option value="Lulus">Lulus</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="ui-label">Tanggal Efektif *</label>
+                  <input type="date" value={dokStatus.tanggalEfektif} onChange={(e) => setDokStatus({ ...dokStatus, tanggalEfektif: e.target.value })} className="ui-input" />
+                </div>
+                <div>
+                  <label className="ui-label">No. Surat Pendukung</label>
+                  <input value={dokStatus.noSurat} onChange={(e) => setDokStatus({ ...dokStatus, noSurat: e.target.value })} placeholder="cth. 421/123/2026" className="ui-input" />
+                </div>
+              </div>
+              <div>
+                <label className="ui-label">Alasan *</label>
+                <input value={dokStatus.alasan} onChange={(e) => setDokStatus({ ...dokStatus, alasan: e.target.value })} placeholder="cth. Pindah ke pesantren / lulus tahun ajaran berjalan" className="ui-input" />
+              </div>
+            </>
+          )}
+
+          {mode === 'status' && step === 3 && siswaDipilih && (
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm space-y-1.5">
+              <p><span className="text-slate-500">Siswa:</span> <strong>{siswaDipilih.namaLengkap}</strong> ({siswaDipilih.nisn || '-'} • {siswaDipilih.rombelSaatIni})</p>
+              <p><span className="text-slate-500">Status:</span> {siswaDipilih.statusSiswa} → <strong>{dokStatus.target}</strong></p>
+              <p><span className="text-slate-500">Tanggal efektif:</span> {dokStatus.tanggalEfektif}{dokStatus.noSurat && <span className="text-slate-500"> • No. surat: {dokStatus.noSurat}</span>}</p>
+              <p><span className="text-slate-500">Alasan:</span> {dokStatus.alasan}</p>
+              <p className="text-indigo-700 font-semibold pt-1">Perubahan tercatat di Riwayat Mutasi siswa dan dapat dibatalkan dari detail siswa.</p>
             </div>
           )}
 
@@ -527,18 +690,18 @@ export const MutasiWizard: React.FC<MutasiWizardProps> = ({
             <button
               onClick={lanjut}
               className="ui-btn ui-btn-primary"
-              disabled={saving || (mode === 'keluar' && step === 1 && !siswaDipilih)}
-              title={mode === 'keluar' && step === 1 && !siswaDipilih ? 'Pilih siswa terlebih dahulu' : undefined}
+              disabled={saving || ((mode === 'keluar' || mode === 'status') && step === 1 && !siswaDipilih)}
+              title={(mode === 'keluar' || mode === 'status') && step === 1 && !siswaDipilih ? 'Pilih siswa terlebih dahulu' : undefined}
             >
               Lanjut <ChevronRight className="w-4 h-4" />
             </button>
           ) : (
             <button
-              onClick={() => void (mode === 'keluar' ? terapkanKeluar() : terapkanMasuk())}
+              onClick={() => void (mode === 'keluar' ? terapkanKeluar() : mode === 'status' ? terapkanStatus() : terapkanMasuk())}
               className={`ui-btn ${mode === 'keluar' ? 'ui-btn-danger' : 'ui-btn-primary'}`}
               disabled={saving}
             >
-              <CheckCircle2 className="w-4 h-4" /> {saving ? 'Menyimpan…' : mode === 'keluar' ? 'Terapkan Mutasi Keluar' : 'Daftarkan Siswa'}
+              <CheckCircle2 className="w-4 h-4" /> {saving ? 'Menyimpan…' : mode === 'keluar' ? 'Terapkan Mutasi Keluar' : mode === 'status' ? 'Terapkan Perubahan Status' : 'Daftarkan Siswa'}
             </button>
           )}
         </div>
