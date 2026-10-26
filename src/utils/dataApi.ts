@@ -98,6 +98,19 @@ export async function ambilSiswaDariServer(): Promise<Siswa[]> {
   return panggil<Siswa[]>('GET', '/data/siswa');
 }
 
+/** Hasil endpoint Asisten AI server (Issue #13). */
+export interface HasilAiServer {
+  teks: string;
+  sumber: 'lokal' | 'eksternal';
+  peringatan?: string;
+}
+
+/** Minta Asisten AI server (mode server saja). Timeout 45 detik agar fallback
+ *  provider server (30 detik) sempat menjawab lebih dulu. */
+export async function mintaAiServer(body: unknown): Promise<HasilAiServer> {
+  return panggil<HasilAiServer>('POST', '/ai/generate', body, 45000);
+}
+
 /** True bila sesi impersonate lokal sedang aktif (tampilan menyamar) —
  *  dalam keadaan ini layar pilot TIDAK memakai data server karena sesi
  *  server adalah milik impersonator, bukan akun yang disamarkan. */

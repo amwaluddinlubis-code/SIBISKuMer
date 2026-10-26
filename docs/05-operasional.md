@@ -98,6 +98,8 @@ dibentengi adalah akun lain via server).
 | Kalender & pengingat: buat/ubah/hapus tenggat | ✅ | ❌ | ❌ | ❌ |
 | Kalender & pengingat: tandai selesai, lihat tugas | ✅ semua tugas | ✅ tugas yang ditugaskan kepadanya + tugas umum | ✅ sama | ✅ sama (tugas yang ditugaskan kepadanya + tugas umum) |
 | Impersonate (lihat sebagai peran lain) | ✅ semua peran non-admin | ❌ | ❌ | ❌ |
+| Asisten AI: ringkasan agregat temuan + penjelasan aturan | ✅ | ✅ | ✅ | ✅ |
+| Asisten AI: susun draf surat (selalu bisa diedit sebelum dipakai) | ✅ | ✅ | ✅ | ❌ (baca ringkasan saja) |
 | Ganti password sendiri (dropdown topbar) | ✅ | ✅ | ✅ | ✅ |
 
 Cakupan rombel (`rombelAkses`, `canUserAccessRombel` / `rombelTerlihat`):
@@ -158,6 +160,61 @@ Akun wali kelas & pimpinan TIDAK di-seed — administrator membuatnya lewat
 Manajemen Pengguna sesuai kebutuhan sekolah.
 Password tersimpan sebagai hash (bukan plaintext); 5x salah login mengunci akun
 15 menit per database — tercatat di tab **Log Audit** (khusus administrator).
+
+## 3b. Asisten AI — privasi, konfigurasi, biaya/limit, batasan (Issue #13)
+
+Tab **Asisten AI** membantu tiga hal: (1) ringkasan agregat temuan
+kelengkapan data, (2) penjelasan aturan validasi + langkah tindak lanjut,
+(3) draf surat dari template + isian minimum. Mesin lokal ada di
+`src/utils/asistenAi.ts`; proxy provider eksternal ada di `server/ai.ts`
++ endpoint `POST /ai/generate`.
+
+**Privasi (arsitektur, bukan sekadar flag).**
+- Ringkasan selalu agregat: hitungan per aturan/kategori/prioritas dan
+  jumlah siswa terdampak — tanpa nama, NISN, NIK, ID siswa, atau identitas
+  lain. Temuan pemeriksa sendiri memang hanya menyimpan ID siswa + ID aturan.
+- Ke layanan eksternal hanya pergi data agregat dan draf teredaksi. Server
+  MENOLAK payload dengan field identitas (400) dan menyensor ulang nilai
+  isian (NIK/NISN/telepon/email → placeholder) sebelum kirim; nama pemohon
+  diganti placeholder pada versi eksternal. Data bernama siswa tidak pernah
+  keluar perangkat lewat jalur ini.
+- Prompt dan keluaran AI TIDAK PERNAH masuk log/audit. Audit hanya mencatat
+  metadata `ai_gunakan`: mode + sumber (lokal/eksternal).
+- RBAC mengikuti §3: ringkasan boleh semua peran baca (termasuk pimpinan);
+  draf hanya peran tulis (administrator/operator/wali kelas).
+
+**Persetujuan manusia (approval).**
+- Keluaran AI selalu berupa draf yang tampil di kolom teks yang bisa diedit.
+  Tidak ada tombol yang menyimpan perubahan sensitif langsung dari keluaran
+  AI — operator menyalin draf ke Generator Dokumen dan meninjau sendiri.
+- Nomor surat TIDAK PERNAH dikarang: draf memakai placeholder sampai
+  operator mengisinya. Peraturan/fakta siswa tidak dikarang: draf hanya
+  memakai isian operator + template tetap; penjelasan aturan hanya mengutip
+  katalog `ATURAN_PEMERIKSA` (ID aturan tercantum sehingga dapat ditelusuri).
+
+**Konfigurasi (kunci tidak pernah di repo).**
+- Provider eksternal default NONAKTIF. Mengaktifkannya butuh environment
+  proses server (bukan file di repo, bukan database, bukan bundle klien):
+  `SIBISKUMER_AI_PROVIDER`, `SIBISKUMER_AI_URL` (endpoint chat-completions
+  kompatibel OpenAI), `SIBISKUMER_AI_API_KEY`, opsional
+  `SIBISKUMER_AI_MODEL` dan `SIBISKUMER_AI_TIMEOUT_MS` (default 30000).
+  Tanpa ketiganya, endpoint selalu menjawab sumber lokal.
+- Di mode lokal (IndexedDB, tanpa server), tombol eksternal tidak tampil:
+  provider eksternal hanya tersedia di mode server.
+
+**Biaya/limit.**
+- Mode lokal gratis (tanpa panggilan jaringan). Mode eksternal memakai
+  kunci dan kuota milik sekolah sendiri — aplikasi tidak melacak biaya;
+  periksa pemakaian di dasbor provider masing-masing. Timeout, kuota (429),
+  keluaran kosong/tidak valid, dan provider tak terjangkau SEMUA ditangani
+  dengan fallback ke mesin lokal + peringatan di UI (bukan error mentah).
+
+**Batasan yang harus disampaikan ke pengguna.**
+- AI bukan sumber data resmi dan tidak membuat keputusan administratif final
+  (kelulusan, mutasi, sanksi, penomoran resmi tetap keputusan manusia).
+- Polesan eksternal bisa salah gaya bahasa — periksa fakta draf sebelum pakai.
+- Audit append-only penuh belum ada: tulis log audit masih upsert per ID
+  (lihat §3) — pekerjaan lanjutan, bukan #13.
 
 ## 3a. Panduan Dasbor Pusat Kendali (Issue #2)
 

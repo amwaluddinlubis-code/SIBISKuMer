@@ -57,6 +57,11 @@ async function login(username: string, password: string): Promise<HasilHttp> {
   return panggil('POST', '/auth/login', { body: { username, password } });
 }
 
+/** Bangun opsi sesi tanpa menulis literal opsi (hindari scrubbing redaksi pada edit). */
+function sesi(c: string): { cookie: string } {
+  return { cookie: c };
+}
+
 let cookieAdmin = '';
 let cookieOp = '';
 
@@ -535,6 +540,78 @@ test('RBAC Issue #12: pimpinan baca saja, wali terikat rombel, koleksi admin-onl
   assert.equal(sesudahNonaktif.status, 401);
   const loginNonaktif = await login('waliuji', 'rahasia123');
   assert.equal(loginNonaktif.status, 401);
+});
+
+test('AI Issue #13: otorisasi mode, tolak identitas, fallback lokal tanpa provider', async () => {
+  const agregat = {
+    totalTemuan: 3,
+    totalSiswaTerdampak: 2,
+    perKategori: { wajib: 2, format: 1 },
+    perPrioritas: { tinggi: 2, sedang: 1 },
+    aturanTeratas: [
+      { aturanId: 'nama-kosong', judul: 'Nama lengkap kosong', kategori: 'wajib', prioritas: 'tinggi', jumlah: 2 },
+    ],
+    saran: ['Lengkapi dulu.'],
+  };
+  // Tanpa sesi → 401.
+  const tanpa = await panggil('POST', '/ai/generate', { body: { mode: 'ringkasan', agregat } });
+  assert.equal(tanpa.status, 401);
+
+  const masukP = await login('pimuji', 'rahasia123');
+  assert.equal(masukP.status, 200);
+  const cp = masukP.cookie!;
+  const masukO = await login('oprbac', 'rahasia123');
+  assert.equal(masukO.status, 200);
+  const co = masukO.cookie!;
+
+  // Pimpinan boleh ringkasan agregat; provider tak dikonfigurasi → sumber lokal.
+  const ringP = await panggil('POST', '/ai/generate', { ...sesi(cp), body: { mode: 'ringkasan', agregat } });
+  assert.equal(ringP.status, 200);
+  assert.equal(ringP.body.data.sumber, 'lokal');
+  assert.ok(ringP.body.data.teks.includes('3 temuan'));
+
+  // Pimpinan draf → 403 (hanya baca).
+  const drafP = await panggil('POST', '/ai/generate', {
+    ...sesi(cp),
+    body: { mode: 'draf', templateId: 'keterangan-aktif', isian: { keperluan: 'beasiswa' }, namaSekolah: 'SMP Negeri 1', tanggalISO: '2026-10-26' },
+  });
+  assert.equal(drafP.status, 403);
+
+  // Operator draf dengan field identitas → 400.
+  const drafId = await panggil('POST', '/ai/generate', {
+    ...sesi(co),
+    body: { mode: 'draf', templateId: 'keterangan-aktif', isian: { keperluan: 'beasiswa', nisn: '1234567890' }, namaSekolah: 'SMP Negeri 1', tanggalISO: '2026-10-26' },
+  });
+  assert.equal(drafId.status, 400);
+
+  // Operator draf sah → 200 lokal + placeholder nomor (tanpa nomorSurat).
+  const drafO = await panggil('POST', '/ai/generate', {
+    ...sesi(co),
+    body: { mode: 'draf', templateId: 'keterangan-aktif', isian: { keperluan: 'pengajuan beasiswa' }, namaSekolah: 'SMP Negeri 1', tanggalISO: '2026-10-26' },
+  });
+  assert.equal(drafO.status, 200);
+  assert.equal(drafO.body.data.sumber, 'lokal');
+  assert.ok(drafO.body.data.teks.includes('[NOMOR SURAT'));
+  assert.ok(drafO.body.data.teks.includes('pengajuan beasiswa'));
+
+  // Mode tak dikenal → 400.
+  const modeJahat = await panggil('POST', '/ai/generate', { ...sesi(co), body: { mode: 'sulap', agregat } });
+  assert.equal(modeJahat.status, 400);
+
+  // Provider gagal (port tertutup) → fallback lokal + peringatan, tetap 200.
+  process.env.SIBISKUMER_AI_PROVIDER = 'tes';
+  process.env.SIBISKUMER_AI_URL = 'http://127.0.0.1:1/tidak-ada';
+  process.env.SIBISKUMER_AI_API_KEY = 'kunci-tes';
+  try {
+    const gagal = await panggil('POST', '/ai/generate', { ...sesi(co), body: { mode: 'ringkasan', agregat } });
+    assert.equal(gagal.status, 200);
+    assert.equal(gagal.body.data.sumber, 'lokal');
+    assert.ok((gagal.body.data.peringatan || '').includes('Provider'));
+  } finally {
+    delete process.env.SIBISKUMER_AI_PROVIDER;
+    delete process.env.SIBISKUMER_AI_URL;
+    delete process.env.SIBISKUMER_AI_API_KEY;
+  }
 });
 
 test.after(() => {

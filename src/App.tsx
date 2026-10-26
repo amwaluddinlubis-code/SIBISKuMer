@@ -98,6 +98,7 @@ const GtkView = lazyView(() => import('./components/GtkView'), 'GtkView');
 const OperatorDashboard = lazyView(() => import('./components/OperatorDashboard'), 'OperatorDashboard');
 const ArsipView = lazyView(() => import('./components/ArsipView'), 'ArsipView');
 const AuditLogView = lazyView(() => import('./components/AuditLogView'), 'AuditLogView');
+const AsistenAiView = lazyView(() => import('./components/AsistenAiView'), 'AsistenAiView');
 const LegerNilaiView = lazyView(() => import('./components/LegerNilaiView'), 'LegerNilaiView');
 const PemetaanKelasView = lazyView(() => import('./components/PemetaanKelasView'), 'PemetaanKelasView');
 const PemeriksaDataView = lazyView(() => import('./components/PemeriksaDataView'), 'PemeriksaDataView');
@@ -115,7 +116,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { toast, confirmDialog } from './utils/notify';
 import { keluarDariServer, mulaiImpersonateServer, berhentiImpersonateServer, ambilSesiServer, imporKeServer } from './utils/dataApi';
 import { pakaiServer } from './utils/modeData';
-import { FileText, Search, User, Printer, Eye, Lock, Users, Award, RefreshCw, BarChart3, Layers, Settings, UserCog, Database, GraduationCap, Contact, LayoutDashboard, Archive, LayoutGrid, ScrollText, Table, CalendarDays } from 'lucide-react';
+import { FileText, Search, User, Printer, Eye, Lock, Users, Award, RefreshCw, BarChart3, Layers, Settings, UserCog, Database, GraduationCap, Contact, LayoutDashboard, Archive, LayoutGrid, ScrollText, Table, CalendarDays, Sparkles } from 'lucide-react';
 import { PageHeader } from './components/PageHeader';
 import { PageControl } from './components/PageControl';
 import { SchoolSwitcher } from './components/SchoolSwitcher';
@@ -148,6 +149,7 @@ const TAB_META: Record<string, { title: string; subtitle: string; accent: 'blue'
   backup: { title: 'Backup & Restore', subtitle: 'Cadangan JSON lokal & Google Drive', accent: 'rose', icon: Database },
   audit: { title: 'Log Audit', subtitle: 'Jejak siapa-ubah-apa di database ini', accent: 'slate', icon: ScrollText },
   kalender: { title: 'Kalender & Pengingat', subtitle: 'Tenggat tugas administrasi, jadwal & pengingat dalam aplikasi', accent: 'amber', icon: CalendarDays },
+  asisten: { title: 'Asisten AI', subtitle: 'Ringkasan agregat temuan, penjelasan aturan & draf surat — selalu ditinjau manusia', accent: 'purple', icon: Sparkles },
 };
 
 /** Fallback saat chunk tab/modal diunduh — Fase 3 §15: SKELETON halaman
@@ -2139,6 +2141,18 @@ export default function App() {
                   onPengaturanChanged={setPengaturanKalender}
                   onDataChanged={loadData}
                   onNavigate={handleNavigateTab}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* View: Asisten AI (Issue #13 — ringkasan agregat + draf, semua peran; draf hanya tulis) */}
+            {activeTab === 'asisten' && (
+              <ErrorBoundary>
+                <AsistenAiView
+                  siswa={visibleSiswa}
+                  sekolah={sekolah}
+                  currentUser={currentUser}
+                  pakaiServer={pakaiServer()}
                 />
               </ErrorBoundary>
             )}

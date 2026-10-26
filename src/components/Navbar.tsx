@@ -24,6 +24,7 @@ import {
   LayoutGrid,
   ScrollText,
   ShieldCheck,
+  Sparkles,
   Table,
   FileText,
   CalendarDays,
@@ -119,6 +120,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'gtk', label: 'Data GTK', icon: Contact, badge: undefined },
     { id: 'arsip', label: 'Arsip', icon: Archive, badge: undefined },
     { id: 'pemeriksa', label: 'Pemeriksa Data', icon: ShieldCheck, badge: undefined },
+    { id: 'asisten', label: 'Asisten AI', icon: Sparkles, badge: undefined },
     { id: 'kalender', label: 'Kalender & Pengingat', icon: CalendarDays, badge: kalenderBadge > 0 ? kalenderBadge : undefined },
   ];
 
