@@ -163,7 +163,7 @@ function perluUbahConfig(req: ReqBersesi, res: Response, next: NextFunction): vo
  *  tetap administrator (anti-tamper). Risiko sisa yang didokumentasikan:
  *  PUT bersifat upsert per id sehingga satu entri bisa ditimpa — audit
  *  append-only penuh adalah pekerjaan lanjutan, bukan #12. */
-const KOLEKSI_TULIS_ADMIN: readonly string[] = ['rombel', 'ptk', 'peta_kelas', 'tutup_tahun', 'sync_logs'];
+const KOLEKSI_TULIS_ADMIN: readonly string[] = ['rombel', 'ptk', 'peta_kelas', 'tutup_tahun', 'sync_logs', 'template_word'];
 function perluTulisKoleksi(req: ReqBersesi, res: Response, next: NextFunction): void {
   const entitas = req.params.entitas;
   if (entitas === 'audit_logs') return next();
@@ -209,6 +209,7 @@ export async function rakitPayloadBackup(sekolahId: string): Promise<any> {
     ptk: semuaKoleksi(db, 'ptk'),
     tutupTahun: semuaKoleksi(db, 'tutup_tahun'),
     petaKelas: semuaKoleksi(db, 'peta_kelas'),
+    templateWord: semuaKoleksi(db, 'template_word'),
     audit,
   };
   try {
@@ -253,6 +254,7 @@ export function tulisPayloadBackup(sekolahId: string, payload: any): Record<stri
     for (const p of payload.ptk || []) simpanKoleksi(db, 'ptk', p);
     for (const t of payload.tutupTahun || []) simpanKoleksi(db, 'tutup_tahun', t);
     for (const p of payload.petaKelas || []) simpanKoleksi(db, 'peta_kelas', p);
+    for (const t of payload.templateWord || []) simpanKoleksi(db, 'template_word', t);
     for (const l of payload.syncLogs || []) simpanKoleksi(db, 'sync_logs', l);
     for (const a of payload.audit || []) simpanKoleksi(db, 'audit_logs', a);
     if (payload.sekolah) simpanMeta(db, 'profil_sekolah', payload.sekolah);

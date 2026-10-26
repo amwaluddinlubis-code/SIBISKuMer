@@ -34,6 +34,7 @@ export type SumberAkses =
   | 'ptk'
   | 'peta_kelas'
   | 'dokumen'
+  | 'template_word'
   | 'laporan'
   | 'impor'
   | 'backup'
@@ -70,6 +71,7 @@ export const IZIN_PERAN: Record<UserRole, Record<SumberAkses, AksiAkses[]>> = {
     ptk: [...SEMUA_AKSI],
     peta_kelas: [...SEMUA_AKSI],
     dokumen: [...SEMUA_AKSI],
+    template_word: [...SEMUA_AKSI],
     laporan: [...SEMUA_AKSI],
     impor: [...SEMUA_AKSI],
     backup: [...SEMUA_AKSI],
@@ -89,6 +91,7 @@ export const IZIN_PERAN: Record<UserRole, Record<SumberAkses, AksiAkses[]>> = {
     ptk: ['baca'],
     peta_kelas: [],
     dokumen: ['baca', 'tambah', 'ekspor'],
+    template_word: ['baca', 'tambah', 'ekspor'],
     laporan: ['baca', 'ekspor'],
     impor: ['tambah', 'ubah'],
     backup: [],
@@ -108,6 +111,7 @@ export const IZIN_PERAN: Record<UserRole, Record<SumberAkses, AksiAkses[]>> = {
     ptk: ['baca'],
     peta_kelas: [],
     dokumen: ['baca', 'tambah', 'ekspor'],
+    template_word: ['baca', 'tambah', 'ekspor'],
     laporan: ['baca', 'ekspor'],
     impor: ['tambah', 'ubah'],
     backup: [],
@@ -127,6 +131,7 @@ export const IZIN_PERAN: Record<UserRole, Record<SumberAkses, AksiAkses[]>> = {
     ptk: ['baca'],
     peta_kelas: [],
     dokumen: ['baca', 'ekspor'],
+    template_word: ['baca', 'ekspor'],
     laporan: ['baca', 'ekspor'],
     impor: [],
     backup: [],

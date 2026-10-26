@@ -277,6 +277,18 @@ export function validasiStrukturBackup(payload: unknown): string[] {
   for (const k of ['rombel', 'ptk', 'petaKelas', 'audit', 'syncLogs'] as const) {
     if (p[k] !== undefined && !Array.isArray(p[k])) dorong(`Koleksi ${k} bukan array.`);
   }
+  if (p.templateWord !== undefined) {
+    if (!Array.isArray(p.templateWord)) {
+      dorong('Koleksi templateWord bukan array.');
+    } else {
+      for (const t of p.templateWord as unknown[]) {
+        const rec = t as Record<string, unknown> | null;
+        if (!rec || typeof rec.id !== 'string' || !rec.id || typeof rec.berkasBase64 !== 'string') {
+          dorong('Ditemukan template Word tanpa id atau berkas.');
+        }
+      }
+    }
+  }
   if (p.tutupTahun !== undefined) {
     if (!Array.isArray(p.tutupTahun)) {
       dorong('Koleksi tutupTahun bukan array.');

@@ -1,4 +1,4 @@
-import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RaportSemester, TingkatKelas, RiwayatSemester, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, PetaKelas, AuditLog, AutoBackupSnapshot, TugasAdministrasi, PengaturanKalender, PengingatTerkirim } from '../types';
+import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RaportSemester, TingkatKelas, RiwayatSemester, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, PetaKelas, AuditLog, AutoBackupSnapshot, TugasAdministrasi, PengaturanKalender, PengingatTerkirim, TemplateWord } from '../types';
 import { defaultSekolahProfile, defaultDapodikConfig, initialSiswaList, initialUsersList, presetSekolahSD } from '../data/initialData';
 import { hashPassword, isHashedPassword, withHashedPasswords } from './password';
 import { toast } from './notify';
@@ -30,7 +30,8 @@ const DB_NAME = 'BukuInduk_Merdeka_DB';
 // Naikkan versi setiap kali ada store baru agar database lama di browser
 // pengguna ikut ter-upgrade (onupgradeneeded). v7 = store audit_logs &
 // auto_backup (Tahap 5: audit log + cadangan otomatis).
-const DB_VERSION = 8;
+// v9 = store template_word (fitur unggah template surat .docx).
+const DB_VERSION = 9;
 
 const STORES = {
   SISWA: 'siswa',
@@ -44,7 +45,8 @@ const STORES = {
   PETA: 'peta_kelas',
   AUDIT: 'audit_logs',
   AUTOBACKUP: 'auto_backup',
-  TENGGAT: 'tenggat_tugas'
+  TENGGAT: 'tenggat_tugas',
+  TEMPLATE_WORD: 'template_word'
 };
 
 // ---------------- Konteks sekolah aktif (multi-sekolah) ----------------
@@ -145,6 +147,9 @@ function openDB(name?: string): Promise<IDBDatabase> {
         tugasStore.createIndex('tanggalJatuhTempo', 'tanggalJatuhTempo', { unique: false });
         tugasStore.createIndex('status', 'status', { unique: false });
       }
+      if (!db.objectStoreNames.contains(STORES.TEMPLATE_WORD)) {
+        db.createObjectStore(STORES.TEMPLATE_WORD, { keyPath: 'id' });
+      }
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -168,6 +173,7 @@ const LS_KEYS = {
   LOCKOUT: 'bukuinduk_login_lock',
   AUTOBACKUP_CFG: 'bukuinduk_autobackup_cfg',
   TENGGAT: 'bukuinduk_tenggat',
+  TEMPLATE_WORD: 'bukuinduk_template_word',
   KALENDER_CFG: 'bukuinduk_kalender_cfg',
   PENGINGAT_TERKIRIM: 'bukuinduk_pengingat_terkirim',
   TOMBSTONE: 'bukuinduk_tombstone',
@@ -1940,6 +1946,18 @@ export function saveRombelRefs(items: RombelRef[]): Promise<void> {
   return putAllToStore<RombelRef>(STORES.ROMBEL, sk(LS_KEYS.ROMBEL), items);
 }
 
+/** Template surat Word yang diunggah — mengikuti pola rombel (IDB + LS +
+ *  koleksi server generik 'template_word'; tulis dikunci admin di server). */
+export function getAllTemplateWords(): Promise<TemplateWord[]> {
+  if (pakaiServer()) return api.ambilKoleksiDariServer<TemplateWord>('template_word');
+  return getAllFromStore<TemplateWord>(STORES.TEMPLATE_WORD, sk(LS_KEYS.TEMPLATE_WORD));
+}
+
+export function saveTemplateWords(items: TemplateWord[]): Promise<void> {
+  if (pakaiServer()) return api.gantiKoleksiDiServer('template_word', items);
+  return putAllToStore<TemplateWord>(STORES.TEMPLATE_WORD, sk(LS_KEYS.TEMPLATE_WORD), items);
+}
+
 export function getAllPtkRefs(): Promise<PtkRef[]> {
   if (pakaiServer()) return api.ambilKoleksiDariServer<PtkRef>('ptk');
   return getAllFromStore<PtkRef>(STORES.PTK, sk(LS_KEYS.PTK));
@@ -2281,6 +2299,8 @@ export interface BackupPayload {
   tutupTahun?: TutupTahunAjaran[];
   petaKelas?: PetaKelas[];
   audit?: AuditLog[];
+  /** Template surat Word yang diunggah (fitur template .docx). */
+  templateWord?: TemplateWord[];
 }
 
 /** Baca satu store IndexedDB apa adanya (TANPA perutean server) — dipakai
@@ -2346,7 +2366,7 @@ export async function exportAllData(): Promise<string> {
   if (pakaiServer()) {
     return JSON.stringify(await api.ambilEksporDariServer(), null, 2);
   }
-  const [siswa, sekolah, dapodikConfig, syncLogs, users, rombel, ptk, tutupTahun, petaKelas, audit] = await Promise.all([
+  const [siswa, sekolah, dapodikConfig, syncLogs, users, rombel, ptk, tutupTahun, petaKelas, audit, templateWord] = await Promise.all([
     getAllSiswa(),
     getSekolahProfile(),
     getDapodikConfig(),
@@ -2356,7 +2376,8 @@ export async function exportAllData(): Promise<string> {
     getAllPtkRefs(),
     getTutupTahun(),
     getAllPetaKelas(),
-    getAuditLogs(500)
+    getAuditLogs(500),
+    getAllTemplateWords()
   ]);
 
   const payload: BackupPayload = {
@@ -2378,7 +2399,8 @@ export async function exportAllData(): Promise<string> {
     ptk,
     tutupTahun,
     petaKelas,
-    audit
+    audit,
+    templateWord
   };
 
   // Issue #10 — tempelkan blok integritas (checksum SHA-256 + jumlah record)
@@ -2732,6 +2754,20 @@ export async function importBackupData(
       await savePetaKelasList(data.petaKelas);
     }
 
+    if (data.templateWord && Array.isArray(data.templateWord)) {
+      // Gabung per id (backup menang bila id sama); pada ganti-total store
+      // sudah dikosongkan clearDatabase sehingga gabung = ganti.
+      const lama = await getAllTemplateWords();
+      const gabung = new Map<string, TemplateWord>();
+      for (const t of lama) if (t && t.id) gabung.set(t.id, t);
+      for (const t of data.templateWord) {
+        if (t && typeof t.id === 'string' && typeof t.berkasBase64 === 'string') {
+          gabung.set(t.id, t as TemplateWord);
+        }
+      }
+      await saveTemplateWords([...gabung.values()]);
+    }
+
     if (data.audit && Array.isArray(data.audit)) {
       const npsnAktifRestore = npsnSekolahSebelumRestore;
       const sekolahIdAktif = getActiveSchoolId();
@@ -2910,7 +2946,7 @@ export async function resetToSampleData(): Promise<void> {
     await api.imporKeServer(payloadPabrik(true));
     return;
   }
-  const wanted = [STORES.SISWA, STORES.SEKOLAH, STORES.CONFIG, STORES.LOGS, STORES.USERS, STORES.ROMBEL, STORES.PTK, STORES.TUTUP, STORES.PETA, STORES.AUDIT, STORES.AUTOBACKUP];
+  const wanted = [STORES.SISWA, STORES.SEKOLAH, STORES.CONFIG, STORES.LOGS, STORES.USERS, STORES.ROMBEL, STORES.PTK, STORES.TUTUP, STORES.PETA, STORES.AUDIT, STORES.AUTOBACKUP, STORES.TEMPLATE_WORD];
   try {
     const db = await openDB();
     // Hanya store yang benar-benar ada (database lama mungkin belum ter-upgrade).
@@ -2962,7 +2998,7 @@ export async function clearDatabase(): Promise<void> {
     await api.imporKeServer(payloadPabrik(false));
     return;
   }
-  const wanted = [STORES.SISWA, STORES.SEKOLAH, STORES.CONFIG, STORES.LOGS, STORES.ROMBEL, STORES.PTK, STORES.TUTUP, STORES.PETA, STORES.AUDIT, STORES.AUTOBACKUP];
+  const wanted = [STORES.SISWA, STORES.SEKOLAH, STORES.CONFIG, STORES.LOGS, STORES.ROMBEL, STORES.PTK, STORES.TUTUP, STORES.PETA, STORES.AUDIT, STORES.AUTOBACKUP, STORES.TEMPLATE_WORD];
   try {
     const db = await openDB();
     // Hanya store yang benar-benar ada (database lama mungkin belum ter-upgrade).
