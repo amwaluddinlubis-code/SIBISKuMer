@@ -215,3 +215,14 @@ describe('deteksiCadanganTerenkripsi', () => {
     assert.equal(deteksiCadanganTerenkripsi('bukan json {{{'), false);
   });
 });
+
+describe('backup jahat (Issue #30)', () => {
+  it('kunci __proto__ tidak mempolusi Object.prototype dan checksum tetap terverifikasi', async () => {
+    const jahat = JSON.parse('{"siswa":[],"__proto__":{"polluted":"ya"}}');
+    const berintegritas = await tambahIntegritas({ ...backupDasar(), ...jahat });
+    const hasil = await periksaIntegritas(berintegritas);
+    assert.equal(hasil.status, 'terverifikasi');
+    assert.equal(({} as Record<string, unknown>).polluted, undefined);
+    assert.equal((Object.prototype as Record<string, unknown>).polluted, undefined);
+  });
+});
