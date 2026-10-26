@@ -655,6 +655,8 @@ export interface PetaKelas {
   tingkat: TingkatKelas;
   rombel: string; // "8A"
   waliKelas?: string;
+  /** Kapasitas maks siswa rombel (Issue #6, opsional; tanpa nilai = tidak dibatasi). */
+  kapasitas?: number;
   updatedAt: string;
   source: 'manual' | 'generate';
   /** Anggota arsip (ID siswa) — dipakai untuk tahun non-aktif hasil Petakan

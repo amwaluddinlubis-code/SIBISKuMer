@@ -265,7 +265,6 @@ DB v8 + cermin localStorage ter-scope). Logika murni di
 `tambahPengingatTerkirim` (idempoten).
 
 ### 3.10 `RiwayatMutasi` (riwayat mutasi & status — Issue #5)
-
 `RiwayatMutasi` (di `src/types/index.ts`, logika murni di
 `src/utils/mutasi.ts`): `id`, `siswaId`, `jenis` (`masuk` | `keluar` |
 `ubah_status` | `lulus` | `batal`), `statusSebelum` (null untuk `masuk`),
@@ -307,6 +306,44 @@ Aturan yang dipegang:
   Bila audit gagal setelah siswa tersimpan, aplikasi menampilkan
   peringatan (tidak diam) — riwayat di record siswa menjadi jejak
   rekonsiliasi.
+
+### 3.11 Rencana promosi & rollback (Issue #6)
+
+Logika murni di `src/utils/promosi.ts`; rencana (`RencanaRombel` di
+`ArsipView.tsx`) per rombel lama: `tingkat`, `rombel`, `ids` (siswa),
+`status` (`Naik Kelas` | `Tinggal di Kelas` | `Lulus`), `nextTingkat`,
+`nextRombel`, `kecuali?` (pengecualian: `{ id, alasan }`).
+
+Aturan yang dipegang:
+- **Validasi sebelum tulis** (`validasiRencanaPromosi`, dijalankan di
+  wizard sebagai kotak validasi live DAN diulang handler terhadap data
+  segar): id ganda antar rombel, id tak dikenal (isolasi tenant: id
+  sekolah lain tidak diterapkan), siswa non-Aktif dalam rencana, siswa
+  aktif yang belum ditempatkan (bukan pengecualian), rombel kosong,
+  tingkat/rombel baru invalid, tingkat akhir hanya Lulus (Naik dilarang),
+  non-akhir dilarang Lulus, satu rombel tujuan hanya untuk satu tingkat,
+  dan kapasitas (bila `PetaKelas.kapasitas` tersedia untuk rombel tujuan
+  tahun baru). Error memblokir tombol eksekusi dan penerapan.
+- **Pengecualian.** Siswa yang ditahan/dikecualikan (dengan alasan wajib)
+  tetap Aktif di rombel lama dan tidak dihitung hilang.
+- **Kapasitas.** `PetaKelas.kapasitas?` (opsional; tanpa nilai = tidak
+  dibatasi), diisi di form Pemetaan Kelas dan dipakai validator untuk
+  rombel tujuan tahun baru.
+- **Idempoten.** Entri promosi dikenali dari pola catatan
+  `Kenaikan ke rombel … TP <tahunBaru>` + `tahunAjaran` = tahun yang
+  ditutup. Penerapan ulang melewati siswa yang sudah dipromosi (tanpa
+  entri ganda) dan tetap dapat mengunci tahun yang gagal terkunci.
+- **Rollback** (`batalkanPromosi`): menghapus entri promosi tahun
+  tersebut, mengembalikan rombel lama & status Aktif. Siswa yang
+  statusnya berubah non-Aktif setelah promosi tidak disentuh. Syarat
+  handler: hanya administrator, hanya dalam sesi tahun yang dibatalkan,
+  dan hanya bila belum ada promosi tahun yang lebih baru (tahun aktif
+  masih `tahunAktifBaru` kunci tersebut). Rollback mengembalikan tahun
+  aktif ke tahun yang dibatalkan; semester tidak diubah (operator
+  menyesuaikan bila perlu). Pemetaan Kelas tahun baru tidak disentuh.
+- **Riwayat lama tidak berubah.** Penerapan hanya menambah satu entri
+  `riwayatTahunAjaran` per siswa; rollback hanya menghapus entri
+  promosi tahun itu; entri tahun lain dan roster arsip tidak disentuh.
 
 ## 4. Aturan Validasi (`src/utils/validation.ts`)
 
