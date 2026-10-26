@@ -52,7 +52,8 @@ import {
   tambahPengingatTerkirim
 } from './utils/db';
 import { Siswa, SekolahProfile, DapodikConfig, DapodikSyncLog, AppUser, RombelRef, PtkRef, SchoolEntry, JenjangSekolah, TutupTahunAjaran, PetaKelas, ModeTampilan, RiwayatTahunAjaran, TugasAdministrasi, PengaturanKalender } from './types';
-import { buildSnapshot } from './utils/arsip';
+import { buildSnapshot, tingkatAkhir } from './utils/arsip';
+import { batalkanPromosi, terapkanRencanaPromosi, validasiRencanaPromosi } from './utils/promosi';
 import {
   DEFAULT_DASHBOARD_FILTER,
   ROMBEL_KOSONG,
@@ -752,73 +753,61 @@ export default function App() {
       toast(`Akses ditolak: akun @${currentUser?.username} tidak memiliki akses ke tahun ${args.tahunBaru}.`, 'error');
       return;
     }
-    // Validasi rencana promosi
-    for (const g of args.groups) {
-      if (g.status !== 'Lulus') {
-        if (!g.nextTingkat || !['1', '2', '3', '4', '5', '6', '7', '8', '9'].includes(g.nextTingkat)) {
-          toast(`Tingkat baru rombel ${g.rombel || '?'} tidak valid.`, 'error');
-          return;
-        }
-        if (!g.nextRombel || !g.nextRombel.trim()) {
-          toast(`Rombel baru untuk ${g.rombel || '?'} wajib diisi.`, 'error');
-          return;
-        }
-      }
-      if (g.ids.length === 0) {
-        toast(`Rombel ${g.rombel || '?'} kosong — tidak ada yang dipromosi.`, 'warning');
-        return;
-      }
+    // Issue #6: penjaga tingkat handler — tahun yang sudah terkunci tidak
+    // boleh dipromosi ulang (UI sudah menjaga, handler tidak boleh longgar).
+    if ((tutupTahun || []).some((t) => t.tahunAjaran === args.tahunTutup.trim())) {
+      toast(`Tahun ${args.tahunTutup.trim()} sudah ditutup sebelumnya.`, 'error');
+      return;
     }
     startTopProgress();
     try {
-      // 1. Potret arsip SEBELUM promosi (roster = keadaan saat penutupan)
-      const lulus = args.groups.filter((g) => g.status === 'Lulus').reduce((n, g) => n + g.ids.length, 0);
-      const naik = args.groups.filter((g) => g.status === 'Naik Kelas').reduce((n, g) => n + g.ids.length, 0);
-      const tinggal = args.groups.filter((g) => g.status === 'Tinggal di Kelas').reduce((n, g) => n + g.ids.length, 0);
-      const { ringkasan, roster } = buildSnapshot(siswaList, { lulus, naik, tinggal });
+      // Issue #6: validasi ulang terhadap data SEGAR — rencana bisa basi
+      // antara pratinjau dan penerapan (siswa pindah rombel / berubah
+      // status). Cakupan, ganda, hilang, kapasitas diperiksa di sini.
+      const segar = await getAllSiswa();
+      const aktifSegar = segar.filter((x) => x.statusSiswa === 'Aktif');
+      const kapasitas: Record<string, number> = {};
+      for (const p of petaKelas || []) {
+        if (p.tahunAjaran === args.tahunBaru.trim() && typeof p.kapasitas === 'number') {
+          kapasitas[p.rombel.trim().toUpperCase()] = p.kapasitas;
+        }
+      }
+      const validasi = validasiRencanaPromosi({
+        plan: args.groups,
+        siswaAktif: aktifSegar,
+        tingkatAkhir: tingkatAkhir(sekolah.jenjang || 'SMP'),
+        kapasitas,
+        tahunTutup: args.tahunTutup.trim(),
+        tahunBaru: args.tahunBaru.trim(),
+      });
+      if (validasi.errors.length > 0) {
+        toast(`Rencana tidak valid: ${validasi.errors[0]}`, 'error');
+        return;
+      }
 
-      // 2. Promosikan per rombel (menulis riwayat tahun lama, bukan menimpa)
+      // 1. Potret arsip SEBELUM promosi (roster = keadaan saat penutupan)
       // F15: DUA FASE agar tutup tahun tidak setengah jalan —
-      //   (a) KUMPUL: baca semua siswa & hitung rekaman baru dulu, TANPA tulis;
+      //   (a) KUMPUL: hitung rekaman baru dulu, TANPA tulis;
       //   (b) TULIS: saveSiswaBulk sekaligus (satu transaksi IDB; fallback LS
       //       juga menimpa seluruh array sekaligus).
       // Penguncian tahun (langkah 3) hanya jalan bila fase (b) sukses penuh.
       // Bila fase (b) gagal: tahun TIDAK dikunci, error jelas ditampilkan.
-      // Catatan: rollback manual penuh tidak mungkin tanpa transaksi IDB
-      // lintas-store, jadi operator harus verifikasi daftar siswa bila ini
-      // terjadi sebelum mencoba tutup tahun ulang.
-      const nowIso = new Date().toISOString();
-      const promosiBaru: Siswa[] = [];
-      for (const g of args.groups) {
-        const nextRombel = g.status === 'Lulus' ? g.rombel : g.nextRombel.trim().toUpperCase();
-        for (const id of g.ids) {
-          const s = await getSiswaById(id); // F15(a): hanya baca
-          if (!s) continue;
-          const tingkatLama = getTingkatAktifSiswa(s);
-          const rombelLama = s.rombelSaatIni;
-          // F1: tahunLama = tahun sesi yang ditutup (eksplisit).
-          const tahunLama =
-            args.tahunTutup.trim() || getTahunAjaranTerakhirSiswa(s) || args.tahunBaru;
-          const riwayat: RiwayatTahunAjaran = {
-            id: `rth-${Date.now()}-${s.id}-${promosiBaru.length}`,
-            tahunAjaran: tahunLama,
-            tingkat: tingkatLama,
-            rombel: rombelLama,
-            statusAkhirTahun: g.status,
-            statusKenaikan: g.status,
-            catatan: `Kenaikan ke rombel ${nextRombel} TP ${args.tahunBaru}`,
-          };
-          promosiBaru.push({
-            ...s,
-            rombelSaatIni: g.status === 'Lulus' ? s.rombelSaatIni : nextRombel,
-            statusSiswa: g.status === 'Lulus' ? 'Lulus' : 'Aktif',
-            riwayatTahunAjaran: [...(s.riwayatTahunAjaran || []), riwayat],
-            updatedAt: nowIso,
-          });
-        }
-      }
-      // F15(b): satu kali tulis; gagal → lempar, tahun tidak dikunci.
-      await saveSiswaBulk(promosiBaru);
+      // Pemulihan dari kegagalan setelah tulis sukses: penerapan ulang
+      // bersifat idempoten (siswa yang sudah dipromosi dilewati), atau
+      // rollback lewat Batalkan Promosi lalu tutup ulang dari awal.
+      const terap = terapkanRencanaPromosi(segar, args.groups, {
+        tahunTutup: args.tahunTutup.trim(),
+        tahunBaru: args.tahunBaru.trim(),
+        tebakTingkat: getTingkatAktifSiswa,
+      });
+      const { ringkasan, roster } = buildSnapshot(segar, {
+        lulus: terap.ringkasan.lulus,
+        naik: terap.ringkasan.naik,
+        tinggal: terap.ringkasan.tinggal,
+      });
+
+      // 2. Tulis sekaligus; gagal → lempar, tahun tidak dikunci.
+      await saveSiswaBulk(terap.promosiBaru);
 
       // 3. Kunci tahun + putar tahun aktif ke semester gasal tahun baru
       await saveTutupTahun({
@@ -846,10 +835,10 @@ export default function App() {
       catatAudit('tutup_tahun', {
         entitas: 'tahun',
         entitasId: args.tahunTutup,
-        ringkasan: `Tutup ${args.tahunTutup} → ${args.tahunBaru} (Lulus: ${lulus}, Naik: ${naik}, Tinggal: ${tinggal})`,
+        ringkasan: `Tutup ${args.tahunTutup} → ${args.tahunBaru} (Lulus: ${terap.ringkasan.lulus}, Naik: ${terap.ringkasan.naik}, Tinggal: ${terap.ringkasan.tinggal}, Ditahan: ${terap.ringkasan.dikecualikan}, Dilewati: ${terap.dilewatiSudahDipromosi.length + terap.dilewatiTidakAktif.length})`,
       });
       toast(
-        `Tahun ${args.tahunTutup} ditutup & dikunci. Lulus: ${lulus}, Naik: ${naik}, Tinggal: ${tinggal}. Tahun aktif: ${args.tahunBaru}. Lanjutkan Sinkron Dapodik untuk murid baru.`,
+        `Tahun ${args.tahunTutup} ditutup & dikunci. Lulus: ${terap.ringkasan.lulus}, Naik: ${terap.ringkasan.naik}, Tinggal: ${terap.ringkasan.tinggal}, Ditahan: ${terap.ringkasan.dikecualikan}${terap.dilewatiSudahDipromosi.length > 0 ? `, Dilewati (sudah dipromosi): ${terap.dilewatiSudahDipromosi.length}` : ''}${terap.dilewatiTidakAktif.length > 0 ? `, Dilewati (tidak lagi aktif): ${terap.dilewatiTidakAktif.length}` : ''}. Tahun aktif: ${args.tahunBaru}. Lanjutkan Sinkron Dapodik untuk murid baru.`,
         'success'
       );
     } catch (err: unknown) {
@@ -865,7 +854,7 @@ export default function App() {
     } finally {
       doneTopProgress();
     }
-  }, [siswaList, sekolah, currentUser, loadData, sessionTahun]);
+  }, [sekolah, currentUser, loadData, sessionTahun, tutupTahun, petaKelas]);
 
   const handleBukaTahun = useCallback(async (tahunAjaran: string) => {
     // Buka kunci hanya dalam sesi tahun tersebut.
@@ -894,6 +883,65 @@ export default function App() {
       doneTopProgress();
     }
   }, [loadData, sessionTahun, sekolah]);
+
+  // Issue #6: rollback promosi — kembalikan rombel/status hasil promosi
+  // tahun tersebut, lalu buka kuncinya. Hanya administrator, hanya dalam
+  // sesi tahun yang dibatalkan, dan hanya bila belum ada promosi tahun
+  // yang lebih baru (tahun aktif masih tahunAktifBaru kunci tersebut).
+  const handleBatalkanPromosi = useCallback(async (tahunAjaran: string) => {
+    if (!isAdmin) {
+      toast('Hanya administrator yang dapat membatalkan promosi.', 'error');
+      throw new Error('Bukan administrator.');
+    }
+    const sesi = tahunSesiEfektif(sessionTahun, sekolah.tahunAjaran);
+    if (sesi && tahunAjaran.trim() !== sesi) {
+      toast(`Batalkan promosi hanya dalam sesi tahun tersebut (sesi aktif TA ${sesi}). Pindah sesi dulu.`, 'error');
+      throw new Error(`Di luar sesi aktif (TA ${sesi}).`);
+    }
+    const kunci = (tutupTahun || []).find((t) => t.tahunAjaran === tahunAjaran.trim());
+    if (!kunci) {
+      toast(`Tahun ${tahunAjaran.trim()} tidak terkunci — tidak ada promosi untuk dibatalkan.`, 'error');
+      throw new Error('Tahun tidak terkunci.');
+    }
+    if (kunci.tahunAktifBaru && sekolah.tahunAjaran !== kunci.tahunAktifBaru) {
+      toast(`Tidak dapat membatalkan: tahun aktif (${sekolah.tahunAjaran}) sudah bergerak dari ${kunci.tahunAktifBaru} — ada promosi tahun yang lebih baru.`, 'error');
+      throw new Error('Sudah ada promosi tahun berikutnya.');
+    }
+    startTopProgress();
+    try {
+      const segar = await getAllSiswa();
+      const hasil = batalkanPromosi(segar, { tahunTutup: tahunAjaran.trim(), tahunBaru: (kunci.tahunAktifBaru || '').trim() });
+      if (hasil.siswa.length === 0) {
+        toast(`Tidak ada siswa yang dapat dikembalikan untuk ${tahunAjaran.trim()}.`, 'warning');
+        return;
+      }
+      await saveSiswaBulk(hasil.siswa);
+      await deleteTutupTahun(tahunAjaran.trim());
+      const profilBaru: SekolahProfile = { ...sekolah, tahunAjaran: tahunAjaran.trim() };
+      await saveSekolahProfile(profilBaru);
+      setSekolah(profilBaru);
+      await loadData();
+      if (canUserAccessTahun(currentUser, tahunAjaran.trim())) {
+        setSessionTahunAjaran(tahunAjaran.trim());
+        setSessionTahun(tahunAjaran.trim());
+      }
+      catatHapusCloud('tutup', tahunAjaran.trim());
+      catatAudit('buka_tahun', {
+        entitas: 'tahun',
+        entitasId: tahunAjaran.trim(),
+        ringkasan: `Batal promosi ${tahunAjaran.trim()}: ${hasil.siswa.length} siswa dikembalikan, ${hasil.dilewati.length} dilewati; tahun aktif kembali ke ${tahunAjaran.trim()}`,
+      });
+      toast(
+        `Promosi ${tahunAjaran.trim()} dibatalkan: ${hasil.siswa.length} siswa dikembalikan ke rombel & status sebelum promosi${hasil.dilewati.length > 0 ? `, ${hasil.dilewati.length} dilewati (status berubah setelah promosi)` : ''}. Tahun aktif kembali ke ${tahunAjaran.trim()}.`,
+        'success'
+      );
+    } catch (err: unknown) {
+      toast(`Gagal membatalkan promosi: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      throw err;
+    } finally {
+      doneTopProgress();
+    }
+  }, [isAdmin, sessionTahun, sekolah, tutupTahun, currentUser, loadData]);
 
   const handleDeleteSchool = useCallback(async (id: string, deletePhysical: boolean) => {
     const target = getSchools().find((s) => s.id === id);
@@ -1966,6 +2014,7 @@ export default function App() {
                   petaKelas={petaKelas}
                   onTutupTahun={handleTutupTahun}
                   onBukaTahun={handleBukaTahun}
+                  onBatalkanPromosi={handleBatalkanPromosi}
                 />
               </ErrorBoundary>
             )}

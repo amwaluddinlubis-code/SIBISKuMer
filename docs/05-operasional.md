@@ -191,6 +191,23 @@ backup tiap sekolah secara terpisah.
    (d) **baru** Sinkron Dapodik untuk murid baru (lulusan tak muncul di Dapodik dan
    tak tersentuh arsip). Promosi manual susulan di Nilai Raport melewati siswa
    yang tahun terakhirnya terkunci.
+   **Aturan promosi (Issue #6):** sebelum eksekusi, kotak validasi rencana
+   harus hijau — tidak boleh ada siswa ganda, hilang (belum ditempatkan),
+   atau melebihi kapasitas rombel tujuan (kapasitas diisi di Pemetaan
+   Kelas tahun baru; kosong = tanpa batas). Siswa yang ditahan
+   dikecualikan lewat tombol "Kelola siswa" per rombel dengan alasan
+   wajib — ia tetap Aktif di rombel lama. Rencana yang basi (data berubah
+   setelah disusun) wajib disusun ulang; handler memvalidasi ulang
+   terhadap data segar dan membatalkan penerapan bila tidak valid.
+   **Bila tutup tahun gagal setelah tulis:** jangan panik — penerapan
+   ulang bersifat idempoten (siswa yang sudah dipromosi dilewati) sehingga
+   kunci dapat diselesaikan, atau gunakan **Batalkan promosi** di kartu
+   tahun terkunci lalu tutup ulang dari awal. Batalkan promosi hanya
+   oleh administrator, hanya dalam sesi tahun yang dibatalkan, dan hanya
+   bila belum ada promosi tahun yang lebih baru; ia mengembalikan rombel
+   & status siswa (kecuali yang sudah bermutasi setelah promosi) dan
+   tahun aktif ke tahun yang dibatalkan, tanpa mengubah roster arsip
+   maupun riwayat tahun lain.
 5. **Reset contoh / kosongkan DB** hanya oleh administrator dan selalu dengan dialog
    konfirmasi danger; kosongkan DB bersifat permanen. Semua aksi tercatat di Log Audit.
 

@@ -242,6 +242,10 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
       toast('Nama rombel wajib diisi (cth. 8A).', 'error');
       return;
     }
+    if (editing.kapasitas !== undefined && (!Number.isInteger(editing.kapasitas) || editing.kapasitas < 0)) {
+      toast('Kapasitas wajib bilangan bulat ≥ 0 (atau kosongkan bila tanpa batas).', 'error');
+      return;
+    }
     const duplikat = (peta || []).some(
       (p) =>
         p.id !== editing.id &&
@@ -257,7 +261,7 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
     try {
       const prevPeta = (peta || []).find((p) => p.id === editing.id);
       await savePetaKelas(editing);
-      const diffPeta = diffAudit(prevPeta, editing, ['tahunAjaran', 'tingkat', 'rombel', 'waliKelas']);
+      const diffPeta = diffAudit(prevPeta, editing, ['tahunAjaran', 'tingkat', 'rombel', 'waliKelas', 'kapasitas']);
       catatAudit('rombel_ubah', {
         entitas: 'rombel',
         entitasId: editing.id,
@@ -1171,6 +1175,9 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
                     <td className="text-center font-bold">Kelas {p.tingkat}</td>
                     <td>
                       <span className="ui-badge ui-badge-indigo">{p.rombel}</span>
+                      {typeof p.kapasitas === 'number' && (
+                        <span className="block text-[10px] text-slate-500 mt-0.5">kap. {p.kapasitas}</span>
+                      )}
                     </td>
                     <td className="font-semibold text-xs">{p.waliKelas || '-'}</td>
                     <td className="text-center">
@@ -1446,6 +1453,23 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
                 ptk={ptk}
                 placeholder="cth. SITI RAHMAWATI, S.Pd."
                 onChange={(v) => setEditing({ ...editing, waliKelas: v.toUpperCase() })}
+              />
+            </div>
+            <div>
+              <label className="ui-label" htmlFor="peta-kapasitas">Kapasitas maks siswa (Issue #6, kosong = tanpa batas)</label>
+              <input
+                id="peta-kapasitas"
+                type="number"
+                min={0}
+                step={1}
+                value={editing.kapasitas ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value.trim();
+                  setEditing({ ...editing, kapasitas: v === '' ? undefined : Number(v) });
+                }}
+                placeholder="cth. 32"
+                className="ui-input font-mono"
+                inputMode="numeric"
               />
             </div>
             <div className="flex justify-end gap-2 pt-1">

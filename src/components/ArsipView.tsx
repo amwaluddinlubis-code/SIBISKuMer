@@ -17,6 +17,7 @@ import { PageControl } from './PageControl';
 import { toast, confirmDialog } from '../utils/notify';
 import { cekTulisTahun, tahanMaksSesi } from '../utils/sesi';
 import { statusBackupTerakhir } from '../utils/autoBackup';
+import { batalkanPromosi, validasiRencanaPromosi } from '../utils/promosi';
 import {
   tahunBerikutnya,
   tingkatAkhir,
@@ -32,6 +33,9 @@ export interface RencanaRombel {
   status: 'Naik Kelas' | 'Tinggal di Kelas' | 'Lulus';
   nextTingkat: string;
   nextRombel: string;
+  /** Pengecualian per siswa (Issue #6): ditahan dengan alasan, tetap Aktif
+   *  di rombel lama, tidak dihitung hilang. */
+  kecuali?: { id: string; alasan: string }[];
 }
 
 interface ArsipViewProps {
@@ -53,6 +57,8 @@ interface ArsipViewProps {
     groups: RencanaRombel[];
   }) => Promise<void>;
   onBukaTahun: (tahunAjaran: string) => Promise<void>;
+  /** Issue #6: rollback promosi + buka kunci (opsional; tombol hanya muncul bila ada). */
+  onBatalkanPromosi?: (tahunTutup: string) => Promise<void>;
 }
 
 export const ArsipView: React.FC<ArsipViewProps> = ({
@@ -68,6 +74,7 @@ export const ArsipView: React.FC<ArsipViewProps> = ({
   petaKelas,
   onTutupTahun,
   onBukaTahun,
+  onBatalkanPromosi,
 }) => {
   const jenjang = sekolah.jenjang || 'SMP';
   const final = tingkatAkhir(jenjang);
@@ -81,6 +88,8 @@ export const ArsipView: React.FC<ArsipViewProps> = ({
   const [rosterSearch, setRosterSearch] = useState<Record<string, string>>({});
   const [rosterPage, setRosterPage] = useState<Record<string, number>>({});
   const [openingId, setOpeningId] = useState<string | null>(null);
+  const [rollbackId, setRollbackId] = useState<string | null>(null);
+  const [grupDibuka, setGrupDibuka] = useState<string | null>(null);
 
   const aktif = useMemo(() => (siswa || []).filter((s) => s.statusSiswa === 'Aktif'), [siswa]);
 
@@ -119,6 +128,7 @@ export const ArsipView: React.FC<ArsipViewProps> = ({
           status: lulus ? 'Lulus' : 'Naik Kelas',
           nextTingkat: nextT,
           nextRombel: lulus ? rombel : rombelTarget(rombel, nextT),
+          kecuali: [],
         };
         groups.set(key, g);
       }
@@ -135,6 +145,31 @@ export const ArsipView: React.FC<ArsipViewProps> = ({
   const totalLulus = plan.filter((g) => g.status === 'Lulus').reduce((n, g) => n + g.ids.length, 0);
   const totalNaik = plan.filter((g) => g.status === 'Naik Kelas').reduce((n, g) => n + g.ids.length, 0);
   const totalTinggal = plan.filter((g) => g.status === 'Tinggal di Kelas').reduce((n, g) => n + g.ids.length, 0);
+  const totalKecuali = plan.reduce((n, g) => n + (g.kecuali || []).length, 0);
+
+  // Issue #6: validasi rencana live — kapasitas dari Pemetaan Kelas tahun
+  // baru (bila ada), konflik, siswa hilang/ganda, dan idempotensi.
+  const kapasitasTahunBaru = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const p of petaKelas || []) {
+      if (p.tahunAjaran === (tahunBaru || '').trim() && typeof p.kapasitas === 'number') {
+        map[p.rombel.trim().toUpperCase()] = p.kapasitas;
+      }
+    }
+    return map;
+  }, [petaKelas, tahunBaru]);
+
+  const validasiPlan = useMemo(() => {
+    if (plan.length === 0) return null;
+    return validasiRencanaPromosi({
+      plan,
+      siswaAktif: aktif,
+      tingkatAkhir: final,
+      kapasitas: kapasitasTahunBaru,
+      tahunTutup: tahunTutup.trim(),
+      tahunBaru: tahunBaru.trim(),
+    });
+  }, [plan, aktif, final, kapasitasTahunBaru, tahunTutup, tahunBaru]);
 
   const handleExecute = async () => {
     if (!tahunTutup.trim() || !/^\d{4}\/\d{4}$/.test(tahunTutup.trim())) {
@@ -208,6 +243,25 @@ export const ArsipView: React.FC<ArsipViewProps> = ({
       await onBukaTahun(t.tahunAjaran);
     } finally {
       setOpeningId(null);
+    }
+  };
+
+  // Issue #6: rollback promosi — pratinjau dampak dari data saat ini,
+  // lalu serahkan ke handler App (yang menjaga syarat tahun & menulis).
+  const handleBatalkanPromosi = async (t: TutupTahunAjaran) => {
+    if (!onBatalkanPromosi) return;
+    const tahunBaru = (t.tahunAktifBaru || '').trim();
+    const hasil = batalkanPromosi(siswa || [], { tahunTutup: t.tahunAjaran, tahunBaru });
+    const ok = await confirmDialog(
+      `Batalkan promosi ${t.tahunAjaran}${tahunBaru ? ` → ${tahunBaru}` : ''} dan buka kuncinya?\n\n• ${hasil.siswa.length} siswa dikembalikan ke rombel & status sebelum promosi.\n• ${hasil.dilewati.length} siswa dilewati (status berubah setelah promosi).\n• Tahun aktif kembali ke ${t.tahunAjaran}.\n\nTindakan ini tidak mengubah arsip roster maupun riwayat tahun lain.`,
+      { confirmLabel: 'Ya, Batalkan Promosi', danger: true }
+    );
+    if (!ok) return;
+    setRollbackId(t.tahunAjaran);
+    try {
+      await onBatalkanPromosi(t.tahunAjaran);
+    } finally {
+      setRollbackId(null);
     }
   };
 
@@ -319,6 +373,9 @@ export const ArsipView: React.FC<ArsipViewProps> = ({
                 Lulus: <strong className="text-emerald-700">{totalLulus}</strong> • Naik:{' '}
                 <strong className="text-blue-700">{totalNaik}</strong> • Tinggal:{' '}
                 <strong className="text-amber-700">{totalTinggal}</strong>
+                {totalKecuali > 0 && (
+                  <> • Ditahan: <strong className="text-rose-700">{totalKecuali}</strong></>
+                )}
                 {planStale && <span className="text-rose-600 font-semibold"> • data berubah, susun ulang!</span>}
               </span>
             )}
@@ -343,6 +400,7 @@ export const ArsipView: React.FC<ArsipViewProps> = ({
                     <th className="p-2.5">Status</th>
                     <th className="p-2.5">Tingkat baru</th>
                     <th className="p-2.5">Rombel baru</th>
+                    <th className="p-2.5">Pengecualian</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -415,19 +473,110 @@ export const ArsipView: React.FC<ArsipViewProps> = ({
                           </>
                         )}
                       </td>
+                      <td className="p-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setGrupDibuka((cur) => (cur === g.key ? null : g.key))}
+                          className="ui-btn ui-btn-outline !py-1 !px-2 !text-[11px]"
+                        >
+                          {(g.kecuali || []).length > 0 ? `Ditahan ${(g.kecuali || []).length}` : 'Kelola siswa'}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
+          {plan.length > 0 && grupDibuka && (() => {
+            const g = plan.find((x) => x.key === grupDibuka);
+            if (!g) return null;
+            const kecualiMap = new Map((g.kecuali || []).map((k) => [k.id, k.alasan]));
+            const memberIds = [...new Set([...g.ids, ...(g.kecuali || []).map((k) => k.id)])];
+            return (
+              <div className="border border-indigo-200 rounded-xl p-3 space-y-2 bg-indigo-50/40">
+                <p className="text-[11px] font-bold text-slate-700">
+                  Siswa rombel {g.rombel} — tahan siswa yang dikecualikan (tetap Aktif di rombel lama, wajib alasan):
+                </p>
+                {memberIds.length === 0 && <p className="text-[11px] text-slate-500">Tidak ada siswa di rombel ini.</p>}
+                {memberIds.map((id) => {
+                  const s = aktif.find((x) => x.id === id);
+                  const ditahan = kecualiMap.has(id);
+                  return (
+                    <div key={id} className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">
+                      <span className="text-xs font-bold text-slate-900 flex-1 min-w-32">{s ? s.namaLengkap : id}</span>
+                      {ditahan ? (
+                        <input
+                          value={kecualiMap.get(id) || ''}
+                          onChange={(e) =>
+                            setPlan((prev) =>
+                              prev.map((x) =>
+                                x.key === g.key
+                                  ? { ...x, kecuali: (x.kecuali || []).map((k) => (k.id === id ? { ...k, alasan: e.target.value } : k)) }
+                                  : x
+                              )
+                            )
+                          }
+                          placeholder="Alasan ditahan *"
+                          className="ui-input !py-1 !text-[11px] flex-1 min-w-40"
+                        />
+                      ) : (
+                        <span className="text-[11px] text-slate-500">Direncanakan: {g.status}</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPlan((prev) =>
+                            prev.map((x) => {
+                              if (x.key !== g.key) return x;
+                              if (ditahan) {
+                                return { ...x, ids: [...x.ids, id], kecuali: (x.kecuali || []).filter((k) => k.id !== id) };
+                              }
+                              return { ...x, ids: x.ids.filter((i) => i !== id), kecuali: [...(x.kecuali || []), { id, alasan: '' }] };
+                            })
+                          )
+                        }
+                        className={`ui-btn !py-1 !px-2 !text-[11px] ${ditahan ? 'ui-btn-outline' : '!bg-rose-50 !text-rose-700 border !border-rose-300'}`}
+                      >
+                        {ditahan ? 'Kembalikan' : 'Tahan'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {plan.length > 0 && validasiPlan && (
+            <div className={`border rounded-xl p-3 text-[11px] space-y-1 ${validasiPlan.errors.length > 0 ? 'bg-rose-50 border-rose-300' : 'bg-emerald-50 border-emerald-200'}`}>
+              {validasiPlan.errors.length > 0 ? (
+                <>
+                  <p className="font-bold text-rose-800">Rencana belum dapat diterapkan ({validasiPlan.errors.length} masalah):</p>
+                  <ul className="list-disc pl-5 space-y-0.5 text-rose-800">
+                    {validasiPlan.errors.map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="font-bold text-emerald-800">
+                  Rencana valid — Lulus {validasiPlan.ringkasan.lulus} • Naik {validasiPlan.ringkasan.naik} • Tinggal {validasiPlan.ringkasan.tinggal}
+                  {validasiPlan.ringkasan.dikecualikan > 0 ? ` • Ditahan ${validasiPlan.ringkasan.dikecualikan}` : ''}.
+                </p>
+              )}
+              {validasiPlan.peringatan.map((w, i) => (
+                <p key={i} className="text-amber-800 font-semibold">⚠ {w}</p>
+              ))}
+            </div>
+          )}
+
           <div className="flex flex-wrap justify-end gap-2">
             <button type="button" onClick={() => setWizardOpen(false)} className="ui-btn ui-btn-ghost">
               Batal
             </button>
             <button
               type="button"
-              disabled={executing || busy || plan.length === 0 || planStale}
+              disabled={executing || busy || plan.length === 0 || planStale || (validasiPlan ? validasiPlan.errors.length > 0 : false)}
               onClick={() => void handleExecute()}
               className="ui-btn ui-btn-primary disabled:opacity-50"
             >
@@ -496,6 +645,22 @@ export const ArsipView: React.FC<ArsipViewProps> = ({
                         <LockOpen className="w-3.5 h-3.5" />
                       )}
                       Buka kunci
+                    </button>
+                  )}
+                  {isAdmin && onBatalkanPromosi && (
+                    <button
+                      type="button"
+                      disabled={rollbackId === t.tahunAjaran || busy}
+                      onClick={() => void handleBatalkanPromosi(t)}
+                      className="ui-btn ui-btn-outline !text-rose-700 !border-rose-300 hover:!bg-rose-50 !py-1.5 disabled:opacity-50"
+                      title="Kembalikan rombel & status hasil promosi tahun ini, lalu buka kuncinya"
+                    >
+                      {rollbackId === t.tahunAjaran ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <LockOpen className="w-3.5 h-3.5" />
+                      )}
+                      Batalkan promosi
                     </button>
                   )}
                 </div>
