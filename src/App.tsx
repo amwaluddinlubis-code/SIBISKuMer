@@ -106,6 +106,7 @@ const SchoolManagerModal = lazyView(() => import('./components/SchoolManagerModa
 const CetakKartuMassal = lazyView(() => import('./components/CetakKartuMassal'), 'CetakKartuMassal');
 const LaporanView = lazyView(() => import('./components/LaporanView'), 'LaporanView');
 const GeneratorDokumen = lazyView(() => import('./components/GeneratorDokumen'), 'GeneratorDokumen');
+const TemplateWordView = lazyView(() => import('./components/TemplateWordView'), 'TemplateWordView');
 const ImporSiswaView = lazyView(() => import('./components/ImporSiswaView'), 'ImporSiswaView');
 const KalenderTugasView = lazyView(() => import('./components/KalenderTugasView'), 'KalenderTugasView');
 import type { RencanaRombel } from './components/ArsipView';
@@ -140,6 +141,7 @@ const TAB_META: Record<string, { title: string; subtitle: string; accent: 'blue'
   laporan: { title: 'Pusat Laporan', subtitle: 'Laporan administratif siap cetak: statistik, daftar, mutasi, data belum lengkap & temuan validasi', accent: 'emerald', icon: FileText },
   cetak: { title: 'Pusat Cetak', subtitle: 'Lembar buku induk standar dinas & kartu pelajar', accent: 'slate', icon: Printer },
   dokumen: { title: 'Generator Dokumen', subtitle: 'Surat keterangan aktif, pindah, panggilan ortu & daftar rombel', accent: 'indigo', icon: FileText },
+  'template-word': { title: 'Template Word', subtitle: 'Unggah .docx jadi, isi placeholder, unduh surat', accent: 'emerald', icon: FileText },
   referensi: { title: 'Data Referensi', subtitle: 'Rombel, PTK & profil sekolah hasil sinkronisasi', accent: 'purple', icon: Layers },
   gtk: { title: 'Data GTK', subtitle: 'Guru & tendik hasil sinkronisasi Dapodik (getGtk/getPTK)', accent: 'indigo', icon: Contact },
   arsip: { title: 'Arsip', subtitle: 'Arsip tahun ajaran: potret terkunci per tahun + tutup tahun & promosi massal', accent: 'slate', icon: Archive },
@@ -2027,6 +2029,29 @@ export default function App() {
                       entitasId: info.entitasId || undefined,
                       ringkasan: audit.ringkasan,
                       detail: audit.detail,
+                    });
+                  }}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* View: Template Surat Word — hanya menerima visibleSiswa
+                (sudah terpotong hak rombel + sesi); tab terbuka untuk semua
+                peran seperti Generator Dokumen, unggah/hapus dikunci admin. */}
+            {activeTab === 'template-word' && (
+              <ErrorBoundary fallbackTitle="Template Word gagal dimuat">
+                <TemplateWordView
+                  siswa={visibleSiswa}
+                  sekolah={sekolah}
+                  currentUser={currentUser}
+                  onEkspor={(info) => {
+                    // Format ringkasan disamakan dengan auditEksporDokumen
+                    // (judul template + format + nomor; tanpa nama/NISN).
+                    catatAudit('dokumen_ekspor', {
+                      entitas: 'dokumen',
+                      entitasId: info.entitasId || undefined,
+                      ringkasan: `Dokumen "${info.judul}" diekspor (.docx)`,
+                      detail: `nomor: ${info.nomor || '-'}; jumlah: 1`,
                     });
                   }}
                 />

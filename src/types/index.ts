@@ -368,6 +368,39 @@ export interface KopSurat {
 /** ID template surat — definisi template lengkap di src/utils/suratDokumen.ts. */
 export type TemplateSuratId = 'keterangan-aktif' | 'pindah-keluar' | 'panggilan-ortu' | 'daftar-rombel';
 
+/** Sumber nilai satu placeholder template Word (fitur unggah .docx).
+ *  'siswa'/'sekolah'/'surat' = diambil dari data nyata (kunci = nama field);
+ *  'bebas' = diisi operator tiap kali memakai template (kunci = nama placeholder). */
+export type SumberPlaceholder = 'siswa' | 'sekolah' | 'surat' | 'bebas';
+
+export interface PemetaanPlaceholder {
+  sumber: SumberPlaceholder;
+  /** Nama field sumber (mis. 'namaLengkap'); untuk 'bebas' = nama placeholder itu sendiri. */
+  kunci: string;
+}
+
+/** Template surat Word yang diunggah operator (file .docx jadi).
+ *  Berkas disimpan sebagai base64 agar ikut tersimpan di IndexedDB/localStorage
+ *  dan ikut ter-backup; batas unggah 2 MB melindungi kuota localStorage. */
+export interface TemplateWord {
+  id: string;
+  nama: string;
+  deskripsi: string;
+  /** Butuh 1 siswa dipilih saat memakai template (placeholder siswa terisi). */
+  butuhSiswa: boolean;
+  /** Nomor surat wajib diisi operator saat memakai template. */
+  perluNomor: boolean;
+  /** Placeholder {{...}} yang terdeteksi di berkas, unik & terurut. */
+  placeholder: string[];
+  /** Pemetaan tiap placeholder ke sumber nilainya. */
+  pemetaan: Record<string, PemetaanPlaceholder>;
+  berkasNama: string;
+  berkasBase64: string;
+  ukuranBita: number;
+  dibuatOleh?: string;
+  dibuatPada: string;
+}
+
 export interface PenomoranTemplate {
   /** Pola nomor, placeholder {no} {no3} {bulan} {bulanRomawi} {tahun}. */
   pola: string;

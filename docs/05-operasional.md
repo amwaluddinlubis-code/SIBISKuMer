@@ -100,6 +100,8 @@ dibentengi adalah akun lain via server).
 | Impersonate (lihat sebagai peran lain) | ✅ semua peran non-admin | ❌ | ❌ | ❌ |
 | Asisten AI: ringkasan agregat temuan + penjelasan aturan | ✅ | ✅ | ✅ | ✅ |
 | Asisten AI: susun draf surat (selalu bisa diedit sebelum dipakai) | ✅ | ✅ | ✅ | ❌ (baca ringkasan saja) |
+| Template Word: unggah/hapus template .docx | ✅ | ❌ | ❌ | ❌ |
+| Template Word: pakai template (isi placeholder + unduh surat) | ✅ | ✅ rombel kewenangan | ✅ rombel yang ditugaskan | ✅ (ekspor, tidak mengubah data) |
 | Ganti password sendiri (dropdown topbar) | ✅ | ✅ | ✅ | ✅ |
 
 Cakupan rombel (`rombelAkses`, `canUserAccessRombel` / `rombelTerlihat`):
@@ -121,7 +123,7 @@ Keputusan yang didokumentasikan (permintaan eksplisit issue):
   mana pun; satu-satunya `ubah` yang lolos adalah tandai selesai tugas
   kalender yang ditugaskan kepadanya (berbasis username, bukan peran).
 - **Gate server menutup celah koleksi generik** yang ditemukan saat #12:
-  tulis `rombel`/`ptk`/`peta_kelas`/`tutup_tahun`/`sync_logs` hanya
+  tulis `rombel`/`ptk`/`peta_kelas`/`tutup_tahun`/`sync_logs`/`template_word` hanya
   administrator; hapus koleksi apa pun hanya administrator; baca
   `audit_logs` hanya administrator; ekspor backup penuh hanya administrator.
   Pengecualian yang didokumentasikan: tulis `audit_logs` dibuka untuk semua
@@ -245,7 +247,9 @@ Satu file backup JSON (`BackupPayload` v`1.3.0`) berisi **seluruh database
 sekolah aktif**: profil sekolah, siswa (termasuk foto `fotoUrl`/`fotoMini`
 yang tersimpan di record), nilai raport, riwayat, akun pengguna (password
 dalam bentuk hash), referensi rombel, PTK, tutup tahun, peta kelas, log
-sinkron, dan log audit (maks 500 entri terbaru). Sumber backup mengikuti
+sinkron, log audit (maks 500 entri terbaru), dan template surat Word yang
+diunggah (berkas base64 + pemetaan placeholder; restore gabung per id,
+backup menang bila id sama). Sumber backup mengikuti
 mode utama: pada **mode server**, isi berkas berasal dari basis data SQLite
 server (ekspor dirakit server; token Dapodik dikosongkan) dan server juga
 menyediakan cadangan berkas `.db` + snapshot (§1b); pada **mode lokal**,
@@ -458,6 +462,45 @@ akses). Alur kerja:
 Privasi: status penanganan temuan hanya menyimpan ID temuan + status +
 alasan di localStorage; tidak ada nama/NISN/NIK siswa di dalamnya, dan
 temuan tidak pernah ditulis ke log apa pun.
+
+## 4f. SOP Template Surat Word (unggah .docx)
+
+Tab `Template Word` (komponen `TemplateWordView.tsx`, mesin murni
+`src/utils/templateWord.ts`, pustaka `docxtemplater` + `pizzip` — keduanya
+MIT). Berbeda dari 4 template bawaan Generator Dokumen (isi surat ditulis
+di kode), di sini operator mengunggah dokumen Word yang sudah jadi, dan
+aplikasi hanya mengisi placeholder-nya.
+
+**Unggah template (khusus administrator).**
+1. Siapkan `.docx` di Word: kop, format, dan kalimat sudah ditata di
+   dokumen. Tulis placeholder dengan kurung ganda, mis. `{{nama}}`,
+   `{{nisn}}`, `{{nomor_surat}}`. Placeholder di isi, header, dan footer
+   ikut diproses; placeholder yang terpotong jadi beberapa potongan teks
+   (penyakit khas file Word) tetap terdeteksi dan terisi.
+2. Unggah (maks 2 MB — melindungi kuota localStorage karena berkas
+   disimpan base64). Aplikasi menampilkan placeholder yang terdeteksi;
+   atur sumber tiap placeholder: data siswa, data sekolah, data surat,
+   atau isian bebas operator. Tebakan otomatis disediakan untuk nama umum
+   (`nama` → nama lengkap, `nisn` → NISN, `nomor_surat` → nomor surat,
+   dan seterusnya); nama tak dikenal menjadi isian bebas.
+3. Tandai apakah template butuh 1 siswa dipilih dan apakah nomor surat
+   wajib. Simpan. Template ikut backup/restore (gabung per id).
+
+**Pakai template (semua peran, sebatas rombel kewenangan).**
+1. Pilih template → pilih siswa (bila template memakai data siswa) →
+   isi field isian bebas + nomor surat (bila wajib) + tanggal surat.
+   Nomor ditulis operator dari penomoran nyata — tidak pernah dikarang.
+2. Periksa tabel nilai tiap placeholder sebelum unduh. Nilai kosong tampil
+   sebagai `[BELUM DIISI]` (sama seperti template bawaan), tidak pernah
+   dibiarkan bolong diam-diam.
+3. Unduh `.docx` yang sudah terisi. Unduhan dicatat sebagai
+   `dokumen_ekspor` (ringkasan hanya nama template + format + nomor,
+   tanpa nama/NISN).
+
+**Batasan yang dinyatakan jujur di UI:** tidak ada pratinjau visual persis
+Word di browser — yang ditampilkan sebelum unduh adalah tabel nilai tiap
+placeholder; pemeriksaan tampilan akhir tetap di Word setelah diunduh.
+Template tanpa placeholder `{{...}}` ditolak saat unggah.
 
 ## 5. SOP Sinkron Dapodik
 

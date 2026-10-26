@@ -30,7 +30,7 @@ Relasi bersifat logis (tanpa foreign key DB): `RaportSemester.siswaId → Siswa.
 `RombelRef.nama ↔ Siswa.rombelSaatIni`, `RombelRef.waliKelas ↔ PtkRef.nama`
 (`getRombelBinaan`), `AppUser.rombelAkses[] ↔ Siswa.rombelSaatIni`.
 
-## 2. Store IndexedDB (`BukuInduk_Merdeka_DB`, versi 5)
+## 2. Store IndexedDB (`BukuInduk_Merdeka_DB`, versi 9)
 
 | Store | keyPath | Indeks | Isi |
 |-------|---------|--------|-----|
@@ -44,10 +44,10 @@ Relasi bersifat logis (tanpa foreign key DB): `RaportSemester.siswaId → Siswa.
 | `tutup_tahun` | `tahunAjaran` | — | `TutupTahunAjaran[]` (arsip terkunci per tahun) |
 | `peta_kelas` | `id` | `tahunAjaran`, `rombel` | `PetaKelas[]` (rombel resmi per tahun) |
 | `tenggat_tugas` (DB v8) | `id` | `tanggalJatuhTempo`, `status` | `TugasAdministrasi[]` (kalender tenggat) |
+| `template_word` (DB v9) | `id` | — | `TemplateWord[]` (template surat .docx yang diunggah: berkas base64 + placeholder + pemetaan; batas 2 MB) |
 
-> Catatan versi: judul §2 di atas masih menyebut "versi 5" (stale); store
-> `audit_logs` + `auto_backup` masuk di v7, `tenggat_tugas` di v8. Upgrade
-> IndexedDB menambah store baru tanpa menghapus store lama.
+> Riwayat versi: `audit_logs` + `auto_backup` masuk di v7, `tenggat_tugas`
+> di v8, `template_word` di v9. Upgrade IndexedDB menambah store baru tanpa menghapus store lama.
 
 Fallback: `localStorage` kunci `bukuinduk_*` (siswa, sekolah, config, logs, users, rombel,
 ptk, current_user, impersonate_from) + registry `bukuinduk_schools` /
