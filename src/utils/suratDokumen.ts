@@ -140,7 +140,36 @@ export const TEMPLATE_SURAT: Record<TemplateSuratId, TemplateSuratMeta> = {
   },
 };
 
+// Cara menambah template: tambah satu entri ke TEMPLATE_SURAT (judul,
+// deskripsi, field dengan kunci/label/wajib/tipe) — UI GeneratorDokumen
+// merender field dari metadata ini tanpa ubah komponen. Nomor tidak pernah
+// dikarang: pakai penomoran sekolah atau nomor manual operator.
 export const DAFTAR_TEMPLATE_SURAT: TemplateSuratMeta[] = Object.values(TEMPLATE_SURAT);
+
+/** Info ekspor dokumen untuk audit — TANPA data pribadi (tanpa nama/NISN). */
+export interface InfoEksporDokumen {
+  template: TemplateSuratId;
+  format: 'docx' | 'xlsx';
+  /** Jumlah dokumen/siswa yang diekspor (1 untuk surat per siswa). */
+  jumlah: number;
+  /** Nomor surat yang tercetak (bukan data pribadi). */
+  nomor: string;
+  /** ID internal untuk entitasId audit (ID siswa / `rombel:<nama>`). */
+  entitasId: string;
+}
+
+/**
+ * Bangun ringkasan/detail audit untuk ekspor dokumen. Hanya memakai judul
+ * template generik + nomor surat + jumlah — tidak pernah nama/NISN siswa.
+ */
+export function auditEksporDokumen(info: InfoEksporDokumen): { ringkasan: string; detail: string } {
+  const judul = TEMPLATE_SURAT[info.template]?.judul || info.template;
+  const ekstensi = info.format === 'docx' ? '.docx' : '.xlsx';
+  return {
+    ringkasan: `Dokumen "${judul}" diekspor (${ekstensi})`,
+    detail: `nomor: ${info.nomor || '-'}; jumlah: ${info.jumlah}`,
+  };
+}
 
 // ---------------- Penomoran ----------------
 

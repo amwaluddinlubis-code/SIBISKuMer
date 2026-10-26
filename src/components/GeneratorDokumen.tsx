@@ -29,6 +29,7 @@ import {
   unduhSuratWord,
   validasiSurat,
   type DokumenSurat,
+  type InfoEksporDokumen,
 } from '../utils/suratDokumen';
 import { toast } from '../utils/notify';
 
@@ -38,6 +39,8 @@ interface GeneratorDokumenProps {
   sekolah: SekolahProfile;
   currentUser: AppUser | null;
   onUpdateSekolah: (profile: SekolahProfile) => void;
+  /** Dipanggil setelah ekspor berhasil — App memakainya untuk audit log. */
+  onEkspor?: (info: InfoEksporDokumen) => void;
 }
 
 function hariIni(): string {
@@ -62,7 +65,7 @@ function teksDenganTanda(teks: string): React.ReactNode {
   );
 }
 
-export const GeneratorDokumen: React.FC<GeneratorDokumenProps> = ({ siswa, sekolah, currentUser, onUpdateSekolah }) => {
+export const GeneratorDokumen: React.FC<GeneratorDokumenProps> = ({ siswa, sekolah, currentUser, onUpdateSekolah, onEkspor }) => {
   const isAdmin = currentUser?.role === 'administrator';
 
   const [templateId, setTemplateId] = useState<TemplateSuratId>('keterangan-aktif');
@@ -175,6 +178,7 @@ export const GeneratorDokumen: React.FC<GeneratorDokumenProps> = ({ siswa, sekol
     setExporting('word');
     try {
       await unduhSuratWord(dok, sekolah);
+      onEkspor?.({ template: templateId, format: 'docx', jumlah: 1, nomor: nomorPratinjau, entitasId: siswaDipilih?.id || '' });
       toast(`Dokumen "${dok.judul}" diunduh (.docx).`, 'success');
     } catch (err: unknown) {
       toast(`Gagal mengekspor: ${err instanceof Error ? err.message : String(err)}`, 'error');
@@ -191,6 +195,7 @@ export const GeneratorDokumen: React.FC<GeneratorDokumenProps> = ({ siswa, sekol
     setExporting('excel');
     try {
       await unduhDaftarRombelExcel(dok, sekolah, rombel);
+      onEkspor?.({ template: templateId, format: 'xlsx', jumlah: daftarRombel.length, nomor: nomorPratinjau, entitasId: `rombel:${rombel}` });
       toast(`Daftar siswa rombel ${rombel} diunduh (.xlsx).`, 'success');
     } catch (err: unknown) {
       toast(`Gagal mengekspor: ${err instanceof Error ? err.message : String(err)}`, 'error');
