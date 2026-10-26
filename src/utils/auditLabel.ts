@@ -45,6 +45,7 @@ export const AKSI_LABEL: Record<AuditAksi, string> = {
   tenggat_selesai: 'Tenggat diselesaikan',
   tenggat_hapus: 'Tenggat dihapus',
   pengingat_kirim: 'Pengingat disampaikan',
+  ai_gunakan: 'Asisten AI digunakan',
 };
 
 /** Label aksi; fallback merapikan snake_case menjadi kalimat terbaca. */

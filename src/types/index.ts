@@ -729,7 +729,8 @@ export type AuditAksi =
   | 'tenggat_ubah'
   | 'tenggat_selesai'
   | 'tenggat_hapus'
-  | 'pengingat_kirim';
+  | 'pengingat_kirim'
+  | 'ai_gunakan';
 
 export interface AuditLog {
   id: string;

@@ -43,7 +43,8 @@ export type SumberAkses =
   | 'profil'
   | 'config'
   | 'kalender'
-  | 'dapodik';
+  | 'dapodik'
+  | 'asisten';
 
 export const PERAN_LABEL: Record<UserRole, string> = {
   administrator: 'Administrator',
@@ -79,6 +80,7 @@ export const IZIN_PERAN: Record<UserRole, Record<SumberAkses, AksiAkses[]>> = {
     config: [...SEMUA_AKSI],
     kalender: [...SEMUA_AKSI],
     dapodik: [...SEMUA_AKSI],
+    asisten: [...SEMUA_AKSI],
   },
   operator: {
     siswa: ['baca', 'tambah', 'ubah', 'hapus', 'ekspor'],
@@ -97,6 +99,7 @@ export const IZIN_PERAN: Record<UserRole, Record<SumberAkses, AksiAkses[]>> = {
     config: ['baca', 'ubah'],
     kalender: ['baca', 'ubah'],
     dapodik: [],
+    asisten: ['baca', 'tambah', 'ekspor'],
   },
   wali_kelas: {
     siswa: ['baca', 'tambah', 'ubah', 'hapus', 'ekspor'],
@@ -115,6 +118,7 @@ export const IZIN_PERAN: Record<UserRole, Record<SumberAkses, AksiAkses[]>> = {
     config: ['baca'],
     kalender: ['baca', 'ubah'],
     dapodik: [],
+    asisten: ['baca', 'tambah', 'ekspor'],
   },
   pimpinan: {
     siswa: ['baca', 'ekspor'],
@@ -133,6 +137,7 @@ export const IZIN_PERAN: Record<UserRole, Record<SumberAkses, AksiAkses[]>> = {
     config: ['baca'],
     kalender: ['baca', 'ubah'],
     dapodik: [],
+    asisten: ['baca'],
   },
 };
 

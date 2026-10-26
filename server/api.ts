@@ -66,6 +66,13 @@ import {
   BACKUP_FORMAT_VERSION,
 } from '../src/utils/backupIntegrity';
 import { defaultDapodikConfig } from '../src/data/initialData';
+import { polesDenganProvider } from './ai';
+import {
+  redaksiTeks,
+  susunNarasiRingkasan,
+  susunDrafSurat,
+} from '../src/utils/asistenAi';
+import { TEMPLATE_SURAT } from '../src/utils/suratDokumen';
 
 const COOKIE_SESI = 'sibis_sesi';
 
@@ -706,6 +713,112 @@ export function buatRouterV1(): Router {
     }
     const hitungan = tulisPayloadBackup(req.sesi!.sekolahId, payload);
     kirimOk(res, { terimpor: true, hitungan, integritas: integritas.status });
+  });
+
+  // ---------- Asisten AI (Issue #13) ----------
+  // PRIVASI: endpoint ini TIDAK PERNAH menyimpan/mencatat prompt atau keluaran.
+  // Jalur eksternal hanya menerima data agregat / draf teredaksi; field
+  // identitas ditolak (400) dan nilai isian disensor ulang sebelum kirim.
+  // Keluaran TIDAK PERNAH disimpan ke database — klien menampilkannya sebagai
+  // draf yang wajib ditinjau operator. Gagal provider apa pun → fallback lokal.
+  r.post('/ai/generate', perluSesi, async (req: ReqBersesi, res) => {
+    const body: any = req.body || {};
+    const mode = body.mode;
+    if (mode !== 'ringkasan' && mode !== 'draf') {
+      return kirimGagal(res, 400, 'Mode tidak dikenal (ringkasan/draf).');
+    }
+    if (mode === 'draf' && !bolehTulis(req.user)) {
+      return kirimGagal(res, 403, 'Peran Anda hanya dapat membaca data.');
+    }
+
+    if (mode === 'ringkasan') {
+      const a: any = body.agregat;
+      const valid =
+        a && typeof a === 'object' &&
+        typeof a.totalTemuan === 'number' &&
+        typeof a.totalSiswaTerdampak === 'number' &&
+        a.perKategori && typeof a.perKategori === 'object' &&
+        a.perPrioritas && typeof a.perPrioritas === 'object' &&
+        Array.isArray(a.aturanTeratas) && Array.isArray(a.saran);
+      if (!valid) return kirimGagal(res, 400, 'Agregat tidak lengkap.');
+      // Bangun ulang dari field yang dikenal saja — kunci selundupan dibuang.
+      const bersih: any = {
+        totalTemuan: a.totalTemuan,
+        totalSiswaTerdampak: a.totalSiswaTerdampak,
+        perKategori: Object.fromEntries(
+          Object.entries(a.perKategori).filter(([, v]) => typeof v === 'number')
+        ),
+        perPrioritas: Object.fromEntries(
+          Object.entries(a.perPrioritas).filter(([, v]) => typeof v === 'number')
+        ),
+        aturanTeratas: a.aturanTeratas.slice(0, 5).map((x: any) => ({
+          aturanId: String(x?.aturanId || ''),
+          judul: String(x?.judul || ''),
+          kategori: String(x?.kategori || ''),
+          prioritas: String(x?.prioritas || ''),
+          jumlah: Number(x?.jumlah || 0),
+        })),
+        saran: a.saran.filter((s: any) => typeof s === 'string').slice(0, 10),
+      };
+      const narasiLokal = susunNarasiRingkasan(bersih);
+      const hasil = await polesDenganProvider(
+        `Buat narasi ringkas (maks 5 kalimat) dari data agregat kelengkapan data berikut. ` +
+          `Jangan menyebut nama/identitas — data ini sudah agregat. Data: ${JSON.stringify(bersih)}`
+      );
+      if ('teks' in hasil) return kirimOk(res, { teks: hasil.teks, sumber: 'eksternal' });
+      return kirimOk(res, {
+        teks: narasiLokal,
+        sumber: 'lokal',
+        peringatan: `Provider eksternal tidak dipakai (${hasil.pesan}) — narasi lokal dipakai.`,
+      });
+    }
+
+    // Mode draf: hanya field template + nama + nomorSurat yang diteruskan;
+    // kunci identitas lain ditolak mentah-mentah.
+    const templateId = body.templateId;
+    const template: any = (TEMPLATE_SURAT as any)[templateId];
+    if (!template) return kirimGagal(res, 400, `Template surat tidak dikenal: ${templateId}.`);
+    const isianMentah: any = body.isian || {};
+    const kunciDilarang = ['nisn', 'nik', 'telepon', 'nohp', 'hp', 'alamat', 'email', 'nokk', 'nipd'];
+    if (Object.keys(isianMentah).some((k) => kunciDilarang.includes(k.toLowerCase()))) {
+      return kirimGagal(res, 400, 'Isian mengandung field identitas — jalur ini hanya menerima field template.');
+    }
+    const isianBersih: Record<string, string> = {};
+    for (const f of template.field as Array<{ kunci: string }>) {
+      if (typeof isianMentah[f.kunci] === 'string') isianBersih[f.kunci] = isianMentah[f.kunci];
+    }
+    if (typeof isianMentah.nama === 'string') isianBersih.nama = isianMentah.nama;
+    if (typeof isianMentah.nomorSurat === 'string') isianBersih.nomorSurat = isianMentah.nomorSurat;
+    const namaSekolah =
+      typeof body.namaSekolah === 'string' ? redaksiTeks(body.namaSekolah).slice(0, 120) : 'Sekolah';
+    const tanggalISO = /^\d{4}-\d{2}-\d{2}$/.test(body.tanggalISO || '')
+      ? body.tanggalISO
+      : new Date().toISOString().slice(0, 10);
+    let drafLokal: string;
+    try {
+      drafLokal = susunDrafSurat(templateId, isianBersih, namaSekolah, tanggalISO);
+    } catch (e: any) {
+      return kirimGagal(res, 400, e?.message || 'Draf tidak dapat disusun.');
+    }
+    // Versi eksternal: nama diganti placeholder + seluruh teks disensor ulang.
+    const isianEksternal = { ...isianBersih, nama: '[NAMA]' };
+    let drafEksternal = drafLokal;
+    try {
+      drafEksternal = redaksiTeks(susunDrafSurat(templateId, isianEksternal, namaSekolah, tanggalISO));
+    } catch {
+      drafEksternal = redaksiTeks(drafLokal);
+    }
+    const hasil = await polesDenganProvider(
+      'Susun ulang draf surat berikut dengan bahasa administrasi yang rapi. ' +
+        'Jangan mengubah fakta, jangan menambah nomor surat/peraturan/nama, jangan mengarang apa pun. Draf:\n' +
+        drafEksternal
+    );
+    if ('teks' in hasil) return kirimOk(res, { teks: hasil.teks, sumber: 'eksternal' });
+    return kirimOk(res, {
+      teks: drafLokal,
+      sumber: 'lokal',
+      peringatan: `Provider eksternal tidak dipakai (${hasil.pesan}) — draf lokal dipakai.`,
+    });
   });
 
   return r;
