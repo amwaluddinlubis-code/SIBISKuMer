@@ -7,8 +7,10 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SekolahProfile, Siswa } from '../src/types';
 import {
+  auditEksporDokumen,
   bangunDokumenSurat,
   bulanRomawi,
+  DAFTAR_TEMPLATE_SURAT,
   defaultPenomoran,
   formatNomorSurat,
   getPenomoran,
@@ -326,5 +328,35 @@ describe('bangunDokumenSurat', () => {
     assert.equal(dok.tabel?.baris.find((r) => r[0] === 'Nama Lengkap')?.[1], namaPanjang);
     assert.ok(dok.paragraf[0].includes(keperluanPanjang));
     assert.ok(dok.paragraf[0].length >= keperluanPanjang.length);
+  });
+});
+
+describe('audit ekspor dokumen (Issue #4 — perbaikan pencatatan)', () => {
+  test('docx surat per siswa: judul template + ekstensi + nomor + jumlah 1', () => {
+    const audit = auditEksporDokumen({ template: 'keterangan-aktif', format: 'docx', jumlah: 1, nomor: '421/100/X/2026', entitasId: 's-1' });
+    assert.equal(audit.ringkasan, 'Dokumen "Surat Keterangan Siswa Aktif" diekspor (.docx)');
+    assert.equal(audit.detail, 'nomor: 421/100/X/2026; jumlah: 1');
+  });
+
+  test('xlsx daftar rombel: jumlah siswa + nomor tercantum', () => {
+    const audit = auditEksporDokumen({ template: 'daftar-rombel', format: 'xlsx', jumlah: 28, nomor: '421/101/X/2026', entitasId: 'rombel:7A' });
+    assert.equal(audit.ringkasan, 'Dokumen "Daftar Siswa per Kelas / Rombel" diekspor (.xlsx)');
+    assert.equal(audit.detail, 'nomor: 421/101/X/2026; jumlah: 28');
+  });
+
+  test('semua template memakai judul generik, bukan ID mentah', () => {
+    for (const meta of DAFTAR_TEMPLATE_SURAT) {
+      const audit = auditEksporDokumen({ template: meta.id, format: 'docx', jumlah: 1, nomor: 'N', entitasId: '' });
+      assert.ok(audit.ringkasan.includes(`"${meta.judul}"`), meta.id);
+    }
+  });
+
+  test('keluaran audit tidak memuat data pribadi apa pun', () => {
+    // Helper tidak menerima nama/NISN sama sekali; kunci ini mengunci kontrak:
+    // JSON keluaran tidak boleh mengandung field nama/nisn/nik/telepon.
+    const audit = auditEksporDokumen({ template: 'panggilan-ortu', format: 'docx', jumlah: 1, nomor: '421/102/X/2026', entitasId: 's-9' });
+    const json = JSON.stringify(audit);
+    assert.ok(!/nama|nisn|nik|telepon|alamat/i.test(json));
+    assert.ok(!json.includes('Budi') && !json.includes('0123456789'));
   });
 });

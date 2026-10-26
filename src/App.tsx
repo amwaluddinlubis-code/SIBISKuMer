@@ -123,6 +123,7 @@ import { SchoolSwitcher } from './components/SchoolSwitcher';
 import { TopProgressBar } from './components/TopProgressBar';
 import { startTopProgress, doneTopProgress } from './utils/progress';
 import { catatAudit, diffAudit } from './utils/audit';
+import { auditEksporDokumen } from './utils/suratDokumen';
 import { catatHapusCloud } from './utils/tombstone';
 import { centangAutoBackup } from './utils/autoBackup';
 import { hitungJumlahPengingatAktif, hitungPengingat, tugasTerlihat } from './utils/kalender';
@@ -2019,6 +2020,15 @@ export default function App() {
                   sekolah={sekolah}
                   currentUser={currentUser}
                   onUpdateSekolah={handleUpdateSekolah}
+                  onEkspor={(info) => {
+                    const audit = auditEksporDokumen(info);
+                    catatAudit('dokumen_ekspor', {
+                      entitas: 'dokumen',
+                      entitasId: info.entitasId || undefined,
+                      ringkasan: audit.ringkasan,
+                      detail: audit.detail,
+                    });
+                  }}
                 />
               </ErrorBoundary>
             )}
