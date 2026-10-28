@@ -11,7 +11,7 @@ import {
   singkatanMapel,
 } from '../utils/raportUtils';
 import { PageControl } from './PageControl';
-import { opsiTahunMaksSesi } from '../utils/sesi';
+import { labelSesi, opsiTahunMaksSesi } from '../utils/sesi';
 import { toast } from '../utils/notify';
 import { unduhExcel } from '../utils/excel';
 
@@ -245,6 +245,11 @@ export const LegerNilaiView: React.FC<LegerNilaiViewProps> = ({
       </div>
 
       <div className="ui-card p-4 flex flex-wrap gap-2 items-end print:hidden">
+        <div className="w-full">
+          <span className="font-mono font-extrabold text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+            {labelSesi(sessionTahun, sekolah.tahunAjaran)}
+          </span>
+        </div>
         <div>
           <label className="ui-label">Tahun Ajaran</label>
           <select value={tahun} onChange={(e) => setTahun(e.target.value)} className="ui-select !w-auto" aria-label="Tahun ajaran">

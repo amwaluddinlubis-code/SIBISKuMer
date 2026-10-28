@@ -4,6 +4,7 @@ import { Siswa, DapodikSyncLog, JenjangSekolah } from '../types';
 import { getTingkatOptions, getRaportList } from '../utils/raportUtils';
 import { getTingkatAktifSiswa } from '../utils/db';
 import { statusBackupTerakhir, type StatusBackupTerakhir } from '../utils/autoBackup';
+import { labelSesi } from '../utils/sesi';
 import { useSiswaLayar } from '../hooks/useSiswaLayar';
 import {
   KondisiDrillDown,
@@ -229,18 +230,13 @@ export const DashboardStats: React.FC<DashboardStatsProps> = ({
         </div>
       )}
     </div>
-    {sessionTahun && (
       <p className="mb-2 text-[11px] text-slate-500">
         Sesi data:{' '}
         <strong className="font-mono text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-          TA {sessionTahun}
+          {labelSesi(sessionTahun, tahunAktif)}
         </strong>
-        {tahunAktif && sessionTahun.trim() !== tahunAktif.trim() && (
-          <span className="ml-1.5 text-slate-400">(tahun aktif database: {tahunAktif})</span>
-        )}
         <span className="ml-1.5">• roster lingkup sekolah, {total} siswa dalam kewenangan Anda</span>
       </p>
-    )}
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       {/* Card 1: Total Siswa — hero navy, dipadatkan. Klik -> daftar sumber. */}
       <button

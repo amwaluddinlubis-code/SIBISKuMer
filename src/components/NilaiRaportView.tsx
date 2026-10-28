@@ -50,7 +50,7 @@ import {
 import { saveSiswaRaport, deleteSiswaRaport, promoteSiswaKenaikanKelas, getTahunAjaranTerakhirSiswa, tahunAjaranSebelumnya, getSiswaById, saveSiswa } from '../utils/db';
 import { tahunBerikutnya } from '../utils/arsip';
 import { canUserAccessTahun } from '../utils/tahunAjaran';
-import { opsiTahunMaksSesi, tahanMaksSesi } from '../utils/sesi';
+import { labelSesi, opsiTahunMaksSesi, tahanMaksSesi } from '../utils/sesi';
 import { PageControl } from './PageControl';
 import { KopSuratView } from './KopSuratView';
 import { GtkAutocomplete } from './GtkAutocomplete';
@@ -715,7 +715,7 @@ export const NilaiRaportView: React.FC<NilaiRaportViewProps> = ({
             </span>
             {sessionTahun && (
               <span className={`ml-2 px-2 py-0.5 rounded font-mono font-bold ${selectedTahun === sessionTahun ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                Sesi {sessionTahun}{selectedTahun !== sessionTahun ? ` • lihat ${selectedTahun}` : ''}
+                {labelSesi(sessionTahun, sekolah.tahunAjaran)}{selectedTahun !== sessionTahun ? ` • lihat ${selectedTahun}` : ''}
               </span>
             )}
           </div>

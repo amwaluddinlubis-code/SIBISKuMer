@@ -20,7 +20,7 @@ import { savePetaKelas, deletePetaKelas, savePetaKelasList, saveSiswa, saveSiswa
 import { catatHapusCloud } from '../utils/tombstone';
 import { catatAudit, diffAudit } from '../utils/audit';
 import { getTingkatOptions, getTingkatDariRombel, getRaportList } from '../utils/raportUtils';
-import { cekTulisTahun, opsiTahunMaksSesi } from '../utils/sesi';
+import { cekTulisTahun, labelSesi, opsiTahunMaksSesi, tahunSesiEfektif } from '../utils/sesi';
 import { canUserAccessTahun } from '../utils/tahunAjaran';
 import { GtkAutocomplete } from './GtkAutocomplete';
 import { toast, confirmDialog } from '../utils/notify';
@@ -160,7 +160,7 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
     for (const p of peta || []) if (p.tahunAjaran) set.add(p.tahunAjaran);
     return opsiTahunMaksSesi([...set].sort().reverse(), sesiEfektif);
   }, [peta, sekolah.tahunAjaran, sesiEfektif]);
-  const [tahunAktif, setTahunAktif] = useState(
+  const [tahunLihat, setTahunLihat] = useState(
     (sessionTahun || '').trim() || sekolah.tahunAjaran || tahunList[0] || '2026/2027'
   );
   const [tahunBaru, setTahunBaru] = useState('');
@@ -184,7 +184,7 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
   const [tambahCari, setTambahCari] = useState('');
   const [savingAnggota, setSavingAnggota] = useState(false);
 
-  const efektif = tahunList.includes(tahunAktif) ? tahunAktif : tahunList[0] || tahunAktif;
+  const efektif = tahunList.includes(tahunLihat) ? tahunLihat : tahunList[0] || tahunLihat;
   const baris = useMemo(
     () =>
       (peta || [])
@@ -198,11 +198,11 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
   // (tepat pada sesi aktif) + cutoff tampilan ke atas.
   useEffect(() => {
     const s = (sessionTahun || '').trim();
-    if (s) setTahunAktif(s);
+    if (s) setTahunLihat(s);
   }, [sessionTahun]);
   useEffect(() => {
-    if (sesiEfektif && tahunAktif !== sesiEfektif && tahunAktif > sesiEfektif) {
-      setTahunAktif(tahunList[0] || sesiEfektif);
+    if (sesiEfektif && tahunLihat !== sesiEfektif && tahunLihat > sesiEfektif) {
+      setTahunLihat(tahunList[0] || sesiEfektif);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sesiEfektif]);
@@ -370,7 +370,7 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
         sesudah: { jumlah: items.length, tahunAjaran: tujuan },
       });
       toast(`${items.length} rombel disalin ke ${tujuan}.`, 'success');
-      setTahunAktif(tujuan);
+      setTahunLihat(tujuan);
       setTahunBaru('');
       onDataChanged();
     } catch (err: unknown) {
@@ -619,7 +619,7 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
         .filter((t) => rencanaMundur.baru.some((b) => b.tahun === t))
         .sort()
         .shift();
-      if (tertua) setTahunAktif(tertua);
+      if (tertua) setTahunLihat(tertua);
       setMundurOpen(false);
       onDataChanged();
     } catch (err: unknown) {
@@ -710,9 +710,9 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
     [baris]
   );
 
-  /** Tahun aktif sekolah — baris tahun lain = arsip (anggota via anggotaIds). */
-  const tahunAktifSekolah = (sekolah.tahunAjaran || sessionTahun || '').trim();
-  const modeArsip = !!entriTerpilih && !!tahunAktifSekolah && entriTerpilih.tahunAjaran !== tahunAktifSekolah;
+  /** Acuan arsip = tahun sesi efektif — baris tahun lain = arsip (anggota via anggotaIds). */
+  const tahunAcuanSesi = tahunSesiEfektif(sessionTahun, sekolah.tahunAjaran);
+  const modeArsip = !!entriTerpilih && !!tahunAcuanSesi && entriTerpilih.tahunAjaran !== tahunAcuanSesi;
 
   /** Anggota arsip: resolve anggotaIds ke data siswa (boleh non-aktif). */
   const anggotaArsip = useMemo(() => {
@@ -955,17 +955,15 @@ export const PemetaanKelasView: React.FC<PemetaanKelasViewProps> = ({
             <CalendarRange className="w-4 h-4 text-blue-700" />
             Tahun Ajaran
           </span>
-          {sessionTahun && (
             <span className="text-[11px] font-mono font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-              Sesi {sessionTahun}
+              {labelSesi(sessionTahun, sekolah.tahunAjaran)}
             </span>
-          )}
           <div className="flex flex-wrap gap-1.5">
             {tahunList.map((t) => (
               <button
                 key={t}
                 type="button"
-                onClick={() => setTahunAktif(t)}
+                onClick={() => setTahunLihat(t)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition cursor-pointer ${
                   t === efektif ? 'bg-navy-900 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}

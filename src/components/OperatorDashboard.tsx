@@ -19,7 +19,7 @@ import {
   FileWarning,
 } from 'lucide-react';
 import { Siswa, SekolahProfile, DapodikSyncLog, AppUser, RombelRef } from '../types';
-import { tahunSesiEfektif } from '../utils/sesi';
+import { labelSesi, tahunSesiEfektif } from '../utils/sesi';
 import { statusBackupTerakhir } from '../utils/autoBackup';
 import { useSiswaLayar } from '../hooks/useSiswaLayar';
 import {
@@ -103,7 +103,7 @@ export const OperatorDashboard: React.FC<OperatorDashboardProps> = ({
   // S2 migrasi SQLite: mode server membaca daftar dari API (saklar modeData).
   const siswa = useSiswaLayar('dasbor', siswaProp);
   // Fondasi sesi: antrean raport selalu merujuk tahun sesi, bukan tahun profil.
-  const tahunAktif = tahunSesiEfektif(sessionTahun, sekolah.tahunAjaran) || '2026/2027';
+  const tahunSesi = tahunSesiEfektif(sessionTahun, sekolah.tahunAjaran) || '2026/2027';
   const sesiBedaAktif = !!sessionTahun && !!sekolah.tahunAjaran && sessionTahun.trim() !== sekolah.tahunAjaran.trim();
   const semesterAktif = activeSemester(sekolah);
 
@@ -115,8 +115,8 @@ export const OperatorDashboard: React.FC<OperatorDashboardProps> = ({
 
   const ringkasan = useMemo(() => hitungRingkasan(siswa), [siswa]);
   const tugas = useMemo(
-    () => hitungTugas(siswa, { tahunAktif, semesterAktif }),
-    [siswa, tahunAktif, semesterAktif]
+    () => hitungTugas(siswa, { tahunAktif: tahunSesi, semesterAktif }),
+    [siswa, tahunSesi, semesterAktif]
   );
   const arus = useMemo(
     () => hitungArus(siswa, arusDari, arusSampai),
@@ -148,10 +148,10 @@ export const OperatorDashboard: React.FC<OperatorDashboardProps> = ({
         hariSejakBackup,
         raportBelum: raportTugas?.jumlah ?? 0,
         raportTotal: (siswa || []).filter((s) => s.statusSiswa === 'Aktif').length,
-        tahunAktif,
+        tahunAktif: tahunSesi,
         semesterAktif,
       }),
-    [hariSejakBackup, raportTugas?.jumlah, siswa, tahunAktif, semesterAktif]
+    [hariSejakBackup, raportTugas?.jumlah, siswa, tahunSesi, semesterAktif]
   );
 
   const perRombel = useMemo(() => {
@@ -164,7 +164,7 @@ export const OperatorDashboard: React.FC<OperatorDashboardProps> = ({
     return [...map.entries()]
       .map(([nama, list]) => {
         const lengkap = list.filter((s) => !dataWajibKosong(s)).length;
-        const raportOk = list.filter((s) => !raportBelum(s, tahunAktif, semesterAktif)).length;
+        const raportOk = list.filter((s) => !raportBelum(s, tahunSesi, semesterAktif)).length;
         const wali = rombelRefs.find((r) => (r.nama || '').trim().toUpperCase() === nama.trim().toUpperCase())?.waliKelas;
         return {
           nama,
@@ -176,7 +176,7 @@ export const OperatorDashboard: React.FC<OperatorDashboardProps> = ({
         };
       })
       .sort((a, b) => a.nama.localeCompare(b.nama));
-  }, [siswa, rombelRefs, tahunAktif, semesterAktif]);
+  }, [siswa, rombelRefs, tahunSesi, semesterAktif]);
 
   const rombelFilterOptions = useMemo(() => {
     const set = new Set<string>();
@@ -188,9 +188,9 @@ export const OperatorDashboard: React.FC<OperatorDashboardProps> = ({
   const tahunFilterOptions = useMemo(() => {
     const set = new Set<string>();
     for (const t of tahunOptions || []) if (t) set.add(t);
-    if (tahunAktif) set.add(tahunAktif);
+    if (tahunSesi) set.add(tahunSesi);
     return [...set].sort().reverse();
-  }, [tahunOptions, tahunAktif]);
+  }, [tahunOptions, tahunSesi]);
 
   const filterAktif =
     filter.tahun !== 'all' || filter.rombel !== 'all' || filter.status !== 'all';
@@ -228,7 +228,7 @@ export const OperatorDashboard: React.FC<OperatorDashboardProps> = ({
           </p>
           <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
             <span className="px-2.5 py-1 rounded-lg bg-amber-400/20 border border-amber-300/40 font-mono font-bold text-amber-100">
-              Sesi {tahunAktif}{sesiBedaAktif ? ` (aktif ${sekolah.tahunAjaran})` : ''} • Semester {semesterAktif}
+              {labelSesi(sessionTahun, sekolah.tahunAjaran)} • Semester {semesterAktif}{sesiBedaAktif ? ' (semester aktif profil)' : ''}
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-white/10 border border-white/15 font-semibold">
               {lastSync ? `Sinkron terakhir: ${new Date(lastSync.timestamp).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}` : 'Belum pernah sinkron'}
@@ -241,7 +241,7 @@ export const OperatorDashboard: React.FC<OperatorDashboardProps> = ({
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
         {([
           { id: 'siswa', label: 'Tambah Siswa', desc: 'Entri baru', icon: <Plus className="w-4 h-4" />, onClick: onAddSiswa },
-          { id: 'raport', label: 'Input Raport', desc: `Sem ${semesterAktif} • ${tahunAktif}`, icon: <Award className="w-4 h-4" />, onClick: () => onNavigate('raport') },
+          { id: 'raport', label: 'Input Raport', desc: `Sem ${semesterAktif} • ${tahunSesi}`, icon: <Award className="w-4 h-4" />, onClick: () => onNavigate('raport') },
           { id: 'cetak', label: 'Cetak Dokumen', desc: 'Induk & kartu', icon: <Printer className="w-4 h-4" />, onClick: () => onNavigate('cetak') },
           { id: 'gtk', label: 'Data GTK', desc: `${gtkCount} GTK`, icon: <Contact className="w-4 h-4" />, onClick: () => onNavigate('gtk') },
           ...(isAdmin

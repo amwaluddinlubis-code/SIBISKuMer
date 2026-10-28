@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { RombelRef, PtkRef, SekolahProfile, Siswa } from '../types';
 import { GtkView } from './GtkView';
+import { labelSesi } from '../utils/sesi';
 
 interface ReferensiViewProps {
   rombel: RombelRef[];
@@ -153,11 +154,9 @@ export const ReferensiView: React.FC<ReferensiViewProps> = ({
       {subTab === 'rombel' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="flex flex-wrap items-center gap-2 px-4 pt-3 pb-1 print:hidden">
-            {sesi && (
-              <span className="text-[11px] font-mono font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                Sesi TA {sesi}
-              </span>
-            )}
+            <span className="text-[11px] font-mono font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+              {labelSesi(sessionTahun, sekolah.tahunAjaran)}
+            </span>
             <select
               value={filterTahunRombel}
               onChange={(e) => setFilterTahunRombel(e.target.value)}

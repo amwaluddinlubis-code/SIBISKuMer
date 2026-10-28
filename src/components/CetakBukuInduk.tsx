@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Printer, Download, ArrowLeft, CreditCard, FileText, Award, BookOpen, Calendar, CheckCircle2, Eye, X } from 'lucide-react';
 import { Siswa, SekolahProfile } from '../types';
 import { getFaseKurikulum, getRaportList, getNilaiList, hitungRataRataNilai } from '../utils/raportUtils';
-import { tahanMaksSesi } from '../utils/sesi';
+import { labelSesi, tahanMaksSesi } from '../utils/sesi';
 import { formatAlamatLengkap } from '../utils/format';
 import { KopSuratView } from './KopSuratView';
 import { KartuPelajar, TemplateKartu, TEMPLATE_KARTU } from './KartuPelajar';
@@ -884,11 +884,9 @@ export const CetakBukuInduk: React.FC<CetakBukuIndukProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {sessionTahun && (
-            <span className="hidden sm:inline-block text-[11px] font-mono font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-              Sesi {sessionTahun}
-            </span>
-          )}
+          <span className="hidden sm:inline-block text-[11px] font-mono font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+            {labelSesi(sessionTahun, sekolah.tahunAjaran)}
+          </span>
           {printMode === 'raport' && raportList.length > 0 && (
             <select
               value={selectedSemesterId}
