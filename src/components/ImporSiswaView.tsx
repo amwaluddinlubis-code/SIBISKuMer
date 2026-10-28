@@ -25,6 +25,7 @@ import { unduhExcel } from '../utils/excel';
 import { catatAudit } from '../utils/audit';
 import { bolehTulis } from '../utils/akses';
 import { jalankanAutoBackup } from '../utils/autoBackup';
+import { labelSesi } from '../utils/sesi';
 import {
   saveSiswaBulk,
   canUserAccessRombel,
@@ -64,6 +65,8 @@ interface ImporSiswaViewProps {
   siswa: Siswa[];
   currentUser: AppUser | null;
   sekolah: SekolahProfile;
+  /** Tahun ajaran sesi login — untuk chip label sesi di header modal. */
+  sessionTahun?: string | null;
   onDataChanged: () => void | Promise<void>;
   onClose: () => void;
 }
@@ -106,6 +109,7 @@ export const ImporSiswaView: React.FC<ImporSiswaViewProps> = ({
   siswa,
   currentUser,
   sekolah,
+  sessionTahun,
   onDataChanged,
   onClose,
 }) => {
@@ -365,6 +369,9 @@ export const ImporSiswaView: React.FC<ImporSiswaViewProps> = ({
             <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
             Impor Siswa dari Excel / CSV
           </h2>
+          <span className="text-[11px] font-mono font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+            {labelSesi(sessionTahun, sekolah.tahunAjaran)}
+          </span>
           <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500" aria-label="Tutup">
             <X className="w-5 h-5" />
           </button>

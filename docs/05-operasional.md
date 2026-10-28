@@ -428,6 +428,13 @@ project sesuai `firebase-applet-config.json`):**
 4. Siswa baru manual selalu dikonfirmasi masuk TA sesi (riwayat awal = sesi).
 5. Sinkron Dapodik: Terapkan diblokir bila sesi di bawah tahun aktif database
    (preview & tes koneksi tetap boleh). Pindah sesi tercatat di Log Audit.
+6. Label sesi baku: setiap panel memakai `labelSesi()` (Sesi TA x bila sesi =
+   tahun aktif database; Sesi TA x (aktif: y) bila beda; TA y bila tidak ada
+   sesi; "-") lewat chip di header panel — jangan menulis label sendiri.
+   Siswa baru dari impor tetap netral tahun (tanpa riwayat tahun, terlihat di
+   semua sesi); konfirmasi masuk TA sesi hanya untuk siswa baru manual
+   (aturan 4). Acuan mode arsip Pemetaan Kelas = tahun sesi efektif, bukan
+   tahun aktif database saja.
 
 ## 4e. SOP Pemeriksa Data (Issue #3)
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { BarChart3, Printer, Users, Award, MapPin, Compass, ShieldCheck } from 'lucide-react';
 import { Siswa, SekolahProfile } from '../types';
 import { getFaseKurikulum, getTingkatOptions } from '../utils/raportUtils';
-import { rombelPadaTahun, siswaTerlibatTahun } from '../utils/sesi';
+import { labelSesi, rombelPadaTahun, siswaTerlibatTahun } from '../utils/sesi';
 import { KopSuratView } from './KopSuratView';
 import { unduhExcel } from '../utils/excel';
 import { toast } from '../utils/notify';
@@ -198,11 +198,9 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
           </h2>
           <p className="text-xs text-slate-500">
             Laporan statistik berkala per semester untuk Dinas Pendidikan & Akreditasi Sekolah
-            {sesi && (
-              <span className="ml-1.5 font-mono font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                Sesi TA {sesi}
-              </span>
-            )}
+            <span className="ml-1.5 font-mono font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+              {labelSesi(sessionTahun, sekolah.tahunAjaran)}
+            </span>
             <span className="ml-1.5 text-slate-400">• kohort {total} siswa</span>
           </p>
         </div>
@@ -243,7 +241,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
             LAPORAN REKAPITULASI BUKU INDUK SISWA
           </h3>
           <p className="text-xs text-slate-600">
-            Tahun Ajaran {sesi || sekolah.tahunAjaran} Semester {sekolah.semesterAktif}
+            Tahun Ajaran {sesi || sekolah.tahunAjaran} Semester {sekolah.semesterAktif}{sessionTahun && sekolah.tahunAjaran && sessionTahun.trim() !== sekolah.tahunAjaran.trim() ? ' (semester aktif profil)' : ''}
             {sessionTahun && sekolah.tahunAjaran && sessionTahun.trim() !== sekolah.tahunAjaran.trim() && (
               <span className="text-amber-700"> (sesi login; aktif database {sekolah.tahunAjaran})</span>
             )}

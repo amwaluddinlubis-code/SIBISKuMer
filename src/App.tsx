@@ -2334,6 +2334,7 @@ export default function App() {
           siswa={siswaList}
           currentUser={currentUser}
           sekolah={sekolah}
+          sessionTahun={sessionTahun}
           onDataChanged={loadData}
           onClose={() => setImporSiswaOpen(false)}
         />

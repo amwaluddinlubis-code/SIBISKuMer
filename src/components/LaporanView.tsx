@@ -21,6 +21,7 @@ import {
 } from '../utils/laporan';
 import { unduhExcel } from '../utils/excel';
 import { toast } from '../utils/notify';
+import { labelSesi } from '../utils/sesi';
 import { KopSuratView } from './KopSuratView';
 import { MetaLaporanView } from './MetaLaporanView';
 import { PageControl } from './PageControl';
@@ -38,10 +39,10 @@ interface LaporanViewProps {
 const STATUS_OPSI: Array<'semua' | StatusSiswa> = ['semua', 'Aktif', 'Lulus', 'Mutasi Keluar', 'Mengundurkan Diri', 'Meninggal Dunia'];
 
 export const LaporanView: React.FC<LaporanViewProps> = ({ siswa, sekolah, sessionTahun, currentUser, onEkspor }) => {
-  const tahunAktif = sekolah.tahunAjaran || '';
+  const tahunAktifDatabase = sekolah.tahunAjaran || '';
   const [filter, setFilter] = useState<FilterLaporan>(() => ({
     jenis: 'statistik',
-    tahunAjaran: (sessionTahun || tahunAktif || '').trim() || 'semua',
+    tahunAjaran: (sessionTahun || tahunAktifDatabase || '').trim() || 'semua',
     rombel: 'semua',
     status: 'Aktif',
   }));
@@ -51,10 +52,10 @@ export const LaporanView: React.FC<LaporanViewProps> = ({ siswa, sekolah, sessio
   // bersama oleh pratinjau, cetak, Excel, dan CSV (satu cap waktu).
   const [dibuatPada, setDibuatPada] = useState(() => new Date());
 
-  const tahunOpsi = useMemo(() => daftarTahunLaporan(siswa, tahunAktif), [siswa, tahunAktif]);
+  const tahunOpsi = useMemo(() => daftarTahunLaporan(siswa, tahunAktifDatabase), [siswa, tahunAktifDatabase]);
   const rombelOpsi = useMemo(
-    () => daftarRombelLaporan(siswa, tahunFilter(filter), tahunAktif),
-    [siswa, filter, tahunAktif]
+    () => daftarRombelLaporan(siswa, tahunFilter(filter), tahunAktifDatabase),
+    [siswa, filter, tahunAktifDatabase]
   );
 
   // Reset rombel bila tidak tersedia pada tahun yang dipilih; segarkan
@@ -67,12 +68,12 @@ export const LaporanView: React.FC<LaporanViewProps> = ({ siswa, sekolah, sessio
   }, [filter.jenis, filter.tahunAjaran, filter.status]);
 
   const tersaring = useMemo(
-    () => saringLaporan(siswa, filter, { tahunAktif, rombelAkses: currentUser?.rombelAkses }),
-    [siswa, filter, tahunAktif, currentUser?.rombelAkses]
+    () => saringLaporan(siswa, filter, { tahunAktif: tahunAktifDatabase, rombelAkses: currentUser?.rombelAkses }),
+    [siswa, filter, tahunAktifDatabase, currentUser?.rombelAkses]
   );
   const ctx = useMemo(
-    () => ({ tahun: tahunFilter(filter), tahunAktif, semuaSiswa: siswa }),
-    [filter, tahunAktif, siswa]
+    () => ({ tahun: tahunFilter(filter), tahunAktif: tahunAktifDatabase, semuaSiswa: siswa }),
+    [filter, tahunAktifDatabase, siswa]
   );
   const stat = useMemo(
     () => (filter.jenis === 'statistik' ? bangunStatistik(tersaring, ctx) : null),
@@ -214,6 +215,11 @@ export const LaporanView: React.FC<LaporanViewProps> = ({ siswa, sekolah, sessio
             Laporan administratif siap cetak: pratinjau dulu, lalu cetak atau ekspor. Isi laporan selalu sama
             dengan pratinjau untuk filter yang sama. PDF dibuat lewat dialog cetak browser (Cetak → Save as PDF) —
             aplikasi tidak memiliki generator PDF native.
+          </p>
+          <p className="text-[11px]">
+            <span className="font-mono font-extrabold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+              {labelSesi(sessionTahun, tahunAktifDatabase)}
+            </span>
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
