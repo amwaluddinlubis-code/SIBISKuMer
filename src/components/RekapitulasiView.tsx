@@ -7,6 +7,7 @@ import { KopSuratView } from './KopSuratView';
 import { unduhExcel } from '../utils/excel';
 import { toast } from '../utils/notify';
 import { barisMetaEkspor, keCsv, metaLaporan } from '../utils/laporan';
+import { rekapPerTingkat } from '../utils/rekapTingkat';
 import { MetaLaporanView } from './MetaLaporanView';
 
 interface RekapitulasiViewProps {
@@ -49,6 +50,9 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
     rombelMap[r].total++;
   });
   const rombelList = Object.entries(rombelMap).sort((a, b) => a[0].localeCompare(b[0]));
+
+  // 1b. Gabungan per tingkat (dari rekap rombel di atas)
+  const tingkatList = rekapPerTingkat(rombelList);
 
   // 2. Group by Agama
   const agamaMap: Record<string, number> = {};
@@ -123,6 +127,11 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
         ['Rombel', 'Laki-laki (L)', 'Perempuan (P)', 'JK Belum Diisi (X)', 'Jumlah Total', 'Keterangan Fase'],
         ...rombelList.map(([rombel, c]) => [`Rombel ${rombel}`, c.L, c.P, c.X, c.total, faseOfRombel(rombel)]),
         ['TOTAL KESELURUHAN', rombelList.reduce((a, c) => a + c[1].L, 0), rombelList.reduce((a, c) => a + c[1].P, 0), rombelList.reduce((a, c) => a + c[1].X, 0), total, '100% Terdaftar'],
+        [],
+        ['REKAP PER TINGKAT'],
+        ['Tingkat', 'Jumlah Rombel', 'Laki-laki (L)', 'Perempuan (P)', 'JK Belum Diisi (X)', 'Jumlah Total'],
+        ...tingkatList.map((b) => [b.tingkat ? `Tingkat ${b.tingkat}` : 'Belum Ada Rombel', b.jumlahRombel, b.L, b.P, b.X, b.total]),
+        ['TOTAL KESELURUHAN', tingkatList.reduce((a, b) => a + b.jumlahRombel, 0), tingkatList.reduce((a, b) => a + b.L, 0), tingkatList.reduce((a, b) => a + b.P, 0), tingkatList.reduce((a, b) => a + b.X, 0), total],
       ];
       const blob = new Blob([keCsv(isi)], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -152,6 +161,20 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
         ...rombelList.map(([rombel, c]) => [`Rombel ${rombel}`, c.L, c.P, c.X, c.total, faseOfRombel(rombel)]),
         ['TOTAL KESELURUHAN', rombelList.reduce((a, c) => a + c[1].L, 0), rombelList.reduce((a, c) => a + c[1].P, 0), rombelList.reduce((a, c) => a + c[1].X, 0), total, '100% Terdaftar'],
       ];
+      const sheetTingkat = [
+        ...metaBaris,
+        ['Tingkat', 'Jumlah Rombel', 'Laki-laki (L)', 'Perempuan (P)', 'JK Belum Diisi (X)', 'Jumlah Total', 'Keterangan Fase'],
+        ...tingkatList.map((b) => [
+          b.tingkat ? `Tingkat ${b.tingkat}` : 'Belum Ada Rombel',
+          b.jumlahRombel,
+          b.L,
+          b.P,
+          b.X,
+          b.total,
+          b.tingkat ? `${getFaseKurikulum(b.tingkat as '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9')} (Tingkat ${b.tingkat})` : '-',
+        ]),
+        ['TOTAL KESELURUHAN', tingkatList.reduce((a, b) => a + b.jumlahRombel, 0), tingkatList.reduce((a, b) => a + b.L, 0), tingkatList.reduce((a, b) => a + b.P, 0), tingkatList.reduce((a, b) => a + b.X, 0), total, '100% Terdaftar'],
+      ];
       const sheetAgama = [
         ...metaBaris,
         ['Agama', 'Jumlah', 'Persentase'],
@@ -177,11 +200,12 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
       ];
       await unduhExcel(`Rekap_${(sesi || sekolah.tahunAjaran || '').replace('/', '-')}_${sekolah.nama || jenjang}`, [
         { nama: 'Rombel', baris: sheetRombel },
+        { nama: 'Per Tingkat', baris: sheetTingkat },
         { nama: 'Agama', baris: sheetAgama },
         { nama: 'Jalur PPDB', baris: sheetJalur },
         { nama: 'P5', baris: sheetP5 },
       ]);
-      toast(`Rekapitulasi ${total} siswa diekspor ke Excel (4 sheet).`, 'success');
+      toast(`Rekapitulasi ${total} siswa diekspor ke Excel (5 sheet).`, 'success');
     } catch (err: unknown) {
       toast(`Gagal mengekspor Excel: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
@@ -218,7 +242,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
         <button
           onClick={() => void handleExportExcel()}
           className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl text-xs shadow-sm transition"
-          title="Ekspor rekap ke Excel (.xlsx, 4 sheet)"
+          title="Ekspor rekap ke Excel (.xlsx, 5 sheet)"
         >
           <BarChart3 className="w-4 h-4" />
           Ekspor Excel
@@ -301,13 +325,64 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
           </div>
         </div>
 
-        {/* 2. Grid: Agama & Jalur Masuk */}
+        {/* 2. Rekapitulasi per Tingkat */}
+        <div className="space-y-2">
+          <h4 className="font-bold text-xs uppercase tracking-wide text-blue-950 flex items-center gap-1.5">
+            <Users className="w-4 h-4 text-blue-700" />
+            2. Rekapitulasi Berdasarkan Tingkat
+          </h4>
+          <div className="overflow-x-auto border border-slate-200 rounded-lg">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-700 uppercase font-semibold text-[10px] border-b border-slate-200">
+                <tr>
+                  <th className="p-2.5">Tingkat</th>
+                  <th className="p-2.5 text-center">Jumlah Rombel</th>
+                  <th className="p-2.5 text-center">Laki-laki (L)</th>
+                  <th className="p-2.5 text-center">Perempuan (P)</th>
+                  <th className="p-2.5 text-center">JK Belum Diisi</th>
+                  <th className="p-2.5 text-center">Jumlah Total</th>
+                  <th className="p-2.5">Keterangan Fase</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {tingkatList.map((b) => (
+                  <tr key={b.tingkat ?? 'tanpa-tingkat'} className="hover:bg-slate-50">
+                    <td className="p-2.5 font-bold text-slate-900">
+                      {b.tingkat ? `Tingkat ${b.tingkat}` : 'Belum Ada Rombel'}
+                    </td>
+                    <td className="p-2.5 text-center text-slate-700">{b.jumlahRombel}</td>
+                    <td className="p-2.5 text-center text-blue-700 font-semibold">{b.L}</td>
+                    <td className="p-2.5 text-center text-rose-700 font-semibold">{b.P}</td>
+                    <td className="p-2.5 text-center text-amber-700 font-semibold">{b.X}</td>
+                    <td className="p-2.5 text-center font-bold text-slate-900">{b.total}</td>
+                    <td className="p-2.5 text-slate-500 text-[11px]">
+                      {b.tingkat
+                        ? `${getFaseKurikulum(b.tingkat as '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9')} (Tingkat ${b.tingkat})`
+                        : '-'}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="bg-slate-100 font-black text-slate-900">
+                  <td className="p-2.5 uppercase">TOTAL KESELURUHAN</td>
+                  <td className="p-2.5 text-center">{tingkatList.reduce((a, b) => a + b.jumlahRombel, 0)}</td>
+                  <td className="p-2.5 text-center text-blue-900">{tingkatList.reduce((a, b) => a + b.L, 0)}</td>
+                  <td className="p-2.5 text-center text-rose-900">{tingkatList.reduce((a, b) => a + b.P, 0)}</td>
+                  <td className="p-2.5 text-center text-amber-900">{tingkatList.reduce((a, b) => a + b.X, 0)}</td>
+                  <td className="p-2.5 text-center text-slate-900">{total}</td>
+                  <td className="p-2.5 text-[11px] text-slate-600">100% Terdaftar</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* 3. Grid: Agama & Jalur Masuk */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           {/* Agama */}
           <div className="border border-slate-200 rounded-lg p-4 space-y-2">
             <h4 className="font-bold text-xs uppercase tracking-wide text-slate-900 flex items-center gap-1.5">
               <Compass className="w-4 h-4 text-emerald-700" />
-              2. Rekapitulasi Agama Siswa
+              3. Rekapitulasi Agama Siswa
             </h4>
             <div className="space-y-1.5 text-xs">
               {Object.entries(agamaMap).map(([ag, count]) => {
@@ -329,7 +404,7 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
           <div className="border border-slate-200 rounded-lg p-4 space-y-2">
             <h4 className="font-bold text-xs uppercase tracking-wide text-slate-900 flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-indigo-700" />
-              3. Rekapitulasi Jalur Penerimaan (PPDB)
+              4. Rekapitulasi Jalur Penerimaan (PPDB)
             </h4>
             <div className="space-y-1.5 text-xs">
               {Object.entries(jalurMap).map(([j, count]) => {
@@ -348,11 +423,11 @@ export const RekapitulasiView: React.FC<RekapitulasiViewProps> = ({ siswa, sekol
           </div>
         </div>
 
-        {/* 3. Capaian Profil Pelajar Pancasila (P5) */}
+        {/* 5. Capaian Profil Pelajar Pancasila (P5) */}
         <div className="border border-slate-200 rounded-lg p-4 space-y-3">
           <h4 className="font-bold text-xs uppercase tracking-wide text-slate-900 flex items-center gap-1.5">
             <Award className="w-4 h-4 text-amber-600" />
-            4. Distribusi Capaian Dimensi Profil Pelajar Pancasila (P5 Kurikulum Merdeka)
+            5. Distribusi Capaian Dimensi Profil Pelajar Pancasila (P5 Kurikulum Merdeka)
           </h4>
           <p className="text-[11px] text-slate-500">
             Penilaian perkembangan 6 dimensi karakter siswa dalam pelaksanaan projek penguatan profil pelajar pancasila tingkat {jenjang}.

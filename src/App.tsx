@@ -137,7 +137,7 @@ const TAB_META: Record<string, { title: string; subtitle: string; accent: 'blue'
   raport: { title: 'Nilai Raport', subtitle: 'Input nilai Kurikulum Merdeka + promosi kenaikan multi-tahun', accent: 'indigo', icon: Award },
   leger: { title: 'Leger Nilai', subtitle: 'Rekap gabungan nilai per mapel + peringkat per rombel', accent: 'indigo', icon: Table },
   dapodik: { title: 'Sinkron Dapodik', subtitle: 'Tarik peserta didik & profil sekolah dari Web Service lokal', accent: 'amber', icon: RefreshCw },
-  rekap: { title: 'Rekapitulasi', subtitle: 'Statistik rombel, agama, PPDB & capaian P5 untuk dinas', accent: 'emerald', icon: BarChart3 },
+  rekap: { title: 'Rekapitulasi', subtitle: 'Statistik rombel, tingkat, agama, PPDB & capaian P5 untuk dinas', accent: 'emerald', icon: BarChart3 },
   laporan: { title: 'Pusat Laporan', subtitle: 'Laporan administratif siap cetak: statistik, daftar, mutasi, data belum lengkap & temuan validasi', accent: 'emerald', icon: FileText },
   cetak: { title: 'Pusat Cetak', subtitle: 'Lembar buku induk standar dinas & kartu pelajar', accent: 'slate', icon: Printer },
   dokumen: { title: 'Generator Dokumen', subtitle: 'Surat keterangan aktif, pindah, panggilan ortu & daftar rombel', accent: 'indigo', icon: FileText },
