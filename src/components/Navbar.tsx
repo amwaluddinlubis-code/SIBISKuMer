@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Users,
   RefreshCw,
@@ -202,6 +202,67 @@ export const Navbar: React.FC<NavbarProps> = ({
           </span>
         )}
       </button>
+    );
+  };
+
+  // ===== Navigasi parent-child (penyederhanaan navbar) =====
+  // Menu utama dikelompokkan ke induk–anak (akordeon: satu grup terbuka
+  // pada satu waktu). Grup yang memuat tab aktif terbuka otomatis dan
+  // induknya tersorot. Mode ringkas (iconOnly) tetap rel ikon datar.
+  type ItemNav = (typeof mainItems)[number];
+  interface GrupNav {
+    id: string;
+    label: string;
+    icon: React.ElementType;
+    anak: ItemNav[];
+  }
+  const cariItem = (id: string): ItemNav => mainItems.find((i) => i.id === id) as ItemNav;
+  const grupItems: GrupNav[] = [
+    { id: 'kesiswaan', label: 'Kesiswaan', icon: Users, anak: [cariItem('siswa'), cariItem('pemeriksa'), cariItem('arsip')] },
+    { id: 'penilaian', label: 'Penilaian & Rekap', icon: Award, anak: [cariItem('raport'), cariItem('leger'), cariItem('rekap')] },
+    { id: 'dokumen', label: 'Dokumen & Cetak', icon: Printer, anak: [cariItem('laporan'), cariItem('dokumen'), cariItem('template-word'), cariItem('cetak')] },
+    { id: 'gtk-referensi', label: 'GTK & Referensi', icon: Contact, anak: [cariItem('gtk'), cariItem('referensi')] },
+  ];
+  const grupDariTab = (tab: string): string | null =>
+    grupItems.find((g) => g.anak.some((a) => a.id === tab))?.id ?? null;
+
+  const [grupTerbuka, setGrupTerbuka] = useState<string | null>(() => grupDariTab(activeTab));
+  useEffect(() => {
+    const g = grupDariTab(activeTab);
+    if (g) setGrupTerbuka(g);
+    // grupDariTab diturunkan dari mainItems (prop) — cukup dipicu activeTab.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const renderGrup = (grup: GrupNav) => {
+    const terbuka = grupTerbuka === grup.id;
+    const adaAktif = grup.anak.some((a) => a.id === activeTab);
+    const Icon = grup.icon;
+    return (
+      <div key={grup.id}>
+        <button
+          type="button"
+          onClick={() => setGrupTerbuka(terbuka ? null : grup.id)}
+          aria-expanded={terbuka}
+          className={`relative w-full flex items-center gap-3 pl-3 pr-3 py-2.5 text-sm font-semibold rounded transition-all cursor-pointer overflow-hidden ${
+            adaAktif ? 'text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'
+          }`}
+        >
+          {adaAktif && (
+            <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-7 rounded-r-full bg-gold-400" />
+          )}
+          <Icon className={`w-[18px] h-[18px] shrink-0 ${adaAktif ? 'text-gold-300' : 'text-slate-400'}`} />
+          <span className="flex-1 text-left truncate">{grup.label}</span>
+          <ChevronDown
+            className={`w-4 h-4 shrink-0 text-slate-400 transition-transform duration-200 ${terbuka ? 'rotate-180' : ''}`}
+          />
+        </button>
+        {terbuka && (
+          <div className="ml-[21px] mt-1 space-y-1 border-l border-white/10 pl-2">
+            {grup.anak.map((item) => renderNavButton(item))}
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -448,7 +509,16 @@ export const Navbar: React.FC<NavbarProps> = ({
             Menu Utama
           </p>
         )}
-        {mainItems.map((item) => renderNavButton(item, iconOnly))}
+        {iconOnly ? (
+          mainItems.map((item) => renderNavButton(item, true))
+        ) : (
+          <>
+            {renderNavButton(cariItem('dasbor'))}
+            {grupItems.map((grup) => renderGrup(grup))}
+            {renderNavButton(cariItem('asisten'))}
+            {renderNavButton(cariItem('kalender'))}
+          </>
+        )}
       </nav>
 
       {/* Bottom: user mini-card + PWA */}
