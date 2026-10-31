@@ -239,6 +239,33 @@ Tab **Dasbor** menampilkan angka dari data nyata dalam kewenangan Anda
   langsung mengubah status). "Mutasi keluar tanpa surat" adalah tindak
   lanjut dokumen, bukan antrean persetujuan.
 
+### 3c. Login Authenticator (2FA TOTP) — mode server
+
+- **Sifatnya per akun & sukarela**: aktifkan dari menu akun (avatar kanan
+  atas) → "Login Authenticator (2FA)". Hanya berlaku pada mode server
+  (bawaan aplikasi desktop); diverifikasi server, bukan peramban.
+- **Pendaftaran**: panel menampilkan secret base32 — masukkan manual ke
+  Google/Microsoft Authenticator (nama akun = username, jenis kode
+  "berbasis waktu"), lalu masukkan kode 6 digit yang tampil untuk
+  mengaktifkan. Sesudah aktif, panel menampilkan **10 kode pemulihan
+  sekali pakai — simpan/cetak saat itu juga** (tidak ditampilkan lagi;
+  server hanya menyimpan hash-nya).
+- **Masuk**: kata sandi benar → aplikasi meminta kode 6 digit (berganti
+  tiap 30 detik; toleransi ±1 jendela untuk selisih jam wajar) atau satu
+  kode pemulihan. 5x kode salah membatalkan percobaan dan ikut mengunci
+  akun seperti kunci kata sandi (15 menit).
+- **HP hilang & kode pemulihan habis**: administrator mereset dari
+  Manajemen Pengguna (tombol perisai pada baris pengguna ber-2FA aktif).
+  Sesudah direset akun masuk hanya dengan kata sandi — daftarkan ulang
+  secepatnya.
+- **Jam komputer harus wajar**: kode berbasis waktu; PC yang jamnya
+  meleset jauh akan menolak kode yang benar.
+- **Batasan**: keadaan "menunggu kode" hidup di memori server (5 menit) —
+  restart server di tengah langkah kedua cukup diatasi dengan masuk
+  ulang. Secret tersimpan pada catatan pengguna di basis data sekolah dan
+  IKUT di dalam berkas backup (bersama hash kata sandi) agar pemulihan
+  mempertahankan 2FA — perlakukan berkas backup sebagai rahasia.
+
 ## 4. SOP Backup & Restore
 
 ### 4.0 Cakupan data yang dicadangkan (tegas)

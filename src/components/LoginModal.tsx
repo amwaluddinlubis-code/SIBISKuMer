@@ -8,7 +8,7 @@ import { catatAudit } from '../utils/audit';
 import { getDaftarTahunAjaran, getTahunDiizinkan } from '../utils/tahunAjaran';
 import { toast } from '../utils/notify';
 import { adaLayarServer, pakaiServer } from '../utils/modeData';
-import { loginKeServer, masukServer, gantiSandiServer } from '../utils/dataApi';
+import { loginKeServer, masukServer, gantiSandiServer, verifikasiTotpServer } from '../utils/dataApi';
 import { initialUsersList } from '../data/initialData';
 
 interface LoginModalProps {
@@ -56,6 +56,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [verifiedUser, setVerifiedUser] = useState<AppUser | null>(null);
   // Wajib ganti kata sandi bawaan sebelum masuk (S1)
   const [wajibGanti, setWajibGanti] = useState<AppUser | null>(null);
+  // Langkah Authenticator (2FA mode server): kata sandi sudah benar,
+  // menunggu kode sebelum sesi diterbitkan server.
+  const [menungguTotp, setMenungguTotp] = useState<string | null>(null);
+  const [kodeTotp, setKodeTotp] = useState('');
   const [passBaru, setPassBaru] = useState('');
   const [passBaru2, setPassBaru2] = useState('');
   const [daftarTA, setDaftarTA] = useState<string[]>([]);
@@ -151,26 +155,57 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   /** Jalur login MODE SERVER PENUH (Fase S3): server adalah otoritas —
    *  verifikasi, kunci login, dan ganti sandi paksa semuanya di server.
    *  Tidak ada verifikasi lokal dan tidak ada fallback diam-diam. */
+  /** Kelanjutan sesudah sesi server PENUH terbit (dipakai login biasa &
+   *  sesudah verifikasi Authenticator): ganti sandi paksa atau pilih TA. */
+  const selesaikanLoginServer = (hasil: { user: any; mustChangePassword?: boolean }) => {
+    const userServer = hasil.user as AppUser;
+    if (hasil.mustChangePassword) {
+      // Sesi server sudah terbuka; form ganti sandi memakai endpoint
+      // ganti-sandi (cabang server di handleGantiPasswordBawaan).
+      setWajibGanti({ ...userServer, password: '' });
+      setPassBaru('');
+      setPassBaru2('');
+      return;
+    }
+    void masukKePilihTahun(userServer);
+  };
+
   const loginViaServer = async (cleanUser: string, cleanPass: string) => {
     setIsLoading(true);
     try {
       const hasil = await masukServer(cleanUser, cleanPass);
-      const userServer = hasil.user as AppUser;
-      if (hasil.mustChangePassword) {
-        // Sesi server sudah terbuka; form ganti sandi memakai endpoint
-        // ganti-sandi (cabang server di handleGantiPasswordBawaan).
-        setWajibGanti({ ...userServer, password: '' });
-        setPassBaru('');
-        setPassBaru2('');
-        setIsLoading(false);
+      setIsLoading(false);
+      if (hasil.perluTotp) {
+        // Kata sandi benar; server menahan sesi sampai kode diverifikasi.
+        setMenungguTotp(cleanUser);
+        setKodeTotp('');
+        setError(null);
         return;
       }
-      setIsLoading(false);
-      void masukKePilihTahun(userServer);
+      selesaikanLoginServer(hasil);
     } catch (e: any) {
       setIsLoading(false);
       setError(e?.message || 'Tidak dapat masuk melalui server. Periksa koneksi server aplikasi.');
       toast('Gagal masuk (mode server).', 'error');
+    }
+  };
+
+  /** Langkah kedua login Authenticator: kirim kode 6 digit dari aplikasi
+   *  authenticator (atau satu kode pemulihan) ke server. */
+  const handleVerifikasiTotp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!kodeTotp.trim() || isLoading) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const hasil = await verifikasiTotpServer(kodeTotp.trim());
+      setIsLoading(false);
+      setMenungguTotp(null);
+      setKodeTotp('');
+      selesaikanLoginServer(hasil);
+    } catch (err: any) {
+      setIsLoading(false);
+      setError(err?.message || 'Kode Authenticator tidak cocok.');
     }
   };
 
@@ -473,6 +508,46 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               </div>
               <button type="submit" disabled={isLoading} className="ui-btn-primary w-full">
                 {isLoading ? 'Menyimpan…' : 'Simpan & Lanjutkan Masuk'}
+              </button>
+            </form>
+          ) : menungguTotp ? (
+            <form onSubmit={handleVerifikasiTotp} className="space-y-3.5">
+              <div className="flex items-center gap-2.5 p-3 bg-sky-50 border border-sky-200 rounded-xl">
+                <span className="w-8 h-8 rounded-lg bg-sky-600 text-white flex items-center justify-center shrink-0">
+                  <Shield className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-slate-900">Verifikasi Authenticator</p>
+                  <p className="text-[11px] text-slate-500">
+                    Kata sandi @{menungguTotp} benar. Masukkan kode 6 digit dari aplikasi
+                    Authenticator Anda (berganti tiap 30 detik), atau satu kode pemulihan
+                    bila HP tidak tersedia.
+                  </p>
+                </div>
+              </div>
+              <div>
+                <label className="ui-label" htmlFor="login-kode-totp">Kode Authenticator</label>
+                <input
+                  id="login-kode-totp"
+                  type="text"
+                  inputMode="text"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  className="ui-input mt-1 text-center font-mono text-lg tracking-[0.3em]"
+                  value={kodeTotp}
+                  onChange={(e) => setKodeTotp(e.target.value)}
+                  placeholder="000000"
+                />
+              </div>
+              <button type="submit" disabled={isLoading || !kodeTotp.trim()} className="ui-btn-primary w-full">
+                {isLoading ? 'Memverifikasi…' : 'Verifikasi & Masuk'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMenungguTotp(null); setKodeTotp(''); setError(null); }}
+                className="w-full text-center text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+              >
+                Kembali ke formulir masuk
               </button>
             </form>
           ) : step === 'tahun' ? (

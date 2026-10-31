@@ -59,6 +59,9 @@ export interface HasilMasukServer {
   mustChangePassword: boolean;
   /** True bila basis data server masih benih awal (gerbang migrasi S4). */
   benihAwal?: boolean;
+  /** True bila kata sandi benar tetapi akun memakai Authenticator (2FA):
+   *  sesi BELUM terbit — lanjutkan dengan verifikasiTotpServer(). */
+  perluTotp?: boolean;
 }
 
 /** Masuk ke server dan kembalikan sesi + user. Melempar Error berpesan
@@ -201,6 +204,37 @@ export async function imporKeServer(payload: unknown): Promise<any> {
 
 export async function gantiSandiServer(passwordBaru: string): Promise<any> {
   return panggil('POST', '/auth/ganti-sandi', { passwordBaru });
+}
+
+// ---------------- Login Authenticator (2FA TOTP, mode server) ----------------
+
+/** Langkah kedua login: kode 6 digit dari aplikasi authenticator atau
+ *  satu kode pemulihan. Sukses menerbitkan cookie sesi penuh dan
+ *  mengembalikan bentuk yang sama seperti masukServer(). */
+export async function verifikasiTotpServer(kode: string): Promise<HasilMasukServer> {
+  return panggil<HasilMasukServer>('POST', '/auth/verifikasi-totp', { kode });
+}
+
+/** Mulai pendaftaran Authenticator untuk sesi sendiri: menerima secret
+ *  base32 + URL otpauth untuk dimasukkan ke aplikasi authenticator. */
+export async function mulaiTotpServer(): Promise<{ secret: string; url: string }> {
+  return panggil('POST', '/auth/totp/mulai', {});
+}
+
+/** Aktifkan Authenticator dengan satu kode dari aplikasi; mengembalikan
+ *  kode pemulihan (hanya tampil sekali ini). */
+export async function aktifkanTotpServer(kode: string): Promise<{ kodePemulihan: string[]; user: any }> {
+  return panggil('POST', '/auth/totp/aktifkan', { kode });
+}
+
+/** Nonaktifkan Authenticator sesi sendiri (wajib kode yang sah). */
+export async function nonaktifkanTotpServer(kode: string): Promise<any> {
+  return panggil('POST', '/auth/totp/nonaktifkan', { kode });
+}
+
+/** Reset Authenticator pengguna lain (admin; kasus HP hilang). */
+export async function resetTotpPenggunaServer(userId: string): Promise<any> {
+  return panggil('POST', `/data/users/${seg(userId)}/reset-totp`, {});
 }
 
 export async function ambilSesiServer(): Promise<any> {

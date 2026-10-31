@@ -39,6 +39,23 @@ ditolak; pesan gagal generik (anti-enumerasi). Semua endpoint selain
 (`userPublik`). `benihAwal` pada respons login/sesi = basis data masih benih
 awal (lihat `03-model-data.md` §2b).
 
+**Login Authenticator (2FA TOTP, RFC 6238).** Bila akun mengaktifkan
+Authenticator, `POST /auth/login` dengan kata sandi benar TIDAK menerbitkan
+sesi: respons `{ perluTotp: true }` + cookie tertunda `sibis_totp` (HttpOnly,
+5 menit; keadaan tertunda hanya di memori server). Klien menukar cookie itu +
+kode di `POST /auth/verifikasi-totp` — kode TOTP 6 digit (HMAC-SHA1, jendela
+30 detik, toleransi ±1) atau satu **kode pemulihan** sekali pakai (10 buah
+diterbitkan saat aktivasi; server hanya menyimpan hash SHA-256). 5x kode
+salah membatalkan keadaan tertunda dan tercatat ke kunci login akun. Secret
+per pengguna tersimpan pada catatan pengguna (`totp`) dan TIDAK pernah
+dikirim ke klien (`userPublik` hanya mengekspos penanda `totpAktif`);
+edit pengguna oleh admin mempertahankan keadaan `totp` apa adanya.
+Pendaftaran dari menu akun → "Login Authenticator (2FA)": `totp/mulai`
+mengembalikan secret base32 + URL `otpauth://` untuk entri manual di
+aplikasi authenticator, `totp/aktifkan` memverifikasi satu kode sebelum
+mengaktifkan. Penonaktifan wajib kode sah; reset oleh admin (HP hilang)
+lewat `POST /data/users/:id/reset-totp`. Modul inti: `server/totp.ts`.
+
 | Method & Path | Sesi/Peran | Keterangan |
 |---------------|-----------|------------|
 | `GET /health` | publik | `{ status, skema, sekolah }` |
@@ -48,6 +65,11 @@ awal (lihat `03-model-data.md` §2b).
 | `POST /auth/logout` | sesi | Hapus sesi |
 | `GET /auth/sesi` | sesi | Profil sesi + `benihAwal` (+ profil penyamar bila sedang menyamar) |
 | `POST /auth/ganti-sandi` | sesi | Ganti sandi sendiri (min. 8 karakter; menghapus `mustChangePassword`) |
+| `POST /auth/verifikasi-totp` | cookie tertunda | Langkah kedua login Authenticator: kode TOTP/kode pemulihan → sesi penuh |
+| `POST /auth/totp/mulai` | sesi | Mulai pendaftaran Authenticator (secret base32 + URL otpauth) |
+| `POST /auth/totp/aktifkan` | sesi | Aktifkan dengan satu kode; menerbitkan 10 kode pemulihan (sekali tampil) |
+| `POST /auth/totp/nonaktifkan` | sesi | Nonaktifkan dengan kode sah (TOTP/kode pemulihan) |
+| `POST /data/users/:id/reset-totp` | sesi; admin | Reset Authenticator pengguna (kasus HP hilang) |
 | `POST /auth/impersonate` / `POST /auth/impersonate/berhenti` | sesi (penyamar tercatat) | Sesi menyamar menyimpan `impersonator_id` + `token_induk`; target admin/diri sendiri/nonaktif ditolak |
 | `GET/POST /data/siswa`, `GET/PUT/DELETE /data/siswa/:id`, `POST /data/siswa/bulk` | sesi | Baca tersaring `rombelAkses` sesi (siswa tanpa rombel tetap terlihat); tulis memeriksa rombel lama & baru; bulk = impor massal |
 | `GET /data/koleksi/:entitas`, `PUT/DELETE /data/koleksi/:entitas/:id`, `POST /data/koleksi/:entitas/bulk` | sesi | Entitas: `rombel`, `ptk`, `peta_kelas`, `tutup_tahun`, `sync_logs`, `audit_logs`; bulk mode `ganti` = ganti total koleksi |

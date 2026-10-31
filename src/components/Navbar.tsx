@@ -36,6 +36,7 @@ import { SekolahProfile, AppUser, SchoolEntry, ModeTampilan } from '../types';
 import { OfflineIndicator } from './OfflineIndicator';
 import { PWAInstallButton } from './PWAInstallButton';
 import { SchoolSwitcher } from './SchoolSwitcher';
+import { TotpModal } from './TotpModal';
 import { getAllUsers, saveUser, setCurrentUserSession } from '../utils/db';
 import { verifyPassword, hashPassword } from '../utils/password';
 import { catatAudit } from '../utils/audit';
@@ -98,6 +99,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [topUserOpen, setTopUserOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [pwModalOpen, setPwModalOpen] = useState(false);
+  const [totpModalOpen, setTotpModalOpen] = useState(false);
   const [pwOld, setPwOld] = useState('');
   const [pwNew, setPwNew] = useState('');
   const [pwConfirm, setPwConfirm] = useState('');
@@ -393,6 +395,18 @@ export const Navbar: React.FC<NavbarProps> = ({
       >
         <KeyRound className="w-4 h-4 text-slate-500" />
         <span>Ganti Kata Sandi</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          setTotpModalOpen(true);
+          setTopUserOpen(false);
+        }}
+        className="w-full text-left px-4 py-2.5 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-2.5 transition cursor-pointer"
+      >
+        <ShieldCheck className="w-4 h-4 text-slate-500" />
+        <span>Login Authenticator (2FA)</span>
       </button>
 
       <button
@@ -750,6 +764,13 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-gold-500 via-gold-300 to-gold-500" />
         {renderSidebarBody(collapsed)}
       </aside>
+
+      {/* Modal Login Authenticator (2FA, mode server) */}
+      <TotpModal
+        isOpen={totpModalOpen}
+        onClose={() => setTotpModalOpen(false)}
+        username={currentUser?.username || ''}
+      />
 
       {/* Modal Ganti Kata Sandi */}
       {pwModalOpen && (

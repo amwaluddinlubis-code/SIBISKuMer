@@ -44,6 +44,11 @@ import {
 import {
   pastikanSiap,
   loginServer,
+  verifikasiTotpServer,
+  mulaiDaftarTotp,
+  aktifkanTotp,
+  nonaktifkanTotp,
+  resetTotpPengguna,
   sesiDariToken,
   akhiriSesi,
   gantiSandiSesi,
@@ -109,6 +114,34 @@ function pasangCookieSesi(res: Response, token: string): void {
 
 function hapusCookieSesi(res: Response): void {
   res.setHeader('Set-Cookie', `${COOKIE_SESI}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`);
+}
+
+// Cookie keadaan login-menunggu-kode Authenticator (TTL sama seperti
+// keadaan tertundanya di server: 5 menit). Token sesi penuh TIDAK pernah
+// diterbitkan sebelum kode terverifikasi.
+const COOKIE_TOTP = 'sibis_totp';
+
+function tokenTotpDariReq(req: Request): string | null {
+  const mentah = req.headers.cookie || '';
+  for (const bagian of mentah.split(';')) {
+    const [k, ...sisa] = bagian.trim().split('=');
+    if (k === COOKIE_TOTP) return decodeURIComponent(sisa.join('=') || '');
+  }
+  return null;
+}
+
+// Memakai res.append (bukan setHeader) agar dapat berdampingan dengan
+// cookie sesi pada respons yang sama (mis. verifikasi sukses: pasang sesi
+// + hapus cookie tertunda sekaligus).
+function pasangCookieTotp(res: Response, token: string): void {
+  res.append(
+    'Set-Cookie',
+    `${COOKIE_TOTP}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${5 * 60}`
+  );
+}
+
+function hapusCookieTotp(res: Response): void {
+  res.append('Set-Cookie', `${COOKIE_TOTP}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`);
 }
 
 async function perluSesi(req: ReqBersesi, res: Response, next: NextFunction): Promise<void> {
@@ -317,6 +350,11 @@ export function buatRouterV1(): Router {
     if (hasil.ok === false) {
       return kirimGagal(res, hasil.terkunci ? 423 : 401, hasil.pesan);
     }
+    if ('perluTotp' in hasil) {
+      // Kata sandi benar, sesi ditahan: terbitkan cookie tertunda saja.
+      pasangCookieTotp(res, hasil.tokenSementara);
+      return kirimOk(res, { perluTotp: true, username: hasil.user.username });
+    }
     pasangCookieSesi(res, hasil.sesi.token);
     kirimOk(res, {
       user: userPublik(hasil.user),
@@ -357,6 +395,63 @@ export function buatRouterV1(): Router {
       kirimOk(res, { user: userPublik(user), mustChangePassword: false });
     } catch (e: any) {
       kirimGagal(res, 400, e?.message || 'Gagal mengganti kata sandi.');
+    }
+  });
+
+  // Langkah kedua login Authenticator: tukar cookie tertunda + kode
+  // (TOTP 6 digit atau kode pemulihan) menjadi sesi penuh.
+  r.post('/auth/verifikasi-totp', async (req, res) => {
+    const { kode } = req.body || {};
+    if (typeof kode !== 'string' || !kode.trim()) {
+      return kirimGagal(res, 400, 'Kode Authenticator wajib diisi.');
+    }
+    const hasil = verifikasiTotpServer(tokenTotpDariReq(req), kode);
+    if (hasil.ok === false) {
+      if (hasil.terkunci) hapusCookieTotp(res);
+      return kirimGagal(res, hasil.terkunci ? 423 : 401, hasil.pesan);
+    }
+    pasangCookieSesi(res, hasil.sesi.token);
+    hapusCookieTotp(res);
+    kirimOk(res, {
+      user: userPublik(hasil.user),
+      sekolahId: hasil.sesi.sekolahId,
+      mustChangePassword: !!hasil.user.mustChangePassword,
+      benihAwal: apakahBenihAwal(hasil.sesi.sekolahId),
+    });
+  });
+
+  // Pengelolaan Authenticator milik sesi sendiri.
+  r.post('/auth/totp/mulai', perluSesi, (req: ReqBersesi, res) => {
+    try {
+      kirimOk(res, mulaiDaftarTotp(req.sesi!));
+    } catch (e: any) {
+      kirimGagal(res, 400, e?.message || 'Gagal memulai pendaftaran Authenticator.');
+    }
+  });
+
+  r.post('/auth/totp/aktifkan', perluSesi, (req: ReqBersesi, res) => {
+    const { kode } = req.body || {};
+    if (typeof kode !== 'string' || !kode.trim()) {
+      return kirimGagal(res, 400, 'Kode Authenticator wajib diisi.');
+    }
+    try {
+      const { kodePemulihan } = aktifkanTotp(req.sesi!, kode);
+      kirimOk(res, { kodePemulihan, user: userPublik(userById(dbSekolah(req.sesi!.sekolahId), req.sesi!.userId)) });
+    } catch (e: any) {
+      kirimGagal(res, 400, e?.message || 'Gagal mengaktifkan Authenticator.');
+    }
+  });
+
+  r.post('/auth/totp/nonaktifkan', perluSesi, (req: ReqBersesi, res) => {
+    const { kode } = req.body || {};
+    if (typeof kode !== 'string' || !kode.trim()) {
+      return kirimGagal(res, 400, 'Kode Authenticator wajib diisi.');
+    }
+    try {
+      const user = nonaktifkanTotp(req.sesi!, kode);
+      kirimOk(res, { user: userPublik(user) });
+    } catch (e: any) {
+      kirimGagal(res, 400, e?.message || 'Gagal menonaktifkan Authenticator.');
     }
   });
 
@@ -589,8 +684,25 @@ export function buatRouterV1(): Router {
     if (!user.password) {
       if (lama) user.password = lama.password;
     }
+    // Keadaan Authenticator TIDAK pernah dikelola lewat simpan pengguna
+    // umum: pertahankan apa adanya agar edit admin tidak menghapus 2FA
+    // pengguna (kelola lewat endpoint totp khusus / reset-totp admin).
+    if (lama) {
+      if (lama.totp !== undefined) user.totp = lama.totp;
+      if (lama.totpCalon !== undefined) user.totpCalon = lama.totpCalon;
+    }
     simpanUser(db, user);
     kirimOk(res, userPublik(userById(db, req.params.id)));
+  });
+
+  // Reset Authenticator pengguna (kasus HP hilang/terkunci) — admin saja.
+  r.post('/data/users/:id/reset-totp', perluSesi, perluAdmin, (req: ReqBersesi, res) => {
+    try {
+      const target = resetTotpPengguna(req.sesi!, req.params.id);
+      kirimOk(res, userPublik(target));
+    } catch (e: any) {
+      kirimGagal(res, 400, e?.message || 'Gagal mereset Authenticator pengguna.');
+    }
   });
 
   r.delete('/data/users/:id', perluSesi, perluAdmin, (req: ReqBersesi, res) => {

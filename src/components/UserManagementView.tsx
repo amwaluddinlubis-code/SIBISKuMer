@@ -28,6 +28,7 @@ import { hashPassword } from '../utils/password';
 import { getDefaultRombelOptions } from '../utils/raportUtils';
 import { normalizeTahunAkses, isValidTahun } from '../utils/tahunAjaran';
 import { toast, confirmDialog } from '../utils/notify';
+import { resetTotpPenggunaServer } from '../utils/dataApi';
 import { validateAppUserInput } from '../utils/validation';
 import { startTopProgress, doneTopProgress } from '../utils/progress';
 import { catatAudit, diffAudit } from '../utils/audit';
@@ -710,6 +711,38 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({
                           >
                             <KeyRound className="w-4 h-4" />
                           </button>
+
+                          {/* Reset Authenticator (2FA) — hanya bila aktif (mode server) */}
+                          {(u as any).totpAktif && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const yakin = await confirmDialog(
+                                  `Reset Login Authenticator untuk @${u.username}? Authenticator pada akun ini akan dinonaktifkan (mis. karena HP hilang) dan pengguna dapat masuk hanya dengan kata sandi sampai mendaftar ulang.`,
+                                  { confirmLabel: 'Reset Authenticator', danger: true }
+                                );
+                                if (!yakin) return;
+                                try {
+                                  await resetTotpPenggunaServer(u.id);
+                                  catatAudit('totp_direset_admin', {
+                                    entitas: 'pengguna',
+                                    entitasId: u.id,
+                                    ringkasan: `Login Authenticator @${u.username} direset oleh administrator`,
+                                    aktor: currentUser.username,
+                                    peran: currentUser.role,
+                                  });
+                                  toast(`Authenticator @${u.username} berhasil direset.`, 'success');
+                                  await refreshUsers();
+                                } catch (err: any) {
+                                  toast(err?.message || 'Gagal mereset Authenticator (fitur ini memerlukan mode server).', 'error');
+                                }
+                              }}
+                              title="Reset Authenticator (2FA)"
+                              className="p-1.5 text-slate-600 hover:text-sky-700 hover:bg-sky-50 rounded-lg transition"
+                            >
+                              <Shield className="w-4 h-4" />
+                            </button>
+                          )}
 
                           {/* Delete (if not admin) */}
                           {u.username.toLowerCase() !== 'administrator' && (
